@@ -235,7 +235,7 @@ struct Ocean
 
 struct CreateShadow
 {
-	static inline Uint8 getShadowValue(const Uint8& dest, const Cord& earth, const Cord& sun, const Sint16& noise)
+	static inline Sint16 getCostam(const Cord& earth, const Cord& sun, const Sint16& noise)
 	{
 		Cord temp = earth;
 		//diff
@@ -250,54 +250,67 @@ struct CreateShadow
 		temp.x -= 2;
 		temp.x *= 125.;
 
-		if (temp.x < -110) temp.x = -31;
+		if (temp.x < -110) 
+			temp.x = -31;
+		else if (temp.x > 120) 
+			temp.x = 50;
 		else
-		if (temp.x > 120) temp.x = 50;
-		else
-		temp.x = static_data.shade_gradient[(Sint16)temp.x + 120];
+			temp.x = static_data.shade_gradient[(Sint16)temp.x + 120];
 
 		temp.x -= noise;
-
-		if(temp.x > 0.)
-		{
-			const Sint16 val = (temp.x> 31)? 31 : (Sint16)temp.x;
-			const int d = dest & helper::ColorGroup;
-			if(d ==  Palette::blockOffset(12) || d ==  Palette::blockOffset(13))
-			{
-				//this pixel is ocean
-				return Palette::blockOffset(12) + val;
-			}
-			else
-			{
-				//this pixel is land
-				if (dest==0) return val;
-				const int s = val / 3;
-				const int e = dest+s;
-				if(e > d + helper::ColorShade)
-					return d + helper::ColorShade;
-				return e;
-			}
-		}
+		
+		if(temp.x > 0)
+			return (temp.x > 31)? 31 : (Sint16)temp.x;
 		else
-		{
-			const int d = dest & helper::ColorGroup;
-			if(d ==  Palette::blockOffset(12) || d ==  Palette::blockOffset(13))
-			{
-				//this pixel is ocean
-				return Palette::blockOffset(12);
-			}
-			else
-			{
-				//this pixel is land
-				return dest;
-			}
-		}
+			return 0;
+		
 	}
 	
-	static inline void func(Uint8& dest, const Cord& earth, const Cord& sun, const Sint16& noise, const int&)
+	static inline Uint8 getShadowValue(const Uint8& dest, const Sint16 val)
+	{
+		const Sint16 d = dest & helper::ColorGroup;
+		if(d ==  Palette::blockOffset(12) || d ==  Palette::blockOffset(13))
+		{
+			//this pixel is ocean
+			return Palette::blockOffset(12) + val;
+		}
+		else if(val > 0) //this pixel is land
+		{
+			const Sint16 s = val / 3;
+			const Sint16 e = dest + s;
+			if(e > d + helper::ColorShade)
+				return d + helper::ColorShade;
+			return e;
+		}
+		else
+			return dest;
+	}
+	
+	static inline void func(Uint8& dest, const Cord& earth, const Cord& sun, const Sint16& noise, const std::vector<Cord>& c)
 	{
 		if(dest && earth.z)
-			dest = getShadowValue(dest, earth, sun, noise);
+		{
+			const Sint16 shade = getCostam(earth, sun, noise)/2;
+			
+			int i =0;
+			for(; i<c.size(); ++i)
+			{
+				Cord temp = earth;
+				temp -= c[i];
+				//norm
+				temp.x *= temp.x;
+				temp.y *= temp.y;
+				temp.z *= temp.z;
+				temp.x += temp.y + temp.z;
+				if(temp.x < .23)
+				{
+					dest = (getShadowValue(dest, shade));
+					return;
+				}
+			}
+			dest = getShadowValue(dest, 16 + shade);
+			
+		}
 		else
 			dest = 0;
 	}
@@ -1040,15 +1053,29 @@ Cord Globe::getSunDirection(double lon, double lat) const
 	return sun_direction;
 }
 
+static inline Cord get_rotated_cord(double rot_lon, double rot_lat, double lon, double lat)
+{
+	const double x = sin(lon - rot_lon)*cos(lat);
+	const double z = cos(lon - rot_lon)*cos(lat);
+	const double y = sin(lat);
+	const double sin_rot = -sin(rot_lat);
+	const double cos_rot = cos(rot_lat);
+	return Cord(x, y*cos_rot + z*sin_rot, -y*sin_rot + z*cos_rot);
+}
 
 void Globe::drawShadow()
 {
-	
+	static std::vector<Cord> bazy = std::vector<Cord>(400);
+	for(int i=0; i<bazy.size(); ++i)
+	{
+		bazy[i] = get_rotated_cord(_cenLon, _cenLat, 5*(i/13) - i/40, -3*(i%7)+ i/60);
+		bazy[i] *= i/30.;
+	}
 	ShaderMove<Cord> earth(static_data.getEarthShape(_zoom));
 	earth.addMove(_cenX, _cenY);
 	
 	lock();
-	ShaderDraw<CreateShadow>(ShaderSurface(this), earth, ShaderScalar(getSunDirection(_cenLon, _cenLat)), static_data.getNoise());
+	ShaderDraw<CreateShadow>(ShaderSurface(this), earth, ShaderScalar(getSunDirection(_cenLon, _cenLat)), static_data.getNoise(), ShaderScalar(bazy));
 	unlock();
 		
 }
@@ -1335,7 +1362,7 @@ void Globe::getPolygonTextureAndShade(double lon, double lat, int *texture, int 
 							11,12,12,13,13,14,15,15};
 
 	*texture = -1;
-	*shade = worldshades[ CreateShadow::getShadowValue(0, Cord(0.,0.,1.), getSunDirection(lon, lat), 0) ];
+	*shade = worldshades[ CreateShadow::getCostam(Cord(0.,0.,1.), getSunDirection(lon, lat), 0) ];
 	for (std::list<Polygon*>::iterator i = _game->getResourcePack()->getPolygons()->begin(); i != _game->getResourcePack()->getPolygons()->end(); ++i)
 	{
 		if (insidePolygon(lon, lat, *i))
