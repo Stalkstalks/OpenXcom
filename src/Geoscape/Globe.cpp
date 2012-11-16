@@ -56,6 +56,9 @@ const double Globe::QUAD_LATITUDE = 0.2;
 const double Globe::ROTATE_LONGITUDE = 0.25;
 const double Globe::ROTATE_LATITUDE = 0.15;
 
+const int TexRex = 1;
+const int asin_table_max = 256*1024;
+
 ///helper class for `Globe` for drawing earth globe with shadows
 class GlobeStaticData
 {
@@ -71,6 +74,8 @@ class GlobeStaticData
 	///list of dimension of earth on screen per zoom level
 	std::vector<double> radius;
 
+	std::vector<double> asin_table;
+	
 public: 
 	///dimension of earth graphic
 	const std::pair<int,int> earth_size;
@@ -81,6 +86,8 @@ public:
 	///earth inclination flag
 	bool is_seasons;
 
+	///earth Texture
+	std::vector<Uint8> texture_map;
 	
 	/**
 	 * Function returning normal vector of sphere surface
@@ -113,6 +120,30 @@ public:
 			ret.z = 0.;
 			return ret;
 		}
+//		const double s_y = sin(M_PI_2*(y-oy)/r);
+//		const double c_y = cos(M_PI_2*(y-oy)/r);
+//		const double s_x = sin(M_PI*(x-ox)/r);
+//		const double c_x = cos(M_PI*(x-ox)/r);
+//		return Cord(s_x*c_y, s_y, c_x*c_y);
+	}
+	
+	inline double ax_asin(double d)
+	{
+		const bool sig = d>0;
+		if(!sig)
+			d = -d;
+		d *= asin_table_max;
+		const int df = d;
+		const double dx = d - df;
+		if(sig)
+			return asin_table[df+1]*dx + asin_table[df]*(1-dx);
+		else
+			return -(asin_table[df+1]*dx + asin_table[df]*(1-dx));
+			
+	}
+	inline double ax_acos(double d)
+	{
+		return M_PI_2 - ax_asin(d);
 	}
 	
 	//initialization	
@@ -191,8 +222,33 @@ public:
 
 			shade_gradient[i]= j+16;
 		}
-
+		texture_map.resize(TexRex*1024*TexRex*1024);
+		for(int i=0; i<TexRex*1024; ++i)
+		{
+			for(int j=0; j<TexRex*1024; ++j)
+			{
+				if((rand()%100)<TexRex)
+					texture_map[i*TexRex*1024+j] = rand();
+				else if(((j/5/TexRex)%10 == 0) && ((j/5/TexRex)%20<=1 ? i < TexRex*400 : i > TexRex*320))
+					texture_map[i*TexRex*1024+j] = 64 + i % 16;
+				else if((i/4/TexRex)%10 == 0)
+					texture_map[i*TexRex*1024+j] = 16 + i % 16;
+				else if(((i+j) /3/TexRex)%10 == 0)
+					texture_map[i*TexRex*1024+j] = 73;
+				else if((j/5/TexRex > 90) && (j/5/TexRex < 130) && (i/4/TexRex > 60) && (i/4/TexRex < 500))
+					texture_map[i*TexRex*1024+j] = 32;
+				else if(((j/6/TexRex)%10 < 5) ^ ((i/6/TexRex)%10 <5))
+					texture_map[i*TexRex*1024+j] = 10*16;
+			}
+		}
+		asin_table.resize(asin_table_max+1);
+		for(int i=0; i<asin_table_max; ++i)
+		{
+			asin_table[i] = asin(double(i)/asin_table_max);
+		}
+		asin_table[asin_table_max] = asin(1);
 	}
+	
 	~GlobeStaticData()
 	{
 		for(int i=0; i< earth.size(); ++i)
@@ -286,29 +342,80 @@ struct CreateShadow
 			return dest;
 	}
 	
+	static inline double dotProduct(const Cord& a, const Cord& b)
+	{
+		return a.x*b.x + a.y*b.y + a.z*b.z;
+	}
+	
+	static inline Cord crossProduct(const Cord& a, const Cord& b)
+	{
+		return Cord(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x);
+	}
+	
 	static inline void func(Uint8& dest, const Cord& earth, const Cord& sun, const Sint16& noise, const std::vector<Cord>& c)
 	{
 		if(dest && earth.z)
 		{
 			const Sint16 shade = getCostam(earth, sun, noise)/2;
-			
-			int i =0;
-			for(; i<c.size(); ++i)
+//			
+//			Sint16 hit = 1;
+//			for(int i =0; i<c.size(); ++i)
+//			{
+//				Cord temp = earth;
+//				temp -= c[i];
+//				//norm
+//				temp.x *= temp.x;
+//				temp.y *= temp.y;
+//				temp.z *= temp.z;
+//				temp.x += temp.y + temp.z;
+//				if(temp.x < .23)
+//				{
+//					if(dest ==  Palette::blockOffset(12) || dest ==  Palette::blockOffset(13))
+//						dest = getShadowValue(dest, shade);
+//					else
+//						dest = getShadowValue(Palette::blockOffset(10) + (dest&helper::ColorShade), shade);
+//					return;
+//				}
+//			
+//			}
+			//lat&lon lines
+//			int d = acos(dotProduct(c[0], earth))*M_1_PI*720;
+//			d %= 60;
+//			if(d <= 2)
+//			{
+//				dest = getShadowValue(dest, shade + 5);
+//				return;
+//			}
+//			Cord lon_vect = crossProduct(c[0], earth);
+//			double n = lon_vect.norm();
+//			if(n > 0.)
+//			{
+//				lon_vect /= n;
+//				d = acos(dotProduct(c[1], lon_vect))*M_1_PI*720;
+//				d %= 60;
+//				if(d <= 2)
+//				{
+//					dest = getShadowValue(dest, shade + 5);
+//					return;
+//				}
+//			}
+			//texturing
+			const Cord dd = crossProduct(c[0], earth);
+			const double n = dd.norm();
+			if(n == 0)
 			{
-				Cord temp = earth;
-				temp -= c[i];
-				//norm
-				temp.x *= temp.x;
-				temp.y *= temp.y;
-				temp.z *= temp.z;
-				temp.x += temp.y + temp.z;
-				if(temp.x < .23)
-				{
-					dest = (getShadowValue(dest, shade));
-					return;
-				}
+				dest = getShadowValue(dest, shade);
+				return;
 			}
-			dest = getShadowValue(dest, 16 + shade);
+			const double dx = dotProduct(c[0], earth);
+			const double dy = dotProduct(c[1], dd)/n;
+			const int x = TexRex*1024*(0.5 + asin(dx)*M_1_PI); //static_data.ax_
+			const int y = TexRex*1024*(acos(dy)*M_1_PI); //static_data.ax_
+			if( static_data.texture_map[y*TexRex*1024 + x] == 0 )
+				dest = getShadowValue(dest, shade);
+			else
+				dest = getShadowValue(static_data.texture_map[y*TexRex*1024 + x], shade);
+				
 			
 		}
 		else
@@ -831,7 +938,7 @@ std::vector<Target*> Globe::getTargets(int x, int y, bool craft) const
  */
 void Globe::cachePolygons()
 {
-	cache(_game->getResourcePack()->getPolygons(), &_cacheLand);
+//	cache(_game->getResourcePack()->getPolygons(), &_cacheLand);
 	_redraw = true;
 }
 
@@ -954,7 +1061,7 @@ void Globe::draw()
 {
 	Surface::draw();
 	drawOcean();
-	drawLand();
+//	drawLand();
 	drawShadow();
 	drawMarkers();
 	drawDetail();
@@ -967,7 +1074,7 @@ void Globe::draw()
 void Globe::drawOcean()
 {
 	lock();
-	drawCircle(_cenX+1, _cenY, static_data.getRadius(_zoom)+20, Palette::blockOffset(12)+0);
+	drawCircle(_cenX+1, _cenY, static_data.getRadius(_zoom)+100, Palette::blockOffset(12)+0);
 //	ShaderDraw<Ocean>(ShaderSurface(this));
 	unlock();
 }
@@ -1065,12 +1172,11 @@ static inline Cord get_rotated_cord(double rot_lon, double rot_lat, double lon, 
 
 void Globe::drawShadow()
 {
-	static std::vector<Cord> bazy = std::vector<Cord>(400);
-	for(int i=0; i<bazy.size(); ++i)
-	{
-		bazy[i] = get_rotated_cord(_cenLon, _cenLat, 5*(i/13) - i/40, -3*(i%7)+ i/60);
-		bazy[i] *= i/30.;
-	}
+	static std::vector<Cord> bazy = std::vector<Cord>(2);
+	
+	bazy[0] = get_rotated_cord(_cenLon, _cenLat, 0, M_PI_2);
+	bazy[1] = get_rotated_cord(_cenLon, _cenLat, -M_PI_2, 0);
+	
 	ShaderMove<Cord> earth(static_data.getEarthShape(_zoom));
 	earth.addMove(_cenX, _cenY);
 	
