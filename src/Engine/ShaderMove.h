@@ -57,15 +57,15 @@ public:
 		
 	}
 	
-	inline ShaderMove(std::vector<Pixel>& f, int max_x, int max_y): 
-		_base(f, max_x, max_y),
+	inline ShaderMove(int max_x, int max_y, std::vector<Pixel>& f): 
+		_base(max_x, max_y, f),
 		_move_x(), _move_y()
 	{
 		
 	}
 	
-	inline ShaderMove(std::vector<Pixel>& f, int max_x, int max_y, int move_x, int move_y): 
-		_base(f, max_x, max_y),
+	inline ShaderMove(int max_x, int max_y, std::vector<Pixel>& f, int move_x, int move_y): 
+		_base(max_x, max_y, f),
 		_move_x(move_x), _move_y(move_y)
 	{
 		
@@ -110,13 +110,18 @@ struct controler<ShaderMove<Pixel> > : public controler_base<typename ShaderMove
 
 }//namespace helper
 
-inline ShaderMove<Uint8> ShaderSurface(Surface* s)
+static inline ShaderMove<Uint8> ShaderSurface(Surface* s)
 {
 	return ShaderMove<Uint8>(s);
 }
-inline ShaderMove<Uint8> ShaderSurface(Surface* s, int x, int y)
+static inline ShaderMove<Uint8> ShaderSurface(Surface* s, int x, int y)
 {
 	return ShaderMove<Uint8>(s, x, y);
+}
+template<typename T>
+static inline ShaderMove<T> ShaderSurface(int max_x, int max_y, std::vector<T>& f)
+{
+	return ShaderMove<T>(max_x, max_y, f);
 }
 
 }//namespace OpenXcom

@@ -76,7 +76,7 @@ public:
 	///copy constructor
 	inline ShaderBase(const ShaderBase& s):
 		_orgin(s.ptr()),
-		_range_base(s._range_base),
+		_range_base(s.getBaseDomain()),
 		_range_domain(s.getDomain()),
 		_pitch(s.pitch())		
 	{
@@ -93,7 +93,7 @@ public:
      * @param max_x x dimension of `f`
      * @param max_y y dimension of `f`
      */
-	inline ShaderBase(std::vector<Pixel>& f, int max_x, int max_y):
+	inline ShaderBase(int max_x, int max_y, std::vector<Pixel>& f):
 		_orgin(&(f[0])),
 		_range_base(max_x, max_y),
 		_range_domain(max_x, max_y),
@@ -179,7 +179,7 @@ public:
      * @param max_x x dimension of `f`
      * @param max_y y dimension of `f`
      */	
-	inline ShaderBase(const std::vector<Pixel>& f, int max_x, int max_y):
+	inline ShaderBase(int max_x, int max_y, const std::vector<Pixel>& f):
 		_orgin(&(f[0])),
 		_range_base(max_x, max_y),
 		_range_domain(max_x, max_y),
@@ -251,7 +251,7 @@ public:
 	 * surface will have same dimensions as `s`.
 	 * Attention: after use of this constructor you change size of surface `s` 
 	 * then `_orgin` will be invalid and use of this object will cause memory exception. 
-     * @param f vector that are treated as surface
+     * @param s OpenXcom surface
      */		
 	inline ShaderBase(Surface* s):
 		_orgin((Uint8*) s->getSurface()->pixels),
@@ -272,7 +272,7 @@ public:
      * @param max_x x dimension of `f`
      * @param max_y y dimension of `f`
      */	
-	inline ShaderBase(std::vector<Uint8>& f, int max_x, int max_y):
+	inline ShaderBase(int max_x, int max_y, std::vector<Uint8>& f):
 		_orgin(&(f[0])),
 		_range_base(max_x, max_y),
 		_range_domain(max_x, max_y),
@@ -354,7 +354,7 @@ public:
 	 * surface will have same dimensions as `s`.
 	 * Attention: after use of this constructor you change size of surface `s` 
 	 * then `_orgin` will be invalid and use of this object will cause memory exception. 
-     * @param f vector that are treated as surface
+     * @param s OpenXcom surface
      */	
 	inline ShaderBase(const Surface* s):
 		_orgin((Uint8*) s->getSurface()->pixels),
@@ -375,7 +375,7 @@ public:
      * @param max_x x dimension of `f`
      * @param max_y y dimension of `f`
      */
-	inline ShaderBase(const std::vector<Uint8>& f, int max_x, int max_y):
+	inline ShaderBase(int max_x, int max_y, const std::vector<Uint8>& f):
 		_orgin(&(f[0])),
 		_range_base(max_x, max_y),
 		_range_domain(max_x, max_y),

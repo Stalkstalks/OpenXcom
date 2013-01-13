@@ -272,8 +272,8 @@ public:
 
 	}
 	
-	inline ShaderRotate(const std::vector<Pixel>& f, int max_x, int max_y): 
-		_base(f, max_x, max_y),
+	inline ShaderRotate(int max_x, int max_y, const std::vector<Pixel>& f): 
+		_base(max_x, max_y, f),
 		_start_pos(),
 		_inc_x(1, 0),
 		_inc_y(0,1),

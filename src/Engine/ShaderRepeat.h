@@ -42,8 +42,8 @@ public:
 	{
 			
 	}
-	inline ShaderRepeat(const std::vector<Pixel>& f, int max_x, int max_y):
-		_base(f, max_x, max_y)
+	inline ShaderRepeat(int max_x, int max_y, const std::vector<Pixel>& f):
+		_base(max_x, max_y, f)
 	{
 			
 	}

@@ -56,8 +56,17 @@ const double Globe::QUAD_LATITUDE = 0.2;
 const double Globe::ROTATE_LONGITUDE = 0.25;
 const double Globe::ROTATE_LATITUDE = 0.15;
 
-const int TexRex = 1;
+const int TexRezY = 2;
+const int TexRezX = 4;
 const int asin_table_max = 256*1024;
+
+struct CopyPixels
+{
+	static inline void func(Uint8& dest, const Uint8& src, const int&, const int&, const int&)
+	{
+		dest = src;
+	}
+};
 
 ///helper class for `Globe` for drawing earth globe with shadows
 class GlobeStaticData
@@ -168,7 +177,7 @@ public:
 				{
 					earth_data[r][earth_size.first*j + i] = circle_norm(earth_size.first/2, earth_size.second/2, radius[r], i+.5, j+.5);
 				}
-			earth.push_back(new ShaderMove<Cord>(earth_data[r], earth_size.first, earth_size.second));
+			earth.push_back(new ShaderMove<Cord>(earth_size.first, earth_size.second, earth_data[r]));
 			earth[r]->setMove(-earth_size.first/2, -earth_size.second/2);
 		}
 
@@ -177,7 +186,7 @@ public:
 		random_noise_data.resize(random_surf_size * random_surf_size);
 		for(int i=0; i< random_noise_data.size(); ++i)
 			random_noise_data[i] = rand()%4;
-		random_noise = new ShaderRepeat<Sint16>(random_noise_data, random_surf_size, random_surf_size );
+		random_noise = new ShaderRepeat<Sint16>(random_surf_size, random_surf_size, random_noise_data);
 
 		//filling terminator gradient LUT
 		for (int i=0; i<240; ++i)
@@ -222,23 +231,25 @@ public:
 
 			shade_gradient[i]= j+16;
 		}
-		texture_map.resize(TexRex*1024*TexRex*1024);
-		for(int i=0; i<TexRex*1024; ++i)
+		texture_map.resize(TexRezX*1024*TexRezY*1024);
+		for(int y=0; y<TexRezY*1024; ++y)
 		{
-			for(int j=0; j<TexRex*1024; ++j)
+			for(int x=0; x<TexRezX*1024; ++x)
 			{
-				if((rand()%100)<TexRex)
-					texture_map[i*TexRex*1024+j] = rand();
-				else if(((j/5/TexRex)%10 == 0) && ((j/5/TexRex)%20<=1 ? i < TexRex*400 : i > TexRex*320))
-					texture_map[i*TexRex*1024+j] = 64 + i % 16;
-				else if((i/4/TexRex)%10 == 0)
-					texture_map[i*TexRex*1024+j] = 16 + i % 16;
-				else if(((i+j) /3/TexRex)%10 == 0)
-					texture_map[i*TexRex*1024+j] = 73;
-				else if((j/5/TexRex > 90) && (j/5/TexRex < 130) && (i/4/TexRex > 60) && (i/4/TexRex < 500))
-					texture_map[i*TexRex*1024+j] = 32;
-				else if(((j/6/TexRex)%10 < 5) ^ ((i/6/TexRex)%10 <5))
-					texture_map[i*TexRex*1024+j] = 10*16;
+				if((rand()%100)<TexRezX)
+					texture_map[y*TexRezX*1024+x] = rand();
+				else if(x <= 3)
+					texture_map[y*TexRezX*1024+x] = 42;
+//				else if(((x/5/TexRezX)%10 == 0) && ((x/5/TexRezX)%20<=1 ? y < TexRezY*400 : y > TexRezY*320))
+//					texture_map[y*TexRezY*1024+x] = 64 + y % 16;
+//				else if((y/4/TexRezY)%10 == 0)
+//					texture_map[y*TexRezY*1024+x] = 16 + y % 16;
+//				else if(((y+x) /3/TexRezX)%10 == 0)
+//					texture_map[y*TexRezY*1024+x] = 73;
+//				else if((x/5/TexRezX > 90) && (x/5/TexRezX < 130) && (y/4/TexRezY > 60) && (y/4/TexRezY < 500))
+//					texture_map[y*TexRezY*1024+x] = 32;
+//				else if(((x/6/TexRezX)%10 < 5) ^ ((y/6/TexRezY)%10 <5))
+//					texture_map[y*TexRezY*1024+x] = 10*16;
 			}
 		}
 		asin_table.resize(asin_table_max+1);
@@ -272,9 +283,93 @@ public:
 	{
 		return radius.size();
 	}
-	inline void initSeasons()
+	inline void initSeasons(Game *game)
 	{
 		is_seasons = Options::getBool("globeSeasons");
+		std::list<Polygon*> *l = game->getResourcePack()->getPolygons();
+		Surface *s = new Surface(TexRezX*1024, TexRezY*1024, 0, 0);
+		s->setPalette(game->getResourcePack()->getSurface("GEOBORD.SCR")->getPalette());
+		Sint16 x[4], y[4];
+
+		s->lock();
+		for (std::list<Polygon*>::iterator i = l->begin(); i != l->end(); ++i)
+		{
+			const double start_lon = (abs((*i)->getLatitude(0)) >= M_PI_2) ? (*i)->getLongitude(0) - M_PI : (*i)->getLongitude(1) - M_PI;
+			int vec_size = (*i)->getPoints();
+			int vec_tex = 0;
+			switch((*i)->getTexture())
+			{
+				case 0: vec_tex = 16; break;
+				case 1: vec_tex = 32; break;
+				case 2:	vec_tex = 19; break;
+				case 3: vec_tex = 25; break;
+				case 4: vec_tex = 43; break;
+				case 5: vec_tex = 60; break;
+				case 6: vec_tex = 50; break;
+				case 7: vec_tex = 21; break;
+				case 8: vec_tex = 64; break;
+				case 9: vec_tex = 10*16 + 5; break;
+				case 10: vec_tex = 3*16; break;
+				case 11: vec_tex = 4*16; break;
+				case 12: vec_tex = 10*16; break;
+				default:
+					vec_tex = 0;
+			}
+			bool warp = false;
+			// Convert coordinates
+			for (int j = 0; j < vec_size; ++j)
+			{
+				const double lon = (*i)->getLongitude(j) - M_PI;
+				const double lat = (*i)->getLatitude(j);
+				
+				const double final_lon = (lon -  start_lon > M_PI) ? lon - 2*M_PI : (lon -  start_lon < -M_PI)? lon + 2*M_PI : lon;
+				if(final_lon != lon)
+					warp = true;
+				x[j] = TexRezX*1024*(final_lon*M_1_PI*.5 + .5);
+				y[j] = TexRezY*1024*(lat + M_PI_2)*M_1_PI;
+			}
+			
+			int vec_split = 0;
+			Sint16 finall_x[6], finall_y[6];
+			for(int j = 0; j < vec_size; ++j)
+			{
+				if(y[j] <= 0 || y[j] >= TexRezY*1024)
+				{
+					finall_x[j + vec_split] = x[(j == 0) ? vec_size - 1 : j - 1];
+					finall_y[j + vec_split] = y[j];
+					++vec_split;
+					finall_x[j + vec_split] = x[(j == vec_size - 1) ? 0 : j + 1];
+					finall_y[j + vec_split] = y[j];
+				}
+				else
+				{
+					finall_x[j + vec_split] = x[j];
+					finall_y[j + vec_split] = y[j];
+				}
+					
+			}
+			s->drawPolygon(finall_x, finall_y, vec_size + vec_split, vec_tex);
+			if(warp)
+			{
+				const int offset = (start_lon < 0) ? TexRezX*1024 : -TexRezX*1024;
+				for(int j = 0; j < vec_size + vec_split; ++j)
+					finall_x[j] += offset;
+				s->drawPolygon(finall_x, finall_y, vec_size + vec_split, vec_tex);
+			}
+		}
+		for(int i = 0; i < TexRezX*1024; ++i)
+		{
+			s->setPixel(i, 0, 32);
+			s->setPixel(i, TexRezY*1024 - 1, 64);
+			if(i < TexRezY*1024 )
+				s->setPixel(i, i, 85);
+				
+		}
+		s->unlock();
+		ShaderDraw<CopyPixels>(ShaderSurface(TexRezX*1024, TexRezY*1024, texture_map), ShaderSurface(s));
+		ShaderDraw<CopyPixels>(ShaderSurface(TexRezX*1024, TexRezY*1024, texture_map), ShaderSurface(game->getResourcePack()->getSurface("BACK02.SCR"), TexRezX*512, TexRezY*400));
+		ShaderDraw<CopyPixels>(ShaderSurface(TexRezX*1024, TexRezY*1024, texture_map), ShaderSurface(game->getResourcePack()->getSurface("BACK05.SCR"), TexRezX*0, TexRezY*100));
+		delete s;
 	}
 };
 
@@ -407,14 +502,15 @@ struct CreateShadow
 				dest = getShadowValue(dest, shade);
 				return;
 			}
-			const double dx = dotProduct(c[0], earth);
-			const double dy = dotProduct(c[1], dd)/n;
-			const int x = TexRex*1024*(0.5 + asin(dx)*M_1_PI); //static_data.ax_
-			const int y = TexRex*1024*(acos(dy)*M_1_PI); //static_data.ax_
-			if( static_data.texture_map[y*TexRex*1024 + x] == 0 )
+			const double dy = dotProduct(c[0], earth);
+			const double dx = dotProduct(c[1], dd)/n;
+			const double sx = dotProduct(c[2], dd) > 0 ? .5*M_1_PI : -.5*M_1_PI;
+			const int x = TexRezX*1024*(sx*acos(dx) + .5);
+			const int y = TexRezY*1024*(0.5 + asin(dy)*M_1_PI);
+			if( static_data.texture_map[y*TexRezX*1024 + x] == 0 )
 				dest = getShadowValue(dest, shade);
 			else
-				dest = getShadowValue(static_data.texture_map[y*TexRex*1024 + x], shade);
+				dest = getShadowValue(static_data.texture_map[y*TexRezX*1024 + x], shade);
 				
 			
 		}
@@ -542,7 +638,7 @@ Globe::Globe(Game *game, int cenX, int cenY, int width, int height, int x, int y
 
 	cachePolygons();
 	
-	static_data.initSeasons();
+	static_data.initSeasons(game);
 }
 
 /**
@@ -1172,10 +1268,11 @@ static inline Cord get_rotated_cord(double rot_lon, double rot_lat, double lon, 
 
 void Globe::drawShadow()
 {
-	static std::vector<Cord> bazy = std::vector<Cord>(2);
+	static std::vector<Cord> bazy = std::vector<Cord>(3);
 	
 	bazy[0] = get_rotated_cord(_cenLon, _cenLat, 0, M_PI_2);
 	bazy[1] = get_rotated_cord(_cenLon, _cenLat, -M_PI_2, 0);
+	bazy[2] = get_rotated_cord(_cenLon, _cenLat, 0, 0);
 	
 	ShaderMove<Cord> earth(static_data.getEarthShape(_zoom));
 	earth.addMove(_cenX, _cenY);
