@@ -44,7 +44,9 @@ namespace OpenXcom
  */
 AlienBaseState::AlienBaseState(Game *game, AlienBase *base, GeoscapeState *state) : State(game), _state(state), _base(base)
 {
-	
+	std::string background, backpalette;
+	Uint8 colors[2];
+
 	// Create objects
 	_window = new Window(this, 320, 200, 0, 0);
 	_btnOk = new TextButton(50, 12, 135, 180);
@@ -56,19 +58,39 @@ AlienBaseState::AlienBaseState(Game *game, AlienBase *base, GeoscapeState *state
 
 	centerAllSurfaces();
 
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(0)), Palette::backPos, 16);
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK13.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK13.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(0);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+5;
+	}
+
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK13.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 	
-	_btnOk->setColor(Palette::blockOffset(15)-1);
+	_btnOk->setColor(colors[1]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&AlienBaseState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&AlienBaseState::btnOkClick, (SDLKey)Options::getInt("keyOk"));
 	_btnOk->onKeyboardPress((ActionHandler)&AlienBaseState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtTitle->setColor(Palette::blockOffset(8)+5);
+	_txtTitle->setColor(colors[2]);
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setBig();
 	_txtTitle->setWordWrap(true);
