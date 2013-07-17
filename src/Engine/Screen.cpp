@@ -178,6 +178,7 @@ void Screen::flip()
 		if(!isOpenGLEnabled() && _surface->getSurface()->format->Rmask != _screen->format->Rmask)
 			ShaderDraw<SwapColors>(ShaderMove<SDL_Color>(_surface));
 		Zoom::flipWithZoom(_surface->getSurface(), _screen, &glOutput);
+		ShaderDraw<SwapColors>(ShaderMove<SDL_Color>(_surface));
 	}
 	else
 	{
