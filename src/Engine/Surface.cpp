@@ -38,7 +38,7 @@
 
 namespace OpenXcom
 {
-
+	
 /**
  * Sets up a blank 8bpp surface with the specified size and position,
  * with pure black as the transparent color.
@@ -51,7 +51,7 @@ namespace OpenXcom
  * @param y Y position in pixels.
  * @param bpp Bits-per-pixel depth.
  */
-Surface::Surface(int width, int height, int x, int y, int bpp, std::string paletteName) : _x(x), _y(y), _visible(true), _hidden(false), _redraw(false), _originalColors(0), _paletteName(paletteName), _misalignedPixelBuffer(0), _alignedBuffer(0)
+Surface::Surface(int width, int height, int x, int y, int bpp, std::string paletteName) : _x(x), _y(y), _visible(true), _hidden(false), _redraw(false), _originalColors(0), _paletteName(paletteName), _alignedBuffer(0), _palette(0)
 {
 	//_surface = SDL_CreateRGBSurface(SDL_SWSURFACE, width, height, 8, 0, 0, 0, 0);
 	int pitch = (bpp/8) * ((width+15)& ~0xF);
@@ -72,8 +72,25 @@ Surface::Surface(int width, int height, int x, int y, int bpp, std::string palet
 #endif
 	
 	memset(_alignedBuffer, 0, pitch * height * (bpp/8));
-	
-	_surface = SDL_CreateRGBSurfaceFrom(_alignedBuffer,width, height, bpp, pitch, 0, 0, 0, 0);
+	if(bpp == 32)
+	{
+		_palette.resize(255);
+		//made _surface->pixels compatible with SDL_Color and OpenGL RGBA format
+		assert(sizeof(SDL_Color) == 4);
+		SDL_Color red	= {255,   0,   0,   0};
+		SDL_Color green	= {  0, 255,   0,   0};
+		SDL_Color blue	= {  0,   0, 255,   0};
+		SDL_Color alpha	= {  0,   0,   0,   0}; //== 0x0
+		_surface = SDL_CreateRGBSurfaceFrom(
+				_alignedBuffer,
+				width, height, bpp, pitch,
+				*reinterpret_cast<Uint32*>(&red),
+				*reinterpret_cast<Uint32*>(&green),
+				*reinterpret_cast<Uint32*>(&blue),
+				*reinterpret_cast<Uint32*>(&alpha));
+	}
+	else
+		_surface = SDL_CreateRGBSurfaceFrom(_alignedBuffer, width, height, bpp, pitch, 0, 0, 0, 0);
 
 	if (_surface == 0)
 	{
@@ -94,7 +111,7 @@ Surface::Surface(int width, int height, int x, int y, int bpp, std::string palet
  * Performs a deep copy of an existing surface.
  * @param other Surface to copy from.
  */
-Surface::Surface(const Surface& other)
+Surface::Surface(const Surface& other) : _palette(other._palette)
 {
 	_surface = SDL_ConvertSurface(other._surface, other._surface->format, other._surface->flags);
 	_x = other._x;
@@ -107,7 +124,6 @@ Surface::Surface(const Surface& other)
 	_hidden = other._hidden;
 	_redraw = other._redraw;
 	_originalColors = other._originalColors;
-	_misalignedPixelBuffer = 0;
 	_alignedBuffer = 0;
 }
 
@@ -179,7 +195,6 @@ void Surface::loadImage(const std::string &filename)
 	_alignedBuffer = 0;
 	SDL_FreeSurface(_surface);
 	_surface = 0;
-	_misalignedPixelBuffer = 0;
 	
 	// SDL only takes UTF-8 filenames
 	// so here's an ugly hack to match this ugly reasoning
@@ -642,6 +657,9 @@ void Surface::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
 {
 	if (_surface->format->BitsPerPixel != 32)
 		SDL_SetColors(_surface, colors, firstcolor, ncolors);
+	else
+		for(int i = 0; i< ncolors; ++i)
+			_palette[firstcolor + i] = colors[firstcolor + i];
 }
 
 /**
@@ -653,7 +671,7 @@ SDL_Color *Surface::getPalette() const
 	if (_surface->format->BitsPerPixel != 32)
 		return _surface->format->palette->colors;
 	else
-		return _originalColors;
+		return (SDL_Color *)&(_palette[0]);
 }
 
 /**
@@ -834,7 +852,7 @@ struct ColorReplace
 	* @param shade value of shade of this surface
 	* @param newColor new color to set (it should be offseted by 4)
 	*/
-	static inline void func(Uint8& dest, const Uint8& src, const int& shade, const int& newColor, const int&)
+	static inline void func(Uint8& dest, const Uint8& src, const int& shade, const int& newColor)
 	{
 		if(src)
 		{
@@ -844,6 +862,29 @@ struct ColorReplace
 				dest = 15;
 			else
 				dest = newColor | newShade;
+		}
+	}
+	
+	/**
+	 * Function used by ShaderDraw in Surface::blitNShade
+	 * set shade and replace color in that surface
+	 * 8bit -> 32bit version
+     * @param dest destination pixel
+     * @param src source pixel
+     * @param palette palette of source pixel
+     * @param shade value of shade of this surface
+     * @param newColor new color to set (it should be offseted by 4)
+     */
+	static inline void func(SDL_Color& dest, const Uint8& src, SDL_Color* palette, const int& shade, const int& newColor)
+	{
+		if(src)
+		{
+			const int newShade = (src&15) + shade;
+			if (newShade > 15)
+				// so dark it would flip over to another color - make it black instead
+				dest = palette[15];
+			else
+				dest = palette[newColor | newShade];
 		}
 	}
 	
@@ -863,7 +904,7 @@ struct StandartShade
 	* @param notused
 	* @param notused
 	*/
-	static inline void func(Uint8& dest, const Uint8& src, const int& shade, const int&, const int&)
+	static inline void func(Uint8& dest, const Uint8& src, const int& shade)
 	{
 		if(src)
 		{
@@ -873,6 +914,19 @@ struct StandartShade
 				dest = 15;
 			else
 				dest = (src&(15<<4)) | newShade;
+		}
+	}
+	
+	static inline void func(SDL_Color& dest, const Uint8& src, SDL_Color* palette, const int& shade)
+	{
+		if(src)
+		{
+			const int newShade = (src&15) + shade;
+			if (newShade > 15)
+				// so dark it would flip over to another color - make it black instead
+				dest = palette[15];
+			else
+				dest = palette[(src&(15<<4)) | newShade];
 		}
 	}
 	
@@ -904,10 +958,19 @@ void Surface::blitNShade(Surface *surface, int x, int y, int off, bool half, int
 	{
 		--newBaseColor;
 		newBaseColor <<= 4;
-		ShaderDraw<ColorReplace>(ShaderSurface(surface), src, ShaderScalar(off), ShaderScalar(newBaseColor));
+		if(surface->_surface->format->BitsPerPixel != 32)
+			ShaderDraw<ColorReplace>(ShaderSurface(surface), src, ShaderScalar(off), ShaderScalar(newBaseColor));
+		else
+			ShaderDraw<ColorReplace>(ShaderMove<SDL_Color>(surface), src, ShaderScalar(this->getPalette()), ShaderScalar(off), ShaderScalar(newBaseColor));
+			
 	}
 	else
-		ShaderDraw<StandartShade>(ShaderSurface(surface), src, ShaderScalar(off));
+	{
+		if(surface->_surface->format->BitsPerPixel != 32)
+			ShaderDraw<StandartShade>(ShaderSurface(surface), src, ShaderScalar(off));
+		else
+			ShaderDraw<StandartShade>(ShaderMove<SDL_Color>(surface), src, ShaderScalar(this->getPalette()), ShaderScalar(off));
+	}
 }
 
 /**
