@@ -1,4 +1,4 @@
-/*
+h/*
  * Copyright 2010-2013 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
@@ -42,8 +42,8 @@ protected:
 	SDL_Rect _crop;
 	bool _visible, _hidden, _redraw;
 	SDL_Color *_originalColors;
-	std::string _paletteName;
 	void *_alignedBuffer;
+	std::string _paletteName;
 	int _dx, _dy;
 	std::vector<SDL_Color> _palette;
 public:
