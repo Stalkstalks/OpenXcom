@@ -57,7 +57,7 @@ AlienTerrorState::AlienTerrorState(Game *game, const City *city, GeoscapeState *
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_BACK13.SCR";
+		background = "TFTD_BACK03.SCR";
 		backpalette = "TFTD_BACKPALS.DAT";
 
 		colors[0] = Palette::blockOffset(3);
@@ -74,7 +74,7 @@ AlienTerrorState::AlienTerrorState(Game *game, const City *city, GeoscapeState *
 	}
 
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
+	_game->getResourcePack()->getSurface(background)->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnCentre);

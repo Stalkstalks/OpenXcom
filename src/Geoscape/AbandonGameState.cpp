@@ -70,7 +70,7 @@ AbandonGameState::AbandonGameState(Game *game) : State(game)
 	}
 
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
+	_game->getResourcePack()->getSurface(background)->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnYes);
