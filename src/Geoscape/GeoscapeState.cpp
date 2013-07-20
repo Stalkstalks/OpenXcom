@@ -197,6 +197,7 @@ GeoscapeState::GeoscapeState(Game *game) : State(game), _pause(false), _music(fa
 
 	// Set palette
 	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
+	_game->getResourcePack()->setPaletteTerror(_game->getResourcePack()->getPalette(palette)->getColors());
 
 	// Fix system colors
 	_game->getCursor()->setColor(colors[0]);
@@ -482,6 +483,7 @@ void GeoscapeState::init()
 
 	// Set palette
 	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
+	_game->getResourcePack()->setPaletteTerror(_game->getResourcePack()->getPalette(palette)->getColors());
 
 	timeDisplay();
 

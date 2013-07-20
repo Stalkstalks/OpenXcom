@@ -71,7 +71,7 @@ void MedikitView::draw()
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_MEDIBITS.DAT";
+		background = "TFTD_BATTLE_MEDIBITS.DAT";
 	}
 	else
 	{
@@ -117,7 +117,7 @@ void MedikitView::mouseClick (Action *action, State *)
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_MEDIBITS.DAT";
+		background = "TFTD_BATTLE_MEDIBITS.DAT";
 	}
 	else
 	{

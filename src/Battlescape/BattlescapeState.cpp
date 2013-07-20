@@ -154,8 +154,8 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 	{
 		// Basic properties for display in TFTD style
 		palette << "TFTD_PALETTES.DAT_" << _save->getDepth() + 3;
-		spicons = "TFTD_SPICONS.DAT";
-		icons = "TFTD_ICONS.BDY";
+		spicons = "TFTD_BATTLE_SPICONS.DAT";
+		icons = "TFTD_BATTLE_ICONS.BDY";
 
 		_numLayers = new NumberText(3, 5, _icons->getX() + 229, _icons->getY() + 5);
 

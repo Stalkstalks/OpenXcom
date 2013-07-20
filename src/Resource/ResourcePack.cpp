@@ -277,15 +277,16 @@ void ResourcePack::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
  */
 void ResourcePack::setPaletteTerror(SDL_Color *colors, int firstcolor, int ncolors)
 {
-	_sets["TFTD_SCANG.DAT"]->setPalette(colors, firstcolor, ncolors);
+	if (_sets["TFTD_BATTLE_SCANG.DAT"] != 0)
+		_sets["TFTD_BATTLE_SCANG.DAT"]->setPalette(colors, firstcolor, ncolors);
 	for (std::map<std::string, Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
 	{
-		if ((i->first.substr(i->first.length()-3, 3) != "LBM") && (i->first.substr(0, 4) == "TFTD"))
+		if ((i->first.substr(i->first.length()-3, 3) != "LBM") && (i->first.substr(0, 11) == "TFTD_BATTLE"))
 			i->second->setPalette(colors, firstcolor, ncolors);
 	}
 	for (std::map<std::string, SurfaceSet*>::iterator i = _sets.begin(); i != _sets.end(); ++i)
 	{
-		if (i->first.substr(0, 4) == "TFTD")
+		if (i->first.substr(0, 11) == "TFTD_BATTLE")
 			i->second->setPalette(colors, firstcolor, ncolors);
 	}
 }
@@ -1088,11 +1089,11 @@ void ResourcePack::loadGeoscapeResources(const std::string &gameFolder, const st
 				_sets["TFTD_" + sets[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_0"]->getColors());
 			}
 		}
-		_sets["TFTD_SCANG.DAT"] = new SurfaceSet(4, 4);
+		_sets["TFTD_BATTLE_SCANG.DAT"] = new SurfaceSet(4, 4);
 		std::stringstream scang;
 		scang << gameFolder << "GEODATA/" << "SCANG.DAT";
-		_sets["TFTD_SCANG.DAT"]->loadDat (CrossPlatform::getDataFile(scang.str()));
-		_sets["TFTD_SCANG.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_SCANG.DAT"]->loadDat (CrossPlatform::getDataFile(scang.str()));
+		_sets["TFTD_BATTLE_SCANG.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		// Load extra polygons
 		if ((_palettes["PALETTES.DAT_0"] != 0) && (_palettes["TFTD_PALETTES.DAT_0"] != 0))
@@ -1210,11 +1211,11 @@ void ResourcePack::loadGeoscapeResources(const std::string &gameFolder, const st
 		loadBattlescapeResources(gameFolder, game);
 
 		// tftd_handob2 is used for all the left handed terror item sprites.
-		_sets["TFTD_HANDOB2.PCK"] = new SurfaceSet(_sets["TFTD_HANDOB.PCK"]->getWidth(), _sets["TFTD_HANDOB.PCK"]->getHeight());
-		std::map<int, Surface*> *handob = _sets["TFTD_HANDOB.PCK"]->getFrames();
+		_sets["TFTD_BATTLE_HANDOB2.PCK"] = new SurfaceSet(_sets["TFTD_BATTLE_HANDOB.PCK"]->getWidth(), _sets["TFTD_BATTLE_HANDOB.PCK"]->getHeight());
+		std::map<int, Surface*> *handob = _sets["TFTD_BATTLE_HANDOB.PCK"]->getFrames();
 		for (std::map<int, Surface*>::const_iterator i = handob->begin(); i != handob->end(); ++i)
 		{
-			(i->second)->blit(_sets["TFTD_HANDOB2.PCK"]->addFrame(i->first));
+			(i->second)->blit(_sets["TFTD_BATTLE_HANDOB2.PCK"]->addFrame(i->first));
 		}
 	}
 }
@@ -1414,53 +1415,53 @@ void ResourcePack::loadBattlescapeResources(const std::string &gameFolder, const
 		// Load Battlescape ICONS
 		std::stringstream s;
 		s << gameFolder << "UFOGRAPH/" << "SPICONS.DAT";
-		_sets["TFTD_SPICONS.DAT"] = new SurfaceSet(32, 24);
-		_sets["TFTD_SPICONS.DAT"]->loadDat(CrossPlatform::getDataFile(s.str()));
-		_sets["TFTD_SPICONS.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_SPICONS.DAT"] = new SurfaceSet(32, 24);
+		_sets["TFTD_BATTLE_SPICONS.DAT"]->loadDat(CrossPlatform::getDataFile(s.str()));
+		_sets["TFTD_BATTLE_SPICONS.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
 		std::stringstream s2;
 		s << gameFolder << "UFOGRAPH/" << "CURSOR.PCK";
 		s2 << gameFolder << "UFOGRAPH/" << "CURSOR.TAB";
-		_sets["TFTD_CURSOR.PCK"] = new SurfaceSet(32, 40);
-		_sets["TFTD_CURSOR.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
-		_sets["TFTD_CURSOR.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_CURSOR.PCK"] = new SurfaceSet(32, 40);
+		_sets["TFTD_BATTLE_CURSOR.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
+		_sets["TFTD_BATTLE_CURSOR.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
 		s2.str("");
 		s << gameFolder << "UFOGRAPH/" << "SMOKE.PCK";
 		s2 << gameFolder << "UFOGRAPH/" << "SMOKE.TAB";
-		_sets["TFTD_SMOKE.PCK"] = new SurfaceSet(32, 40);
-		_sets["TFTD_SMOKE.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
-		_sets["TFTD_SMOKE.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_SMOKE.PCK"] = new SurfaceSet(32, 40);
+		_sets["TFTD_BATTLE_SMOKE.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
+		_sets["TFTD_BATTLE_SMOKE.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 	
 		s.str("");
 		s2.str("");
 		s << gameFolder << "UFOGRAPH/" << "HIT.PCK";
 		s2 << gameFolder << "UFOGRAPH/" << "HIT.TAB";
-		_sets["TFTD_HIT.PCK"] = new SurfaceSet(32, 40);
-		_sets["TFTD_HIT.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
-		_sets["TFTD_HIT.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_HIT.PCK"] = new SurfaceSet(32, 40);
+		_sets["TFTD_BATTLE_HIT.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
+		_sets["TFTD_BATTLE_HIT.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
 		s2.str("");
 		s << gameFolder << "UFOGRAPH/" << "X1.PCK";
 		s2 << gameFolder << "UFOGRAPH/" << "X1.TAB";
-		_sets["TFTD_X1.PCK"] = new SurfaceSet(128, 64);
-		_sets["TFTD_X1.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
-		_sets["TFTD_X1.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_X1.PCK"] = new SurfaceSet(128, 64);
+		_sets["TFTD_BATTLE_X1.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
+		_sets["TFTD_BATTLE_X1.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
-		_sets["TFTD_MEDIBITS.DAT"] = new SurfaceSet(52, 58);
+		_sets["TFTD_BATTLE_MEDIBITS.DAT"] = new SurfaceSet(52, 58);
 		s << gameFolder << "UFOGRAPH/" << "MEDIBITS.DAT";
-		_sets["TFTD_MEDIBITS.DAT"]->loadDat (CrossPlatform::getDataFile(s.str()));
-		_sets["TFTD_MEDIBITS.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_MEDIBITS.DAT"]->loadDat (CrossPlatform::getDataFile(s.str()));
+		_sets["TFTD_BATTLE_MEDIBITS.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
-		_sets["TFTD_DETBLOB.DAT"] = new SurfaceSet(16, 16);
+		_sets["TFTD_BATTLE_DETBLOB.DAT"] = new SurfaceSet(16, 16);
 		s << gameFolder << "UFOGRAPH/" << "DETBLOB.DAT";
-		_sets["TFTD_DETBLOB.DAT"]->loadDat (CrossPlatform::getDataFile(s.str()));
-		_sets["TFTD_DETBLOB.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_DETBLOB.DAT"]->loadDat (CrossPlatform::getDataFile(s.str()));
+		_sets["TFTD_BATTLE_DETBLOB.DAT"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		// Load Battlescape Terrain (only blacks are loaded, others are loaded just in time)
 		std::string bsets[] = {"BLANKS.PCK"};
@@ -1511,18 +1512,18 @@ void ResourcePack::loadBattlescapeResources(const std::string &gameFolder, const
 			std::string tab = usets[i].substr(0, usets[i].length()-4) + ".TAB";
 			s2.str("");
 			s2 << gameFolder + "UNITS/" << tab;
-			_sets["TFTD_" + usets[i]] = new SurfaceSet(32, 40);
-			_sets["TFTD_" + usets[i]]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
-			_sets["TFTD_" + usets[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+			_sets["TFTD_BATTLE_" + usets[i]] = new SurfaceSet(32, 40);
+			_sets["TFTD_BATTLE_" + usets[i]]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()), 4);
+			_sets["TFTD_BATTLE_" + usets[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 		}
 
 		s.str("");
 		s << gameFolder << "UNITS/" << "BIGOBS.PCK";
 		s2.str("");
 		s2 << gameFolder << "UNITS/" << "BIGOBS.TAB";
-		_sets["TFTD_BIGOBS.PCK"] = new SurfaceSet(32, 48);
-		_sets["TFTD_BIGOBS.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
-		_sets["TFTD_BIGOBS.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_sets["TFTD_BATTLE_BIGOBS.PCK"] = new SurfaceSet(32, 48);
+		_sets["TFTD_BATTLE_BIGOBS.PCK"]->loadPck(CrossPlatform::getDataFile(s.str()), CrossPlatform::getDataFile(s2.str()));
+		_sets["TFTD_BATTLE_BIGOBS.PCK"]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		s.str("");
 		s << gameFolder << "GEODATA/" << "LOFTEMPS.DAT";
@@ -1538,9 +1539,9 @@ void ResourcePack::loadBattlescapeResources(const std::string &gameFolder, const
 		{
 			s.str("");
 			s << gameFolder << "UFOGRAPH/" << scrs[i];
-			_surfaces["TFTD_" + scrs[i]] = new Surface(320, 200);
-			_surfaces["TFTD_" + scrs[i]]->loadScr(CrossPlatform::getDataFile(s.str()));
-			_surfaces["TFTD_" + scrs[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+			_surfaces["TFTD_BATTLE_" + scrs[i]] = new Surface(320, 200);
+			_surfaces["TFTD_BATTLE_" + scrs[i]]->loadScr(CrossPlatform::getDataFile(s.str()));
+			_surfaces["TFTD_BATTLE_" + scrs[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 		}
 
 		std::string spks[] = {"TAC01.BDY",
@@ -1555,15 +1556,15 @@ void ResourcePack::loadBattlescapeResources(const std::string &gameFolder, const
 		{
 			s.str("");
 			s << gameFolder << "UFOGRAPH/" << spks[i];
-			_surfaces["TFTD_" + spks[i]] = new Surface(320, 200);
-			_surfaces["TFTD_" + spks[i]]->loadBdy(CrossPlatform::getDataFile(s.str()));
-			_surfaces["TFTD_" + spks[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+			_surfaces["TFTD_BATTLE_" + spks[i]] = new Surface(320, 200);
+			_surfaces["TFTD_BATTLE_" + spks[i]]->loadBdy(CrossPlatform::getDataFile(s.str()));
+			_surfaces["TFTD_BATTLE_" + spks[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 		}
 		s.str("");
 		s << gameFolder << "UFOGRAPH/" << spks[6];
-		_surfaces["TFTD_" + spks[6]] = new Surface(320, 200);
-		_surfaces["TFTD_" + spks[6]]->loadSpk(CrossPlatform::getDataFile(s.str()));
-		_surfaces["TFTD_" + spks[6]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+		_surfaces["TFTD_BATTLE_" + spks[6]] = new Surface(320, 200);
+		_surfaces["TFTD_BATTLE_" + spks[6]]->loadSpk(CrossPlatform::getDataFile(s.str()));
+		_surfaces["TFTD_BATTLE_" + spks[6]]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 
 		std::string invs[] = {"MAN_0",
 							  "MAN_1",
@@ -1586,9 +1587,9 @@ void ResourcePack::loadBattlescapeResources(const std::string &gameFolder, const
 				std::stringstream s3, s3full;
 				s3 << invs[i] << sets[j] << ".BDY";
 				s3full << gameFolder << "UFOGRAPH/" << s3.str();
-				_surfaces["TFTD_" + s3.str()] = new Surface(320, 200);
-				_surfaces["TFTD_" + s3.str()]->loadBdy(CrossPlatform::getDataFile(s3full.str()));
-				_surfaces["TFTD_" + s3.str()]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
+				_surfaces["TFTD_BATTLE_" + s3.str()] = new Surface(320, 200);
+				_surfaces["TFTD_BATTLE_" + s3.str()]->loadBdy(CrossPlatform::getDataFile(s3full.str()));
+				_surfaces["TFTD_BATTLE_" + s3.str()]->setPalette(_palettes["TFTD_PALETTES.DAT_3"]->getColors());
 			}
 		}
 	}

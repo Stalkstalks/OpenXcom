@@ -212,7 +212,7 @@ void Map::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
 	std::string background;
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
-		background = "TFTD_TAC00.SCR";
+		background = "TFTD_BATTLE_TAC00.SCR";
 	}
 	else
 	{
@@ -357,8 +357,13 @@ void Map::drawTerrain()
 
 	if (!_waypoints.empty() || (pathfinderTurnedOn && _previewSetting >= 2))
 	{
+		std::string palette;
+		if (Options::getString("GUIstyle") == "xcom2")
+			palette = _terrorPalette;
+		else
+			palette = "PALETTES.DAT_4";
 		_numWaypid = new NumberText(15, 15, 20, 30);
-		_numWaypid->setPalette(getPalette());
+		_numWaypid->setPalette(_res->getPalette(palette)->getColors());
 		_numWaypid->setColor(Palette::blockOffset(pathfinderTurnedOn ? 0 : 1));
 	}
 

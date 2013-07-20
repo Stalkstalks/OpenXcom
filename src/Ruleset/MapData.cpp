@@ -28,7 +28,7 @@ namespace OpenXcom
 MapData::MapData(MapDataSet *dataset, const std::string &game) : _dataset(dataset), _terrorPrefix("")
 {
 	if (game == "xcom2")
-		_terrorPrefix = "TFTD_";
+		_terrorPrefix = "TFTD_BATTLE_";
 }
 
 /**

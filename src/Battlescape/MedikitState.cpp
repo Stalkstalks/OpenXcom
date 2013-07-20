@@ -145,7 +145,7 @@ MedikitState::MedikitState (Game * game, BattleUnit * targetUnit, BattleAction *
 	if (action->weapon->getRules()->getTerrorPrefix() != "")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_MEDIBORD.BDY";
+		background = "TFTD_BATTLE_MEDIBORD.BDY";
 
 		color = Palette::blockOffset(5);
 
