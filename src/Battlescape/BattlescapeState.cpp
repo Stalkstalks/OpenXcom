@@ -68,7 +68,6 @@
 #include "../Ruleset/AlienDeployment.h"
 #include "../Ruleset/Armor.h"
 #include "../Engine/Timer.h"
-#include "../Engine/Options.h"
 #include "WarningMessage.h"
 #include "BattlescapeOptionsState.h"
 #include "DebriefingState.h"
@@ -178,8 +177,8 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		_btnReserveSnap = new ImageButton(20, 12, _icons->getX() + 75, _icons->getY() + 33);
 		_btnReserveAimed = new ImageButton(20, 11, _icons->getX() + 54, _icons->getY() + 45);
 		_btnReserveAuto = new ImageButton(20, 12, _icons->getX() + 75, _icons->getY() + 45);
-		_btnReserveKneel = new ImageButton(11, 28, _icons->getX() + 43, _icons->getY() + 47);
-		_btnReserve0TU = new ImageButton(11, 28, _icons->getX() + 99, _icons->getY() + 47);
+		_btnReserveKneel = new ImageButton(10, 21, _icons->getX() + 97, _icons->getY() + 34);
+		_btnZeroTUs = new ImageButton(10, 21, _icons->getX() + 43, _icons->getY() + 34);
 		_warning = new WarningMessage(232, 24, _icons->getX() + 44, _icons->getY() + 32);
 
 		// Set palette
@@ -202,7 +201,7 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		add(_btnEndTurnTFTD);
 		add(_btnAbortTFTD);
 		add(_btnReserveKneel);
-		add(_btnReserve0TU);
+		add(_btnZeroTUs);
 
 		// Set up objects
 
@@ -248,10 +247,11 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		_btnAbortTFTD->onMouseClick((ActionHandler)&BattlescapeState::btnAbortClick);
 		_btnAbortTFTD->onKeyboardPress((ActionHandler)&BattlescapeState::btnAbortClick, (SDLKey)Options::getInt("keyBattleAbort"));
 
-		_btnReserveKneel->onMouseClick((ActionHandler)&BattlescapeState::btnReserveClick);
-		_btnReserveKneel->onKeyboardPress((ActionHandler)&BattlescapeState::btnReserveClick, (SDLKey)Options::getInt("keyBattleReserveNone"));
-		_btnReserve0TU->onMouseClick((ActionHandler)&BattlescapeState::btnReserveClick);
-		_btnReserve0TU->onKeyboardPress((ActionHandler)&BattlescapeState::btnReserveClick, (SDLKey)Options::getInt("keyBattleReserveSnap"));
+		_btnReserveKneel->onMouseClick((ActionHandler)&BattlescapeState::btnReserveKneelClick);
+		_btnZeroTUs->onMouseClick((ActionHandler)&BattlescapeState::btnZeroTUsClick);
+		// todo: make these visible based on ruleset and assign them to their own button
+		_btnReserveKneel->onKeyboardPress((ActionHandler)&BattlescapeState::btnReserveKneelClick, (SDLKey)Options::getInt("keyBattleReserveKneel"));
+		_btnZeroTUs->onKeyboardPress((ActionHandler)&BattlescapeState::btnZeroTUsClick, (SDLKey)Options::getInt("keyBattleZeroTUs"));
 
 		_btnUnitUpTFTD->copy(_icons);
 		_btnUnitUpTFTD->setColor(Palette::blockOffset(0)+13);
@@ -296,11 +296,11 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		_btnAbortTFTD->setColor(Palette::blockOffset(0)+13);
 
 		_btnReserveKneel->copy(_icons);
-		_btnReserveKneel->setColor(Palette::blockOffset(15)+14);
-		_btnReserveNone->setGroup(&_reserveNone);
+		_btnReserveKneel->setColor(Palette::blockOffset(2)+14);
+//		_btnReserveKneel->setGroup(&_reserveKneel);
 
-		_btnReserve0TU->copy(_icons);
-		_btnReserve0TU->setColor(Palette::blockOffset(2)+15);
+		_btnZeroTUs->copy(_icons);
+		_btnZeroTUs->setColor(Palette::blockOffset(2)+15);
 
 		colors[0] = colors[1] = colors[2] = colors[3] = colors[4] = Palette::blockOffset(3);
 		colors[5] = Palette::blockOffset(5) + 3;
@@ -312,8 +312,6 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 	else
 	{
 		// Basic properties for display in UFO style
-		_btnReserveKneel = 0;
-		_btnReserve0TU = 0;
 		palette << "PALETTES.DAT_4";
 		spicons = "SPICONS.DAT";
 		icons = "ICONS.PCK";
@@ -340,6 +338,8 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		_btnReserveSnap = new ImageButton(28, 11, _icons->getX() + 78, _icons->getY() + 33);
 		_btnReserveAimed = new ImageButton(28, 11, _icons->getX() + 49, _icons->getY() + 45);
 		_btnReserveAuto = new ImageButton(28, 11, _icons->getX() + 78, _icons->getY() + 45);
+		_btnReserveKneel = new ImageButton(10, 21, _icons->getX() + 97, _icons->getY() + 34);
+		_btnZeroTUs = new ImageButton(10, 21, _icons->getX() + 43, _icons->getY() + 34);
 		_warning = new WarningMessage(224, 24, _icons->getX() + 48, _icons->getY() + 32);
 
 		// Set palette
@@ -361,6 +361,8 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		add(_btnHelp);
 		add(_btnEndTurn);
 		add(_btnAbort);
+		add(_btnReserveKneel);
+		add(_btnZeroTUs);
 
 		// Set up objects
 
@@ -405,6 +407,13 @@ BattlescapeState::BattlescapeState(Game *game) : State(game), _popups()
 		_btnEndTurn->onKeyboardPress((ActionHandler)&BattlescapeState::btnEndTurnClick, (SDLKey)Options::getInt("keyBattleEndTurn"));
 		_btnAbort->onMouseClick((ActionHandler)&BattlescapeState::btnAbortClick);
 		_btnAbort->onKeyboardPress((ActionHandler)&BattlescapeState::btnAbortClick, (SDLKey)Options::getInt("keyBattleAbort"));
+		_btnReserveKneel->onMouseClick((ActionHandler)&BattlescapeState::btnReserveKneelClick);
+		_btnZeroTUs->onMouseClick((ActionHandler)&BattlescapeState::btnZeroTUsClick);
+		// todo: make these visible based on ruleset and assign them to their own button
+		_btnReserveKneel->setVisible(false);
+		_btnZeroTUs->setVisible(false);
+		_btnStats->onKeyboardPress((ActionHandler)&BattlescapeState::btnReserveKneelClick, (SDLKey)Options::getInt("keyBattleReserveKneel"));
+		_btnStats->onKeyboardPress((ActionHandler)&BattlescapeState::btnZeroTUsClick, (SDLKey)Options::getInt("keyBattleZeroTUs"));
 
 		colors[0] = Palette::blockOffset(8);
 		colors[1] = colors[7] = Palette::blockOffset(2);
@@ -1883,5 +1892,43 @@ bool BattlescapeState::getMouseOverIcons() const
 bool BattlescapeState::allowButtons() const
 {
 	return (_save->getSide() == FACTION_PLAYER || _save->getDebugMode()) && _map->getProjectile() == 0;
+}
+
+/**
+ * Reserve time units for kneeling.
+ * @param action Pointer to an action.
+ */
+void BattlescapeState::btnReserveKneelClick(Action *action)
+{
+	if (allowButtons())
+	{
+		SDL_Event ev;
+		ev.type = SDL_MOUSEBUTTONDOWN;
+		ev.button.button = SDL_BUTTON_LEFT;
+		Action a = Action(&ev, 0.0, 0.0);
+		action->getSender()->mousePress(&a, this);
+		_battleGame->setKneelReserved(!_battleGame->getKneelReserved());
+	}
+}
+
+/**
+ * Remove all time units.
+ * @param action Pointer to an action.
+ */
+void BattlescapeState::btnZeroTUsClick(Action *action)
+{
+	if (allowButtons())
+	{
+		SDL_Event ev;
+		ev.type = SDL_MOUSEBUTTONDOWN;
+		ev.button.button = SDL_BUTTON_LEFT;
+		Action a = Action(&ev, 0.0, 0.0);
+		action->getSender()->mousePress(&a, this);
+		if (_battleGame->getSave()->getSelectedUnit())
+		{
+			_battleGame->getSave()->getSelectedUnit()->setTimeUnits(0);
+			updateSoldierInfo();
+		}
+	}
 }
 }

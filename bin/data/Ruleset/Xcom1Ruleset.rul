@@ -1062,6 +1062,7 @@ crafts:
     soldiers: 14
     vehicles: 3
     costBuy: 500000
+    costRent: 500000
     refuelRate: 50
     transferTime: 72
     score: 200
@@ -1082,10 +1083,13 @@ crafts:
     accel: 3
     weapons: 2
     costBuy: 600000
+    costRent: 600000
     refuelRate: 50
     transferTime: 96
     score: 250
   - type: STR_FIRESTORM
+    requires:
+      - STR_NEW_FIGHTER_CRAFT
     sprite: 4
     fuelMax: 20
     damageMax: 500
@@ -1096,6 +1100,8 @@ crafts:
     refuelRate: 5
     score: 250
   - type: STR_LIGHTNING
+    requires:
+      - STR_NEW_FIGHTER_TRANSPORTER
     sprite: 1
     fuelMax: 30
     damageMax: 800
@@ -1116,6 +1122,8 @@ crafts:
           width: 20
           length: 10
   - type: STR_AVENGER
+    requires:
+      - STR_ULTIMATE_CRAFT
     sprite: 2
     fuelMax: 60
     damageMax: 1200
@@ -3971,7 +3979,6 @@ armors:
     underArmor: 90
     drawingRoutine: 5
     size: 2
-    modifiedWalk: 23
     damageModifier:
       - 1.0
       - 1.0
@@ -4062,6 +4069,10 @@ armors:
       - 1.0
       - 1.0
       - 1.0
+      - 1.0
+      - 1.2
+      - 1.6
+      - 1.0
     loftemps: 3
   - type: SNAKEMAN_ARMOR0
     spriteSheet: SNAKEMAN.PCK
@@ -4073,15 +4084,15 @@ armors:
     drawingRoutine: 6
     damageModifier:
       - 1.0
-      - 1.2
+      - 1.0
       - 0.7
-      - 1.1
-      - 0.8
-      - 0.8
       - 1.0
-      - 1.2
-      - 1.6
       - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: SNAKEMAN_ARMOR1
     spriteSheet: SNAKEMAN.PCK
@@ -4092,16 +4103,16 @@ armors:
     underArmor: 20
     drawingRoutine: 6
     damageModifier:
-      - 0.9
-      - 1.1
-      - 0.6
+      - 1.0
       - 1.0
       - 0.7
-      - 0.7
-      - 0.9
-      - 1.1
-      - 1.5
-      - 0.9
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: SNAKEMAN_ARMOR2
     spriteSheet: SNAKEMAN.PCK
@@ -4114,14 +4125,14 @@ armors:
     damageModifier:
       - 1.0
       - 1.0
-      - 0.5
-      - 0.9
-      - 0.6
-      - 0.6
-      - 0.8
+      - 0.7
       - 1.0
-      - 1.4
-      - 0.8
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: MUTON_ARMOR0
     spriteSheet: MUTON.PCK
@@ -4132,16 +4143,16 @@ armors:
     underArmor: 10
     drawingRoutine: 10
     damageModifier:
-      - 0.9
-      - 0.7
-      - 0.9
-      - 0.7
-      - 0.8
       - 1.0
-      - 0.9
-      - 0.8
-      - 0.9
-      - 0.9
+      - 0.6
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: MUTON_ARMOR1
     spriteSheet: MUTON.PCK
@@ -4152,16 +4163,16 @@ armors:
     underArmor: 15
     drawingRoutine: 10
     damageModifier:
-      - 0.8
+      - 1.0
       - 0.6
-      - 0.8
-      - 0.6
-      - 0.7
-      - 0.9
-      - 0.8
-      - 0.7
-      - 0.8
-      - 0.8
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: MUTON_ARMOR2
     spriteSheet: MUTON.PCK
@@ -4172,16 +4183,16 @@ armors:
     underArmor: 20
     drawingRoutine: 10
     damageModifier:
-      - 0.7
-      - 0.5
-      - 0.7
-      - 0.5
+      - 1.0
       - 0.6
-      - 0.8
-      - 0.7
-      - 0.6
-      - 0.7
-      - 0.7  
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: ETHEREAL_ARMOR0
     spriteSheet: ETHEREAL.PCK
@@ -4193,16 +4204,16 @@ armors:
     movementType: 1
     drawingRoutine: 4
     damageModifier:
-      - 0.9
-      - 0.9
-      - 1.1
-      - 0.9
+      - 1.0
+      - 1.0
+      - 0.7
+      - 1.0
+      - 1.0
       - 1.0
       - 0.8
-      - 0.9
-      - 0.9
       - 1.0
-      - 0.9
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: ETHEREAL_ARMOR1
     spriteSheet: ETHEREAL.PCK
@@ -4214,37 +4225,37 @@ armors:
     movementType: 1
     drawingRoutine: 4
     damageModifier:
-      - 0.8
-      - 0.8
+      - 1.0
+      - 1.0
+      - 0.7
+      - 1.0
+      - 1.0
       - 1.0
       - 0.8
-      - 0.9
-      - 0.7
-      - 0.8
-      - 0.8
-      - 0.9
-      - 0.8
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: ETHEREAL_ARMOR2
     spriteSheet: ETHEREAL.PCK
     corpseItem: STR_ETHEREAL_CORPSE
-    frontArmor: 40
-    sideArmor: 40
-    rearArmor: 40
-    underArmor: 40
+    frontArmor: 45
+    sideArmor: 45
+    rearArmor: 45
+    underArmor: 45
     movementType: 1
     drawingRoutine: 4
     damageModifier:
+      - 1.0
+      - 1.0
       - 0.7
-      - 0.7
-      - 0.9
-      - 0.7
+      - 1.0
+      - 1.0
+      - 1.0
       - 0.8
-      - 0.6
-      - 0.7
-      - 0.7
-      - 0.8
-      - 0.7
+      - 1.0
+      - 1.0
+      - 0.0
     loftemps: 3
   - type: CHRYSSALID_ARMOR
     spriteSheet: CHRYS.PCK
@@ -4256,15 +4267,15 @@ armors:
     drawingRoutine: 7
     damageModifier:
       - 1.0
+      - 1.0
+      - 0.8
+      - 1.0
+      - 1.0
+      - 1.0
       - 0.9
       - 1.0
-      - 0.9
-      - 0.7
       - 1.0
-      - 1.0
-      - 1.0
-      - 1.0
-      - 1.0
+      - 0.0
     loftemps: 3
   - type: ZOMBIE_ARMOR
     spriteSheet: ZOMBIE.PCK
@@ -4284,8 +4295,8 @@ armors:
       - 0.0
       - 1.0
       - 1.0
-      - 1.0
-    loftemps: 2
+      - 0.0
+    loftemps: 3
   - type: SILACOID_ARMOR
     spriteSheet: SILACOID.PCK
     corpseItem: STR_SILACOID_CORPSE
@@ -4294,7 +4305,6 @@ armors:
     rearArmor: 50
     underArmor: 10
     drawingRoutine: 8
-    modifiedWalk: 47
     damageModifier:
       - 1.0
       - 1.0
@@ -4305,17 +4315,16 @@ armors:
       - 1.0
       - 1.0
       - 1.0
-      - 1.0
+      - 0.0
     loftemps: 5
   - type: CELATID_ARMOR
     spriteSheet: CELATID.PCK
     corpseItem: STR_CELATID_CORPSE
-    frontArmor: 50
-    sideArmor: 50
-    rearArmor: 50
-    underArmor: 10
+    frontArmor: 20
+    sideArmor: 20
+    rearArmor: 20
+    underArmor: 20
     drawingRoutine: 9
-    modifiedWalk: 16
     damageModifier:
       - 1.0
       - 1.0
@@ -4324,10 +4333,10 @@ armors:
       - 1.0
       - 1.0
       - 1.0
+      - 1.2
+      - 1.6
       - 1.0
-      - 1.0
-      - 1.0
-    loftemps: 2
+    loftemps: 3
 soldiers:
   - type: XCOM
     minStats:
@@ -4817,7 +4826,7 @@ units:
       psiSkill: 0
       melee: 50
     armor: CIVM_ARMOR
-    standHeight: 22
+    standHeight: 21
     kneelHeight: 14
     value: 30
     intelligence: 4
@@ -4836,7 +4845,7 @@ units:
       psiSkill: 0
       melee: 50
     armor: CIVF_ARMOR
-    standHeight: 22
+    standHeight: 21
     kneelHeight: 14
     value: 30
     intelligence: 4

@@ -149,6 +149,8 @@ STR_TRANSFER_UC
 ПЕРЕДАЧА
 STR_PURCHASE_RECRUIT
 ЗАКУПІВЛЯ/НАЙМ
+STR_SACK
+SACK
 STR_SELL_SACK_UC
 ПРОДАЖ/ЗВІЛЬНЕННЯ
 STR_GEOSCAPE_UC
@@ -189,6 +191,8 @@ STR_PROGRESS
 ПРОГРЕС
 STR_NEW_PROJECT
 Новий Проект
+STR_CANCEL_PROJECT
+Cancel Project
 STR_NEW_RESEARCH_PROJECTS
 НОВІ ПРОЕКТИ ДОСЛІДЖЕНЬ
 STR_SCIENTISTS_AVAILABLE_UC
@@ -2293,9 +2297,9 @@ STR_AGGRESSIVERETALIATION
 Агресивна відплата
 STR_AGGRESSIVERETALIATION_DESC
 НЛО завжди будуть намагатись знайти Вашу базу, незалежно від виконуваного завдання.
-STR_ALIENCONTAINMENTHASUPPERLIMIT
+STR_ALIENCONTAINMENTLIMITENFORCED
 Ліміт тюрми для прибульців
-STR_ALIENCONTAINMENTHASUPPERLIMIT_DESC
+STR_ALIENCONTAINMENTLIMITENFORCED_DESC
 Буде введено ліміт на кількість живих прибульців в тюрмах.
 STR_CANSELLLIVEALIENS
 Продаж живих прибульців
@@ -2395,9 +2399,21 @@ STR_WEAPONSELFDESTRUCTION
 Захоплення зброї як в XCOM 2012
 STR_WEAPONSELFDESTRUCTION_DESC
 Зброя прибульців буде самознищуватись, якщо її власник буде вбитий.
+STR_RESEARCHEDITEMSWILLSPENT
+Researched items will be spent
+STR_RESEARCHEDITEMSWILLSPENT_DESC
+Researched items are removed from your stores and will be disassembled. After "researching" living aliens, the body will be returned to the based stores.
 STR_ARROWS
 СТРІЛКИ
 STR_FULL
 ПОВНИЙ
 STR_SAVE_VOXEL_VIEW
 Save First-Person Screenshot
+STR_TIME_UNITS_RESERVED_FOR_KNEELING
+Time Units reserved for Kneeling
+STR_TUS_RESERVED_FOR_KNEELING_AND_FIRING
+TU's reserved for Kneeling and Firing
+STR_RESERVE_TUS_FOR_KNEEL
+Reserve Time Units for kneeling
+STR_EXPEND_ALL_TIME_UNITS
+Expend all remaining Time Units

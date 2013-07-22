@@ -916,7 +916,7 @@ void TileEngine::calculateFOV(const Position &position)
 {
 	for (std::vector<BattleUnit*>::iterator i = _save->getUnits()->begin(); i != _save->getUnits()->end(); ++i)
 	{
-		if (distance(position, (*i)->getPosition()) < MAX_VIEW_DISTANCE && (*i)->getFaction() == _save->getSide())
+		if (distance(position, (*i)->getPosition()) < MAX_VIEW_DISTANCE)
 		{
 			calculateFOV(*i);
 		}
@@ -2408,10 +2408,10 @@ int TileEngine::distanceSq(const Position &pos1, const Position &pos2, bool cons
 bool TileEngine::psiAttack(BattleAction *action)
 {
 	BattleUnit *victim = _save->getTile(action->target)->getUnit();
-	double attackStrength = static_cast<double>(action->actor->getStats()->psiStrength) * action->actor->getStats()->psiSkill / 50;
-	double defenseStrength = static_cast<double>(victim->getStats()->psiStrength)
-		+ (victim->getStats()->psiSkill > 0) ? 10.0 + static_cast<double>(victim->getStats()->psiSkill) / 5 : 10.0;
-	double d = static_cast<double>(distance(action->actor->getPosition(), action->target));
+	double attackStrength = action->actor->getStats()->psiStrength * action->actor->getStats()->psiSkill / 50.0;
+	double defenseStrength = victim->getStats()->psiStrength
+		+ ((victim->getStats()->psiSkill > 0) ? 10.0 + victim->getStats()->psiSkill / 5.0 : 10.0);
+	double d = distance(action->actor->getPosition(), action->target);
 	attackStrength -= d;
 	attackStrength += RNG::generate(0,55);
 
@@ -2566,6 +2566,10 @@ bool TileEngine::validMeleeRange(BattleUnit *attacker, BattleUnit *target, int d
  */
 bool TileEngine::validMeleeRange(Position pos, int direction, BattleUnit *attacker, BattleUnit *target)
 {
+	if (direction < 0 || direction > 7)
+	{
+		return false;
+	}
 	Position p;
 	int size = attacker->getArmor()->getSize() - 1;
 	Pathfinding::directionToVector(direction, &p);
