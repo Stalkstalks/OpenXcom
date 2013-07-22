@@ -40,6 +40,9 @@ namespace OpenXcom
  */
 FundingState::FundingState(Game *game) : State(game)
 {
+	std::string background, backpalette;
+	Uint8 colors[4];
+
 	_screen = false;
 
 	// Create objects
@@ -50,6 +53,27 @@ FundingState::FundingState(Game *game) : State(game)
 	_txtFunding = new Text(100, 9, 140, 30);
 	_txtChange = new Text(72, 9, 240, 30);
 	_lstCountries = new TextList(280, 136, 32, 40);
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK13.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(6);
+		colors[1] = colors[2] = colors[3] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK13.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(0);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+5;
+		colors[3] = Palette::blockOffset(8)+10;
+	}
 
 	// Set palette
 	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(0)), Palette::backPos, 16);
@@ -65,31 +89,31 @@ FundingState::FundingState(Game *game) : State(game)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
+	_window->setColor(colors[1]);
 	_window->setBackground(_game->getResourcePack()->getSurface("BACK13.SCR"));
 
-	_btnOk->setColor(Palette::blockOffset(15)-1);
+	_btnOk->setColor(colors[1]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&FundingState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&FundingState::btnOkClick, (SDLKey)Options::getInt("keyOk"));
 	_btnOk->onKeyboardPress((ActionHandler)&FundingState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtTitle->setColor(Palette::blockOffset(15)-1);
+	_txtTitle->setColor(colors[1]);
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setBig();
 	_txtTitle->setText(_game->getLanguage()->getString("STR_INTERNATIONAL_RELATIONS"));
 
-	_txtCountry->setColor(Palette::blockOffset(8)+5);
+	_txtCountry->setColor(colors[2]);
 	_txtCountry->setText(_game->getLanguage()->getString("STR_COUNTRY"));
 
-	_txtFunding->setColor(Palette::blockOffset(8)+5);
+	_txtFunding->setColor(colors[2]);
 	_txtFunding->setText(_game->getLanguage()->getString("STR_FUNDING"));
 
-	_txtChange->setColor(Palette::blockOffset(8)+5);
+	_txtChange->setColor(colors[2]);
 	_txtChange->setText(_game->getLanguage()->getString("STR_CHANGE"));
 
-	_lstCountries->setColor(Palette::blockOffset(15)-1);
-	_lstCountries->setSecondaryColor(Palette::blockOffset(8)+10);
+	_lstCountries->setColor(colors[1]);
+	_lstCountries->setSecondaryColor(colors[3]);
 	_lstCountries->setColumns(3, 108, 100, 72);
 	_lstCountries->setDot(true);
 	for (std::vector<Country*>::iterator i = _game->getSavedGame()->getCountries()->begin(); i != _game->getSavedGame()->getCountries()->end(); ++i)
@@ -112,7 +136,7 @@ FundingState::FundingState(Game *game) : State(game)
 		_lstCountries->addRow(3, _game->getLanguage()->getString((*i)->getRules()->getType()).c_str(), ss.str().c_str(), ss2.str().c_str());
 	}
 	_lstCountries->addRow(2, _game->getLanguage()->getString("STR_TOTAL_UC").c_str(), Text::formatFunding(_game->getSavedGame()->getCountryFunding()).c_str());
-	_lstCountries->setRowColor(_game->getSavedGame()->getCountries()->size(), Palette::blockOffset(8)+5);
+	_lstCountries->setRowColor(_game->getSavedGame()->getCountries()->size(), colors[2]);
 }
 
 /**

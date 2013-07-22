@@ -38,6 +38,9 @@ namespace OpenXcom
  */
 CraftErrorState::CraftErrorState(Game *game, GeoscapeState *state, const std::wstring &msg) : State(game), _state(state)
 {
+	std::string background, backpalette;
+	Uint8 colors[3];
+
 	_screen = false;
 
 	// Create objects
@@ -46,8 +49,28 @@ CraftErrorState::CraftErrorState(Game *game, GeoscapeState *state, const std::ws
 	_btnOk5Secs = new TextButton(100, 18, 172, 150);
 	_txtMessage = new Text(226, 80, 47, 50);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK12.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK12.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+5;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -57,20 +80,20 @@ CraftErrorState::CraftErrorState(Game *game, GeoscapeState *state, const std::ws
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(8)+5);
+	_btnOk->setColor(colors[2]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftErrorState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&CraftErrorState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_btnOk5Secs->setColor(Palette::blockOffset(8)+5);
+	_btnOk5Secs->setColor(colors[2]);
 	_btnOk5Secs->setText(_game->getLanguage()->getString("STR_OK_5_SECS"));
 	_btnOk5Secs->onMouseClick((ActionHandler)&CraftErrorState::btnOk5SecsClick);
 	_btnOk5Secs->onKeyboardPress((ActionHandler)&CraftErrorState::btnOk5SecsClick, (SDLKey)Options::getInt("keyOk"));
 
-	_txtMessage->setColor(Palette::blockOffset(15)-1);
+	_txtMessage->setColor(colors[1]);
 	_txtMessage->setAlign(ALIGN_CENTER);
 	_txtMessage->setVerticalAlign(ALIGN_MIDDLE);
 	_txtMessage->setBig();
@@ -91,7 +114,25 @@ CraftErrorState::~CraftErrorState()
  */
 void CraftErrorState::init()
 {
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	std::string backpalette;
+	Uint8 color;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		backpalette = "BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(color), Palette::backPos, 16);
 }
 
 /**

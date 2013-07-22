@@ -41,6 +41,9 @@ namespace OpenXcom
  */
 CraftPatrolState::CraftPatrolState(Game *game, Craft *craft, Globe *globe) : State(game), _craft(craft), _globe(globe)
 {
+	std::string background, backpalette;
+	Uint8 colors[3];
+
 	_screen = false;
 
 	// Create objects
@@ -50,8 +53,28 @@ CraftPatrolState::CraftPatrolState(Game *game, Craft *craft, Globe *globe) : Sta
 	_txtDestination = new Text(224, 64, 16, 48);
 	_txtPatrolling = new Text(224, 16, 16, 120);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK12.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK12.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+5;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -62,20 +85,20 @@ CraftPatrolState::CraftPatrolState(Game *game, Craft *craft, Globe *globe) : Sta
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(8)+5);
+	_btnOk->setColor(colors[2]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftPatrolState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&CraftPatrolState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_btnRedirect->setColor(Palette::blockOffset(8)+5);
+	_btnRedirect->setColor(colors[2]);
 	_btnRedirect->setText(_game->getLanguage()->getString("STR_REDIRECT_CRAFT"));
 	_btnRedirect->onMouseClick((ActionHandler)&CraftPatrolState::btnRedirectClick);
 	_btnRedirect->onKeyboardPress((ActionHandler)&CraftPatrolState::btnRedirectClick, (SDLKey)Options::getInt("keyOk"));
 
-	_txtDestination->setColor(Palette::blockOffset(15)-1);
+	_txtDestination->setColor(colors[1]);
 	_txtDestination->setBig();
 	_txtDestination->setAlign(ALIGN_CENTER);
 	_txtDestination->setWordWrap(true);
@@ -86,7 +109,7 @@ CraftPatrolState::CraftPatrolState(Game *game, Craft *craft, Globe *globe) : Sta
 	s << _craft->getDestination()->getName(_game->getLanguage());
 	_txtDestination->setText(s.str());
 
-	_txtPatrolling->setColor(Palette::blockOffset(15)-1);
+	_txtPatrolling->setColor(colors[1]);
 	_txtPatrolling->setBig();
 	_txtPatrolling->setAlign(ALIGN_CENTER);
 	_txtPatrolling->setText(_game->getLanguage()->getString("STR_NOW_PATROLLING"));
@@ -105,7 +128,25 @@ CraftPatrolState::~CraftPatrolState()
  */
 void CraftPatrolState::init()
 {
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	std::string backpalette;
+	Uint8 color;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		backpalette = "BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(color), Palette::backPos, 16);
 }
 
 /**

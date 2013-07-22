@@ -49,6 +49,9 @@ namespace OpenXcom
  */
 GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, Waypoint *waypoint) : State(game), _craft(craft), _globe(globe), _waypoint(waypoint)
 {
+	std::string background, backpalette;
+	Uint8 colors[4];
+
 	_screen = false;
 
 	// Create objects
@@ -71,8 +74,29 @@ GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, W
 	_txtW2Ammo = new Text(60, 9, 164, 100);
 	_txtRedirect = new Text(230, 16, 13, 108);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK12.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(5);
+		colors[1] = colors[2] = colors[3] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK12.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+5;
+		colors[3] = Palette::blockOffset(8)+10;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnBase);
@@ -96,32 +120,32 @@ GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, W
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnBase->setColor(Palette::blockOffset(8)+5);
+	_btnBase->setColor(colors[2]);
 	_btnBase->setText(_game->getLanguage()->getString("STR_RETURN_TO_BASE"));
 	_btnBase->onMouseClick((ActionHandler)&GeoscapeCraftState::btnBaseClick);
 
-	_btnTarget->setColor(Palette::blockOffset(8)+5);
+	_btnTarget->setColor(colors[2]);
 	_btnTarget->setText(_game->getLanguage()->getString("STR_SELECT_NEW_TARGET"));
 	_btnTarget->onMouseClick((ActionHandler)&GeoscapeCraftState::btnTargetClick);
 
-	_btnPatrol->setColor(Palette::blockOffset(8)+5);
+	_btnPatrol->setColor(colors[2]);
 	_btnPatrol->setText(_game->getLanguage()->getString("STR_PATROL"));
 	_btnPatrol->onMouseClick((ActionHandler)&GeoscapeCraftState::btnPatrolClick);
 
-	_btnCancel->setColor(Palette::blockOffset(8)+5);
+	_btnCancel->setColor(colors[2]);
 	_btnCancel->setText(_game->getLanguage()->getString("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&GeoscapeCraftState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&GeoscapeCraftState::btnCancelClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtTitle->setColor(Palette::blockOffset(15)-1);
+	_txtTitle->setColor(colors[1]);
 	_txtTitle->setBig();
 	_txtTitle->setText(_craft->getName(_game->getLanguage()));
 
-	_txtStatus->setColor(Palette::blockOffset(15)-1);
-	_txtStatus->setSecondaryColor(Palette::blockOffset(8)+10);
+	_txtStatus->setColor(colors[1]);
+	_txtStatus->setSecondaryColor(colors[3]);
 	_txtStatus->setWordWrap(true);
 	std::wstringstream ss;
 	ss << _game->getLanguage()->getString("STR_STATUS_") << L'\x01';
@@ -162,50 +186,50 @@ GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, W
 	}
 	_txtStatus->setText(ss.str());
 
-	_txtBase->setColor(Palette::blockOffset(15)-1);
-	_txtBase->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtBase->setColor(colors[1]);
+	_txtBase->setSecondaryColor(colors[2]);
 	std::wstringstream ss2;
 	ss2 << _game->getLanguage()->getString("STR_BASE_UC_") << L'\x01' << _craft->getBase()->getName();
 	_txtBase->setText(ss2.str());
 
-	_txtSpeed->setColor(Palette::blockOffset(15)-1);
-	_txtSpeed->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtSpeed->setColor(colors[1]);
+	_txtSpeed->setSecondaryColor(colors[2]);
 	std::wstringstream ss3;
 	ss3 << _game->getLanguage()->getString("STR_SPEED_") << L'\x01' << _craft->getSpeed();
 	_txtSpeed->setText(ss3.str());
 
-	_txtMaxSpeed->setColor(Palette::blockOffset(15)-1);
-	_txtMaxSpeed->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtMaxSpeed->setColor(colors[1]);
+	_txtMaxSpeed->setSecondaryColor(colors[2]);
 	std::wstringstream ss4;
 	ss4 << _game->getLanguage()->getString("STR_MAXIMUM_SPEED_UC") << L'\x01' << _craft->getRules()->getMaxSpeed();
 	_txtMaxSpeed->setText(ss4.str());
 
-	_txtAltitude->setColor(Palette::blockOffset(15)-1);
-	_txtAltitude->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtAltitude->setColor(colors[1]);
+	_txtAltitude->setSecondaryColor(colors[2]);
 	std::wstringstream ss5;
 	std::string altitude = _craft->getAltitude() == "STR_GROUND" ? "STR_GROUNDED" : _craft->getAltitude();
 	ss5 << _game->getLanguage()->getString("STR_ALTITUDE_") << L'\x01' << _game->getLanguage()->getString(altitude);
 	_txtAltitude->setText(ss5.str());
 
-	_txtFuel->setColor(Palette::blockOffset(15)-1);
-	_txtFuel->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtFuel->setColor(colors[1]);
+	_txtFuel->setSecondaryColor(colors[2]);
 	std::wstringstream ss6;
 	ss6 << _game->getLanguage()->getString("STR_FUEL") << L'\x01' << _craft->getFuelPercentage() << "%";
 	_txtFuel->setText(ss6.str());
 
-	_txtDamage->setColor(Palette::blockOffset(15)-1);
-	_txtDamage->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtDamage->setColor(colors[1]);
+	_txtDamage->setSecondaryColor(colors[2]);
 	std::wstringstream ss62;
 	ss62 << _game->getLanguage()->getString("STR_DAMAGE_UC_") << L'\x01' << _craft->getDamagePercentage() << "%";
 	_txtDamage->setText(ss62.str());
 
-	_txtW1Name->setColor(Palette::blockOffset(15)-1);
-	_txtW1Name->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtW1Name->setColor(colors[1]);
+	_txtW1Name->setSecondaryColor(colors[2]);
 	std::wstringstream ss7;
 	ss7 << _game->getLanguage()->getString("STR_WEAPON_ONE") << L'\x01';
 
-	_txtW1Ammo->setColor(Palette::blockOffset(15)-1);
-	_txtW1Ammo->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtW1Ammo->setColor(colors[1]);
+	_txtW1Ammo->setSecondaryColor(colors[2]);
 	std::wstringstream ss8;
 	ss8 << _game->getLanguage()->getString("STR_ROUNDS_") << L'\x01';
 
@@ -226,13 +250,13 @@ GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, W
 		_txtW1Ammo->setVisible(false);
 	}
 
-	_txtW2Name->setColor(Palette::blockOffset(15)-1);
-	_txtW2Name->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtW2Name->setColor(colors[1]);
+	_txtW2Name->setSecondaryColor(colors[2]);
 	std::wstringstream ss9;
 	ss9 << _game->getLanguage()->getString("STR_WEAPON_TWO") << L'\x01';
 
-	_txtW2Ammo->setColor(Palette::blockOffset(15)-1);
-	_txtW2Ammo->setSecondaryColor(Palette::blockOffset(8)+5);
+	_txtW2Ammo->setColor(colors[1]);
+	_txtW2Ammo->setSecondaryColor(colors[2]);
 	std::wstringstream ss10;
 	ss10 << _game->getLanguage()->getString("STR_ROUNDS_") << L'\x01';
 
@@ -253,7 +277,7 @@ GeoscapeCraftState::GeoscapeCraftState(Game *game, Craft *craft, Globe *globe, W
 		_txtW2Ammo->setVisible(false);
 	}
 
-	_txtRedirect->setColor(Palette::blockOffset(15)-1);
+	_txtRedirect->setColor(colors[1]);
 	_txtRedirect->setBig();
 	_txtRedirect->setAlign(ALIGN_CENTER);
 	_txtRedirect->setText(_game->getLanguage()->getString("STR_REDIRECT_CRAFT"));
@@ -288,7 +312,25 @@ GeoscapeCraftState::~GeoscapeCraftState()
  */
 void GeoscapeCraftState::init()
 {
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+	std::string backpalette;
+	Uint8 color;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		backpalette = "BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(color), Palette::backPos, 16);
 }
 
 /**

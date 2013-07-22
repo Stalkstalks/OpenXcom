@@ -45,6 +45,9 @@ namespace OpenXcom
  */
 ConfirmNewBaseState::ConfirmNewBaseState(Game *game, Base *base, Globe *globe) : State(game), _base(base), _globe(globe), _cost(0)
 {
+	std::string background, backpalette;
+	Uint8 colors[3];
+
 	_screen = false;
 
 	// Create objects
@@ -54,8 +57,28 @@ ConfirmNewBaseState::ConfirmNewBaseState(Game *game, Base *base, Globe *globe) :
 	_txtCost = new Text(120, 9, 68, 80);
 	_txtArea = new Text(120, 9, 68, 90);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK01.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK01.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(0);
+		colors[1] = Palette::blockOffset(15)-1;
+		colors[2] = Palette::blockOffset(8)+10;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(0)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -66,15 +89,15 @@ ConfirmNewBaseState::ConfirmNewBaseState(Game *game, Base *base, Globe *globe) :
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(15)-1);
+	_btnOk->setColor(colors[1]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ConfirmNewBaseState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&ConfirmNewBaseState::btnCancelClick, (SDLKey)Options::getInt("keyOk"));
 
-	_btnCancel->setColor(Palette::blockOffset(15)-1);
+	_btnCancel->setColor(colors[1]);
 	_btnCancel->setText(_game->getLanguage()->getString("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&ConfirmNewBaseState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ConfirmNewBaseState::btnCancelClick, (SDLKey)Options::getInt("keyCancel"));
@@ -93,12 +116,12 @@ ConfirmNewBaseState::ConfirmNewBaseState(Game *game, Base *base, Globe *globe) :
 	std::wstring s = _game->getLanguage()->getString("STR_COST_");
 	s.erase(s.size()-1, 1);
 	s += L'\x01' + Text::formatFunding(_cost);
-	_txtCost->setColor(Palette::blockOffset(15)-1);
-	_txtCost->setSecondaryColor(Palette::blockOffset(8)+10);
+	_txtCost->setColor(colors[1]);
+	_txtCost->setSecondaryColor(colors[2]);
 	_txtCost->setText(s);
 
-	_txtArea->setColor(Palette::blockOffset(15)-1);
-	_txtArea->setSecondaryColor(Palette::blockOffset(8)+10);
+	_txtArea->setColor(colors[1]);
+	_txtArea->setSecondaryColor(colors[2]);
 	_txtArea->setText(ss.str());
 }
 
@@ -124,7 +147,25 @@ void ConfirmNewBaseState::btnOkClick(Action *)
 	}
 	else
 	{
-		_game->pushState(new ErrorMessageState(_game, "STR_NOT_ENOUGH_MONEY", Palette::blockOffset(8)+10, "BACK01.SCR", 0));
+		std::string background;
+		Uint8 color;
+
+		if (Options::getString("GUIstyle") == "xcom2")
+		{
+			// Basic properties for display in TFTD style
+			background = "TFTD_BACK01.SCR";
+
+			color = Palette::blockOffset(0)+1;
+		}
+		else
+		{
+			// Basic properties for display in UFO style
+			background = "BACK01.SCR";
+
+			color = Palette::blockOffset(8)+10;
+		}
+
+		_game->pushState(new ErrorMessageState(_game, "STR_NOT_ENOUGH_MONEY", color, background, 0));
 	}
 }
 

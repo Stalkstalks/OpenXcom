@@ -1029,8 +1029,7 @@ void ResourcePack::loadGeoscapeResources(const std::string &gameFolder, const st
 							  "UP110.BDY",
 							  "UP111.BDY",
 							  "UP112.BDY",
-							  "GRAPH.BDY",
-							  "GRAPHS.SPK"};
+							  "GRAPH.BDY"};
 
 		for (int i = 0; i < 113; ++i)
 		{
@@ -1038,13 +1037,12 @@ void ResourcePack::loadGeoscapeResources(const std::string &gameFolder, const st
 			s << gameFolder << "GEOGRAPH/" << spks[i];
 			_surfaces["TFTD_" + spks[i]] = new Surface(320, 200);
 			_surfaces["TFTD_" + spks[i]]->loadBdy(CrossPlatform::getDataFile(s.str()));
-			_surfaces["TFTD_" + spks[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_1"]->getColors());
+			if (i < 112)
+				_surfaces["TFTD_" + spks[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_1"]->getColors());
+			else
+				_surfaces["TFTD_" + spks[i]]->setPalette(_palettes["TFTD_PALETTES.DAT_2"]->getColors());
 		}
 		std::stringstream s;
-		s << gameFolder << "GEOGRAPH/" << spks[113];
-		_surfaces["TFTD_" + spks[113]] = new Surface(320, 200);
-		_surfaces["TFTD_" + spks[113]]->loadSpk(CrossPlatform::getDataFile(s.str()));
-		_surfaces["TFTD_" + spks[113]]->setPalette(_palettes["TFTD_PALETTES.DAT_2"]->getColors());
 
 /*
 		std::string lbms[] = {"PICT1.LBM",
