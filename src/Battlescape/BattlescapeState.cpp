@@ -1902,6 +1902,7 @@ void BattlescapeState::btnReserveKneelClick(Action *action)
 {
 	if (allowButtons())
 	{
+		_btnReserveKneel->invert(0);
 		SDL_Event ev;
 		ev.type = SDL_MOUSEBUTTONDOWN;
 		ev.button.button = SDL_BUTTON_LEFT;
