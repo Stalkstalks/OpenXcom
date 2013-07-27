@@ -60,14 +60,12 @@ YAML::Emitter& operator<< (YAML::Emitter& out, const UnitStats& stats)
  * @param race String defining the race.
  * @param rank String defining the rank.
  */
-Unit::Unit(const std::string &type, std::string race, std::string rank, const std::string &game) : _type(type), _race(race), _rank(rank), _stats(), _armor(""), _standHeight(0), _kneelHeight(0), _floatHeight(0),
+Unit::Unit(const std::string &type, std::string race, std::string rank, const std::string &game) : _type(type), _race(race), _rank(rank), _terrorPrefix(""), _stats(), _armor(""), _standHeight(0), _kneelHeight(0), _floatHeight(0),
 																		_value(0), _deathSound(0), _aggroSound(-1), _moveSound(-1), _intelligence(0), _aggression(0), _specab(SPECAB_NONE),
 																		_zombieUnit(""), _spawnUnit(""), _livingWeapon(false)
 {
 	if (game == "xcom2")
-		_terrorPrefix = "TFTD_";
-	else
-		_terrorPrefix = "";
+		_terrorPrefix = "TFTD_BATTLE_";
 }
 
 /**

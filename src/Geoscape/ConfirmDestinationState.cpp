@@ -44,6 +44,9 @@ namespace OpenXcom
  */
 ConfirmDestinationState::ConfirmDestinationState(Game *game, Craft *craft, Target *target) : State(game), _craft(craft), _target(target)
 {
+	std::string background, backpalette;
+	Uint8 colors[4];
+
 	Waypoint *w = dynamic_cast<Waypoint*>(_target);
 	_screen = false;
 
@@ -53,14 +56,36 @@ ConfirmDestinationState::ConfirmDestinationState(Game *game, Craft *craft, Targe
 	_btnCancel = new TextButton(50, 12, 138, 104);
 	_txtTarget = new Text(214, 32, 21, 72);
 
-	// Set palette
-	if (w != 0 && w->getId() == 0)
+	if (Options::getString("GUIstyle") == "xcom2")
 	{
-		_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(6)), Palette::backPos, 16);
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK12.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = Palette::blockOffset(4);
+		colors[2] = colors[3] = Palette::blockOffset(0)+1;
 	}
 	else
 	{
-		_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(4)), Palette::backPos, 16);
+		// Basic properties for display in UFO style
+		background = "BACK12.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(6);
+		colors[1] = Palette::blockOffset(4);
+		colors[2] = Palette::blockOffset(15)-1;
+		colors[3] = Palette::blockOffset(8)+5;
+	}
+
+	// Set palette
+	if (w != 0 && w->getId() == 0)
+	{
+		_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
+	}
+	else
+	{
+		_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[1]), Palette::backPos, 16);
 	}
 
 	add(_window);
@@ -71,20 +96,20 @@ ConfirmDestinationState::ConfirmDestinationState(Game *game, Craft *craft, Targe
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	_window->setColor(colors[2]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(8)+5);
+	_btnOk->setColor(colors[3]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ConfirmDestinationState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&ConfirmDestinationState::btnOkClick, (SDLKey)Options::getInt("keyOk"));
 
-	_btnCancel->setColor(Palette::blockOffset(8)+5);
+	_btnCancel->setColor(colors[3]);
 	_btnCancel->setText(_game->getLanguage()->getString("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&ConfirmDestinationState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ConfirmDestinationState::btnCancelClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtTarget->setColor(Palette::blockOffset(15)-1);
+	_txtTarget->setColor(colors[2]);
 	_txtTarget->setBig();
 	_txtTarget->setAlign(ALIGN_CENTER);
 	_txtTarget->setVerticalAlign(ALIGN_MIDDLE);

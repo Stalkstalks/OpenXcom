@@ -53,6 +53,9 @@ namespace OpenXcom
  */
 ConfirmLandingState::ConfirmLandingState(Game *game, Craft *craft, int texture, int shade, GeoscapeState *state) : State(game), _craft(craft), _texture(texture), _shade(shade), _state(state)
 {
+	std::string background, backpalette;
+	Uint8 colors[3];
+
 	_screen = false;
 
 	// Create objects
@@ -64,8 +67,28 @@ ConfirmLandingState::ConfirmLandingState(Game *game, Craft *craft, int texture, 
 	_txtReady = new Text(206, 32, 25, 56);
 	_txtBegin = new Text(206, 16, 25, 130);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK15.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK15.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(3);
+		colors[1] = Palette::blockOffset(8)+5;
+		colors[2] = Palette::blockOffset(8)+10;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(3)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnYes);
@@ -78,36 +101,36 @@ ConfirmLandingState::ConfirmLandingState(Game *game, Craft *craft, int texture, 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(8)+5);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK15.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnYes->setColor(Palette::blockOffset(8)+5);
+	_btnYes->setColor(colors[1]);
 	_btnYes->setText(_game->getLanguage()->getString("STR_YES"));
 	_btnYes->onMouseClick((ActionHandler)&ConfirmLandingState::btnYesClick);
 	_btnYes->onKeyboardPress((ActionHandler)&ConfirmLandingState::btnYesClick, (SDLKey)Options::getInt("keyOk"));
 
-	_btnNo->setColor(Palette::blockOffset(8)+5);
+	_btnNo->setColor(colors[1]);
 	_btnNo->setText(_game->getLanguage()->getString("STR_NO"));
 	_btnNo->onMouseClick((ActionHandler)&ConfirmLandingState::btnNoClick);
 	_btnNo->onKeyboardPress((ActionHandler)&ConfirmLandingState::btnNoClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtCraft->setColor(Palette::blockOffset(8)+10);
+	_txtCraft->setColor(colors[2]);
 	_txtCraft->setBig();
 	_txtCraft->setAlign(ALIGN_CENTER);
 	_txtCraft->setText(_craft->getName(_game->getLanguage()));
 
-	_txtTarget->setColor(Palette::blockOffset(8)+10);
+	_txtTarget->setColor(colors[2]);
 	_txtTarget->setBig();
 	_txtTarget->setAlign(ALIGN_CENTER);
 	_txtTarget->setWordWrap(true);
 	_txtTarget->setText(_craft->getDestination()->getName(_game->getLanguage()));
 
-	_txtReady->setColor(Palette::blockOffset(8)+5);
+	_txtReady->setColor(colors[1]);
 	_txtReady->setBig();
 	_txtReady->setAlign(ALIGN_CENTER);
 	_txtReady->setText(_game->getLanguage()->getString("STR_READY_TO_LAND_NEAR"));
 
-	_txtBegin->setColor(Palette::blockOffset(8)+5);
+	_txtBegin->setColor(colors[1]);
 	_txtBegin->setBig();
 	_txtBegin->setAlign(ALIGN_CENTER);
 	_txtBegin->setText(_game->getLanguage()->getString("STR_BEGIN_MISSION"));

@@ -34,6 +34,8 @@
 #include "../Savegame/GameTime.h"
 #include "../Savegame/SavedGame.h"
 #include "../Interface/TextList.h"
+#include "../Interface/Cursor.h"
+#include "../Interface/FpsCounter.h"
 #include "../Engine/Action.h"
 #include <sstream>
 #include "../Engine/Options.h"
@@ -47,6 +49,9 @@ namespace OpenXcom
  */
 GraphsState::GraphsState(Game *game) : State(game)
 {
+	std::string background, palette;
+	Uint8 colors[4];
+
 	// Create objects
 	_bg = new Surface(320, 200, 0, 0);
 	_btnUfoRegion = new InteractiveSurface(32, 24, 96, 0);
@@ -61,8 +66,34 @@ GraphsState::GraphsState(Game *game) : State(game)
 	_txtMonths = new TextList(205, 8, 115, 183);
 	_txtYears = new TextList(200, 8, 121, 191);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_GRAPH.BDY";
+		palette = "TFTD_PALETTES.DAT_2";
+
+		colors[0] = Palette::blockOffset(15)+5;
+		colors[1] = Palette::blockOffset(0);
+		colors[2] = Palette::blockOffset(6)+7;
+		colors[3] = Palette::blockOffset(8)+7;
+
+		_game->getCursor()->setColor(Palette::blockOffset(9));
+		_game->getFpsCounter()->setColor(Palette::blockOffset(9));
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "GRAPH.SPK";
+		palette = "PALETTES.DAT_2";
+
+		colors[0] = Palette::blockOffset(9)+7;
+		colors[1] = Palette::blockOffset(10);
+		colors[2] = Palette::blockOffset(6)+7;
+		colors[3] = Palette::blockOffset(8)+7;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_2")->getColors());
+	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
 	
 	//add all our elements
 	add(_bg);
@@ -89,7 +120,7 @@ GraphsState::GraphsState(Game *game) : State(game)
 	{
 		_btnRegions.push_back(new ToggleTextButton(80, 11, 0, offset*11));
 		_regionToggles.push_back(false);
-		_btnRegions.at(offset)->setColor(Palette::blockOffset(9)+7);
+		_btnRegions.at(offset)->setColor(colors[0]);
 		_btnRegions.at(offset)->setInvertColor(-42 + (4*offset));
 		_btnRegions.at(offset)->setText(_game->getLanguage()->getString((*iter)->getRules()->getType()));
 		_btnRegions.at(offset)->onMouseClick((ActionHandler)&GraphsState::btnRegionListClick);
@@ -105,7 +136,7 @@ GraphsState::GraphsState(Game *game) : State(game)
 	_btnRegionTotal = new ToggleTextButton(80, 11, 0, offset*11);
 	_regionToggles.push_back(false);
 	_btnRegionTotal->onMouseClick((ActionHandler)&GraphsState::btnRegionListClick);
-	_btnRegionTotal->setColor(Palette::blockOffset(9)+7);
+	_btnRegionTotal->setColor(colors[0]);
     _btnRegionTotal->setInvertColor(22);
 	_btnRegionTotal->setText(_game->getLanguage()->getString("STR_TOTAL_UC"));
 	_alienRegionLines.push_back(new Surface(320,200,0,0));
@@ -119,7 +150,7 @@ GraphsState::GraphsState(Game *game) : State(game)
 	{
 		_btnCountries.push_back(new ToggleTextButton(80, 11, 0, offset*11));
 		_countryToggles.push_back(false);
-		_btnCountries.at(offset)->setColor(Palette::blockOffset(9)+7);
+		_btnCountries.at(offset)->setColor(colors[0]);
 		_btnCountries.at(offset)->setInvertColor(-42 + (4*offset));
 		_btnCountries.at(offset)->setText(_game->getLanguage()->getString((*iter)->getRules()->getType()));
 		_btnCountries.at(offset)->onMouseClick((ActionHandler)&GraphsState::btnCountryListClick);
@@ -137,7 +168,7 @@ GraphsState::GraphsState(Game *game) : State(game)
 	_btnCountryTotal = new ToggleTextButton(80, 11, 0, offset*11);
 	_countryToggles.push_back(false);
 	_btnCountryTotal->onMouseClick((ActionHandler)&GraphsState::btnCountryListClick);
-	_btnCountryTotal->setColor(Palette::blockOffset(9)+7);
+	_btnCountryTotal->setColor(colors[0]);
     _btnCountryTotal->setInvertColor(22);
 	_btnCountryTotal->setText(_game->getLanguage()->getString("STR_TOTAL_UC"));
 	_alienCountryLines.push_back(new Surface(320,200,0,0));
@@ -154,7 +185,7 @@ GraphsState::GraphsState(Game *game) : State(game)
 		offset = iter;
 		_btnFinances.push_back(new ToggleTextButton(80, 11, 0, offset*11));
 		_financeToggles.push_back(false);
-		_btnFinances.at(offset)->setColor(Palette::blockOffset(9)+7);
+		_btnFinances.at(offset)->setColor(colors[0]);
         _btnFinances.at(offset)->setInvertColor(-42 + (4*offset));
 		_btnFinances.at(offset)->onMouseClick((ActionHandler)&GraphsState::btnFinanceListClick);
 		add(_btnFinances.at(offset));
@@ -199,30 +230,33 @@ GraphsState::GraphsState(Game *game) : State(game)
 		_btnFinances.at(i)->setPressed(_financeToggles[i]);
 	}
 
-	// set up the grid
-	SDL_Rect current;
-	current.w = 188;
-	current.h = 127;
-	current.x = 125;
-	current.y = 49;
-	_bg->drawRect(&current, Palette::blockOffset(10));
-
-	for (int grid = 0; grid !=5; ++grid)
+	if (Options::getString("GUIstyle") != "xcom2")
 	{
-	current.w = 16 - (grid*2);
-	current.h = 13 - (grid*2);
-		for (int y = 50 + grid; y <= 163 + grid; y += 14)
+		// set up the grid
+		SDL_Rect current;
+		current.w = 188;
+		current.h = 127;
+		current.x = 125;
+		current.y = 49;
+		_bg->drawRect(&current, Palette::blockOffset(10));
+
+		for (int grid = 0; grid !=5; ++grid)
 		{
-			current.y = y;
-			for (int x = 126 + grid; x <= 297 + grid; x += 17)
+		current.w = 16 - (grid*2);
+		current.h = 13 - (grid*2);
+			for (int y = 50 + grid; y <= 163 + grid; y += 14)
 			{
-				current.x = x;
-				Uint8 color = Palette::blockOffset(10)+grid+1;
-				if (grid == 4)
+				current.y = y;
+				for (int x = 126 + grid; x <= 297 + grid; x += 17)
 				{
-					color = 0;
-				} 
-				_bg->drawRect(&current, color);
+					current.x = x;
+					Uint8 color = Palette::blockOffset(10)+grid+1;
+					if (grid == 4)
+					{
+						color = 0;
+					} 
+					_bg->drawRect(&current, color);
+				}
 			}
 		}
 	}
@@ -234,10 +268,10 @@ GraphsState::GraphsState(Game *game) : State(game)
 	// also, there's nothing wrong with being ugly or brutal, you should learn tolerance.
 	_txtMonths->setColumns(12, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17);
 	_txtMonths->addRow(12, L" ", L" ", L" ", L" ", L" ", L" ", L" ", L" ", L" ", L" ", L" ", L" ");
-	_txtMonths->setRowColor(0, Palette::blockOffset(6)+7);
+	_txtMonths->setRowColor(0, colors[2]);
 	_txtYears->setColumns(6, 34, 34, 34, 34, 34, 34);
 	_txtYears->addRow(6, L" ", L" ", L" ", L" ", L" ", L" ");
-	_txtYears->setRowColor(0, Palette::blockOffset(6)+7);
+	_txtYears->setRowColor(0, colors[2]);
 
 	for (int iter = 0; iter != 12; ++iter)
 	{
@@ -262,17 +296,17 @@ GraphsState::GraphsState(Game *game) : State(game)
 	for (std::vector<Text *>::iterator iter = _txtScale.begin(); iter != _txtScale.end(); ++iter)
 	{
 		(*iter)->setAlign(ALIGN_RIGHT);
-		(*iter)->setColor(Palette::blockOffset(6)+7);
+		(*iter)->setColor(colors[2]);
 	}
 	btnUfoRegionClick(0);
 
 	// Set up objects
-	_game->getResourcePack()->getSurface("GRAPHS.SPK")->blit(_bg);
+	_game->getResourcePack()->getSurface(background)->blit(_bg);
 	_txtTitle->setAlign(ALIGN_CENTER);
-	_txtTitle->setColor(Palette::blockOffset(8)+7);
+	_txtTitle->setColor(colors[3]);
 	
 	_txtFactor->setText(L"$1000's");
-	_txtFactor->setColor(Palette::blockOffset(8)+7);
+	_txtFactor->setColor(colors[3]);
 
 	// Set up buttons
 	_btnUfoRegion->onMouseClick((ActionHandler)&GraphsState::btnUfoRegionClick);

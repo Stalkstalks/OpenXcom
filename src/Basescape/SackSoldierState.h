@@ -16,48 +16,42 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BASENAMESTATE_H
-#define OPENXCOM_BASENAMESTATE_H
+#ifndef OPENXCOM_SACKSOLDIERSTATE_H
+#define OPENXCOM_SACKSOLDIERSTATE_H
 
 #include "../Engine/State.h"
-#include "Globe.h"
 
 namespace OpenXcom
 {
 
 class Base;
+class Soldier;
+class TextButton;
 class Window;
 class Text;
-class TextEdit;
-class TextButton;
-class Globe;
 
 /**
- * Window used to input a name for a new base.
- * Player's first Base uses this screen
- * additional bases use ConfirmNewBaseState
+ * Window shown when the player tries to
+ * sack a soldier.
  */
-class BaseNameState : public State
+class SackSoldierState : public State
 {
 private:
 	Base *_base;
-	Globe *_globe;
+	Soldier *_soldier;
+
+	TextButton *_btnOk, *_btnCancel;
 	Window *_window;
-	Text *_txtTitle;
-	TextEdit *_edtName;
-	TextButton *_btnOk;
-	bool _first;
+	Text *_txtTitle, *_txtSoldier;
 public:
-	/// Creates the Base Name state.
-	BaseNameState(Game *game, Base *base, Globe *globe, bool first);
-	/// Cleans up the Base Name state.
-	~BaseNameState();
-	/// Names the base.
-	void nameBase();
+	/// Creates the Sack Soldier state.
+	SackSoldierState(Game *game, Base *base, Soldier *soldier);
+	/// Cleans up the Sack Soldier state.
+	~SackSoldierState();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
-	/// Handler for pressing a key on the Name edit.
-	void edtNameKeyPress(Action *action);
+	/// Handler for clicking the Cancel button.
+	void btnCancelClick(Action *action);
 };
 
 }

@@ -54,6 +54,9 @@ namespace OpenXcom
  */
 BaseDefenseState::BaseDefenseState(Game *game, Base *base, Ufo *ufo, GeoscapeState *state) : State(game), _state(state)
 {
+	std::string background, palette, backpalette;
+	Uint8 colors[3];
+
 	_base = base;
 	_action = BDA_NONE;
 	_row = -1;
@@ -68,9 +71,31 @@ BaseDefenseState::BaseDefenseState(Game *game, Base *base, Ufo *ufo, GeoscapeSta
 	_lstDefenses = new TextList(300, 130, 16, 40);
 	_btnOk = new TextButton(120, 18, 100, 170);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK04.SCR";
+		palette = "TFTD_PALETTES.DAT_1";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(3);
+		colors[1] = colors[2] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK04.SCR";
+		palette = "PALETTES.DAT_1";
+		backpalette = "PALETTES.DAT_1";
+
+		colors[0] = Palette::blockOffset(14);
+		colors[1] = Palette::blockOffset(15)+6;
+		colors[2] = Palette::blockOffset(13)+10;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_1")->getColors());
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_1")->getColors(Palette::blockOffset(14)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
+	_game->getResourcePack()->getSurface(background)->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -81,27 +106,27 @@ BaseDefenseState::BaseDefenseState(Game *game, Base *base, Ufo *ufo, GeoscapeSta
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)+6);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK04.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(13)+10);
+	_btnOk->setColor(colors[2]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BaseDefenseState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&BaseDefenseState::btnOkClick, (SDLKey)Options::getInt("keyOk"));
 	_btnOk->onKeyboardPress((ActionHandler)&BaseDefenseState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 	_btnOk->setVisible(false);
 
-	_txtTitle->setColor(Palette::blockOffset(13)+10);
+	_txtTitle->setColor(colors[2]);
 	_txtTitle->setBig();
 	std::wstringstream ss;
 	ss << _base->getName() << _game->getLanguage()->getString("STR_UNDER_ATTACK");
 	_txtTitle->setText(ss.str());
 	_txtInit->setVisible(false);
 
-	_txtInit->setColor(Palette::blockOffset(13)+10);
+	_txtInit->setColor(colors[2]);
 	_txtInit->setText(_game->getLanguage()->getString("STR_BASE_DEFENSES_INITIATED"));
 
-	_lstDefenses->setColor(Palette::blockOffset(13)+10);
+	_lstDefenses->setColor(colors[2]);
 	_lstDefenses->setColumns(3, 134, 70, 50);
 	_gravShields = _base->getGravShields();
 	_defenses = _base->getDefenses()->size();
@@ -122,8 +147,28 @@ BaseDefenseState::~BaseDefenseState()
  */
 void BaseDefenseState::init()
 {
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_1")->getColors());
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_1")->getColors(Palette::blockOffset(14)), Palette::backPos, 16);
+	std::string palette, backpalette;
+	Uint8 color;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		palette = "TFTD_PALETTES.DAT_1";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		color = Palette::blockOffset(3);
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		palette = "PALETTES.DAT_1";
+		backpalette = "PALETTES.DAT_1";
+
+		color = Palette::blockOffset(14);
+	}
+
+	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(color), Palette::backPos, 16);
 }
 
 void BaseDefenseState::think()
@@ -218,8 +263,21 @@ void BaseDefenseState::nextStep()
  */
 void BaseDefenseState::btnOkClick(Action *)
 {
+	std::string palette;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		palette = "TFTD_PALETTES.DAT_1";
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		palette = "PALETTES.DAT_1";
+	}
+
 	_timer->stop();
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_0")->getColors());
+	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
 	_game->popState();
 	if(_ufo->getStatus() != Ufo::DESTROYED)
 	{

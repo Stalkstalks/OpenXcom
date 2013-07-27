@@ -30,7 +30,6 @@
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Interface/Text.h"
-#include "../Resource/ResourcePack.h"
 #include <iostream>
 
 namespace OpenXcom
@@ -60,7 +59,7 @@ void ScannerView::draw()
 	if (_terrorPrefix != "")
 	{
 		// Basic properties for display in TFTD style
-		setName = "TFTD_DETBLOB.DAT";
+		setName = "TFTD_BATTLE_DETBLOB.DAT";
 	}
 	else
 	{

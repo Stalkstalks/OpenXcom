@@ -115,7 +115,7 @@ InventoryState::InventoryState(Game *game, bool tu, BattlescapeState *parent) : 
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_TAC01.BDY";
+		background = "TFTD_BATTLE_TAC01.BDY";
 		colors[0] = Palette::blockOffset(0) + 1;
 		colors[1] = Palette::blockOffset(9);
 		colors[2] = Palette::blockOffset(0) + 1;

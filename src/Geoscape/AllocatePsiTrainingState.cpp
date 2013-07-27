@@ -44,6 +44,9 @@ namespace OpenXcom
  */
 AllocatePsiTrainingState::AllocatePsiTrainingState(Game *game, Base *base) : State(game)
 {
+	std::string background, palette, backpalette;
+	Uint8 colors[3];
+
 	_base = base;
 	// Create objects
 	_window = new Window(this, 320, 200, 0, 0);
@@ -57,9 +60,32 @@ AllocatePsiTrainingState::AllocatePsiTrainingState(Game *game, Base *base) : Sta
 	_btnOk = new TextButton(160, 14, 80, 174);
 	_lstSoldiers = new TextList(290, 112, 8, 52);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK01.SCR";
+		palette = "TFTD_PALETTES.DAT_1";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(3);
+		colors[1] = colors[2] = colors[3] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK01.SCR";
+		palette = "PALETTES.DAT_1";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(7);
+		colors[1] = Palette::blockOffset(13)+10;
+		colors[2] = Palette::blockOffset(13)+5;
+		colors[3] = Palette::blockOffset(15)+6;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("PALETTES.DAT_1")->getColors());
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(7)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(palette)->getColors());
+	_game->getResourcePack()->getSurface(background)->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -75,20 +101,20 @@ AllocatePsiTrainingState::AllocatePsiTrainingState(Game *game, Base *base) : Sta
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(13)+10);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnOk->setColor(Palette::blockOffset(13)+10);
+	_btnOk->setColor(colors[1]);
 	_btnOk->setText(_game->getLanguage()->getString("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&AllocatePsiTrainingState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&AllocatePsiTrainingState::btnOkClick, (SDLKey)Options::getInt("keyCancel"));
 	
-	_txtTitle->setColor(Palette::blockOffset(13)+10);
+	_txtTitle->setColor(colors[1]);
 	_txtTitle->setBig();
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setText(_game->getLanguage()->getString("STR_PSIONIC_TRAINING"));
 		
-	_txtRemaining->setColor(Palette::blockOffset(13)+10);
+	_txtRemaining->setColor(colors[1]);
 	_txtRemaining->setText(_game->getLanguage()->getString("STR_REMAINING_PSI_LAB_CAPACITY"));
 	
 	_labSpace = base->getAvailablePsiLabs()-base->getUsedPsiLabs();
@@ -97,19 +123,19 @@ AllocatePsiTrainingState::AllocatePsiTrainingState(Game *game, Base *base) : Sta
 	_txtLabSpace->setText(ss.str());
 	_txtLabSpace->setColor(Palette::blockOffset(13));
 	
-	_txtName->setColor(Palette::blockOffset(13)+10);
+	_txtName->setColor(colors[1]);
 	_txtName->setText(_game->getLanguage()->getString("STR_NAME"));
 	
-	_txtPsiStrength->setColor(Palette::blockOffset(13)+10);
+	_txtPsiStrength->setColor(colors[1]);
 	_txtPsiStrength->setText(_game->getLanguage()->getString("STR_PSIONIC__STRENGTH"));
 
-	_txtPsiSkill->setColor(Palette::blockOffset(13)+10);
+	_txtPsiSkill->setColor(colors[1]);
 	_txtPsiSkill->setText(_game->getLanguage()->getString("STR_PSIONIC_SKILL_IMPROVEMENT"));
 
-	_txtTraining->setColor(Palette::blockOffset(13)+10);
+	_txtTraining->setColor(colors[1]);
 	_txtTraining->setText(_game->getLanguage()->getString("STR_IN_TRAINING"));
 
-	_lstSoldiers->setColor(Palette::blockOffset(13)+10);
+	_lstSoldiers->setColor(colors[1]);
 	_lstSoldiers->setArrowColumn(-1, ARROW_VERTICAL);
 	_lstSoldiers->setColumns(4, 116, 80, 72, 30);
 	_lstSoldiers->setSelectable(true);
@@ -137,12 +163,12 @@ AllocatePsiTrainingState::AllocatePsiTrainingState(Game *game, Base *base) : Sta
 		if((*s)->isInPsiTraining())
 		{
 			_lstSoldiers->addRow(4, (*s)->getName().c_str(), ssStr.str().c_str(), ssSkl.str().c_str(), _game->getLanguage()->getString("STR_YES").c_str());
-			_lstSoldiers->setRowColor(row, Palette::blockOffset(13)+5);
+			_lstSoldiers->setRowColor(row, colors[2]);
 		}
 		else
 		{
 			_lstSoldiers->addRow(4, (*s)->getName().c_str(), ssStr.str().c_str(), ssSkl.str().c_str(), _game->getLanguage()->getString("STR_NO").c_str());
-			_lstSoldiers->setRowColor(row, Palette::blockOffset(15)+6);
+			_lstSoldiers->setRowColor(row, colors[3]);
 		}
 		row++;
 	}
@@ -160,7 +186,6 @@ AllocatePsiTrainingState::~AllocatePsiTrainingState()
  */
 void AllocatePsiTrainingState::init()
 {
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(7)), Palette::backPos, 16);
 }
 
 /**
@@ -180,6 +205,21 @@ void AllocatePsiTrainingState::lstSoldiersRelease(Action *)
 }
 void AllocatePsiTrainingState::lstSoldiersClick(Action *action)
 {
+	Uint8 colors[2];
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		colors[0] = Palette::blockOffset(0)+1;
+		colors[1] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		colors[0] = Palette::blockOffset(13)+5;
+		colors[1] = Palette::blockOffset(15)+6;
+	}
+
 	_sel = _lstSoldiers->getSelectedRow();
 	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
 	{
@@ -188,7 +228,7 @@ void AllocatePsiTrainingState::lstSoldiersClick(Action *action)
 			if(_base->getUsedPsiLabs() < _base->getAvailablePsiLabs())
 			{
 				_lstSoldiers->setCellText(_sel, 3, _game->getLanguage()->getString("STR_YES").c_str());
-				_lstSoldiers->setRowColor(_sel, Palette::blockOffset(13)+5);
+				_lstSoldiers->setRowColor(_sel, colors[0]);
 				_labSpace--;
 				std::wstringstream ss;
 				ss << _labSpace;
@@ -199,7 +239,7 @@ void AllocatePsiTrainingState::lstSoldiersClick(Action *action)
 		else
 		{
 		_lstSoldiers->setCellText(_sel, 3, _game->getLanguage()->getString("STR_NO").c_str());
-		_lstSoldiers->setRowColor(_sel, Palette::blockOffset(15)+6);
+		_lstSoldiers->setRowColor(_sel, colors[1]);
 		_labSpace++;
 		std::wstringstream ss;
 		ss << _labSpace;

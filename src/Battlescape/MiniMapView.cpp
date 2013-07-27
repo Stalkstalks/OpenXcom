@@ -53,7 +53,7 @@ MiniMapView::MiniMapView(int w, int h, int x, int y, int bpp, Game * game, Camer
 	if (_game->getResourcePack()->getPalette("PALETTES.DAT_4") != 0)
 		_set["SCANG.DAT"] = _game->getResourcePack()->getSurfaceSet("SCANG.DAT");
 	if (_game->getResourcePack()->getPalette("TFTD_PALETTES.DAT_3") != 0)
-		_set["TFTD_SCANG.DAT"] = _game->getResourcePack()->getSurfaceSet("TFTD_SCANG.DAT");
+		_set["TFTD_BATTLE_SCANG.DAT"] = _game->getResourcePack()->getSurfaceSet("TFTD_BATTLE_SCANG.DAT");
 	_palette = palette;
 }
 
@@ -66,7 +66,7 @@ void MiniMapView::draw()
 	int _startY = _camera->getCenterPosition().y - ((getHeight() / CELL_HEIGHT) / 2);
 
 	InteractiveSurface::draw();
-	if(!(_set["SCANG.DAT"] && _set["TFTD_SCANG.DAT"]))
+	if(!(_set["SCANG.DAT"] && _set["TFTD_BATTLE_SCANG.DAT"]))
 	{
 		return;
 	}

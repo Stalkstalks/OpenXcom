@@ -71,7 +71,7 @@ MiniMapState::MiniMapState (Game * game, Camera * camera, SavedBattleGame * batt
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_SCANBORD.BDY";
+		background = "TFTD_BATTLE_SCANBORD.BDY";
 
 		btnLvlUpTFTD = new ImageButton(24, 12, 280, 98);
 		btnLvlDwnTFTD = new ImageButton(24, 12, 280, 115);
@@ -141,11 +141,11 @@ MiniMapState::MiniMapState (Game * game, Camera * camera, SavedBattleGame * batt
 		add(btnLvlDwnTFTD);
 		add(btnOkTFTD);
 
-		btnLvlUpTFTD->copy(_game->getResourcePack()->getSurface("TFTD_SCANBORD.BDY"));
+		btnLvlUpTFTD->copy(_game->getResourcePack()->getSurface("TFTD_BATTLE_SCANBORD.BDY"));
 		btnLvlUpTFTD->setColor(Palette::blockOffset(0)+6);
-		btnLvlDwnTFTD->copy(_game->getResourcePack()->getSurface("TFTD_SCANBORD.BDY"));
+		btnLvlDwnTFTD->copy(_game->getResourcePack()->getSurface("TFTD_BATTLE_SCANBORD.BDY"));
 		btnLvlDwnTFTD->setColor(Palette::blockOffset(0)+6);
-		btnOkTFTD->copy(_game->getResourcePack()->getSurface("TFTD_SCANBORD.BDY"));
+		btnOkTFTD->copy(_game->getResourcePack()->getSurface("TFTD_BATTLE_SCANBORD.BDY"));
 		btnOkTFTD->setColor(Palette::blockOffset(0)+6);
 
 		btnLvlUpTFTD->onMouseClick((ActionHandler)&MiniMapState::btnLevelUpClick);

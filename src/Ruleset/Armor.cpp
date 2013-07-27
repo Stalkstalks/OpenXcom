@@ -33,7 +33,7 @@ Armor::Armor(const std::string &type, std::string spriteSheet, int drawingRoutin
 		_damageModifier[i] = 1.0;
 
 	if (game == "xcom2")
-		_terrorPrefix = "TFTD_";
+		_terrorPrefix = "TFTD_BATTLE_";
 }
 
 /**

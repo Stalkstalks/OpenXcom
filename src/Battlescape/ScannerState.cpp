@@ -65,8 +65,8 @@ ScannerState::ScannerState (Game * game, BattleAction *action) : State (game), _
 	if (action->weapon->getRules()->getTerrorPrefix() != "")
 	{
 		// Basic properties for display in TFTD style
-		background[0] = "TFTD_DETBORD.BDY";
-		background[1] = "TFTD_DETBORD2.BDY";
+		background[0] = "TFTD_BATTLE_DETBORD.BDY";
+		background[1] = "TFTD_BATTLE_DETBORD2.BDY";
 	}
 	else
 	{

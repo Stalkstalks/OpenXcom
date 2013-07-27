@@ -38,6 +38,9 @@ namespace OpenXcom
  */
 GeoscapeOptionsState::GeoscapeOptionsState(Game *game) : State(game)
 {
+	std::string background, backpalette;
+	Uint8 colors[2];
+
 	_screen = false;
 
 	// Create objects
@@ -48,8 +51,27 @@ GeoscapeOptionsState::GeoscapeOptionsState(Game *game) : State(game)
 	_btnCancel = new TextButton(180, 20, 38, 140);
 	_txtTitle = new Text(206, 15, 25, 32);
 
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		background = "TFTD_BACK12.SCR";
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(4);
+		colors[1] = Palette::blockOffset(0)+1;
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		background = "BACK12.SCR";
+		backpalette = "BACKPALS.DAT";
+
+		colors[0] = Palette::blockOffset(0);
+		colors[1] = Palette::blockOffset(15)-1;
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(0)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(colors[0]), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnLoad);
@@ -61,27 +83,27 @@ GeoscapeOptionsState::GeoscapeOptionsState(Game *game) : State(game)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setColor(Palette::blockOffset(15)-1);
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	_window->setColor(colors[1]);
+	_window->setBackground(_game->getResourcePack()->getSurface(background));
 
-	_btnLoad->setColor(Palette::blockOffset(15)-1);
+	_btnLoad->setColor(colors[1]);
 	_btnLoad->setText(_game->getLanguage()->getString("STR_LOAD_GAME"));
 	_btnLoad->onMouseClick((ActionHandler)&GeoscapeOptionsState::btnLoadClick);
 
-	_btnSave->setColor(Palette::blockOffset(15)-1);
+	_btnSave->setColor(colors[1]);
 	_btnSave->setText(_game->getLanguage()->getString("STR_SAVE_GAME"));
 	_btnSave->onMouseClick((ActionHandler)&GeoscapeOptionsState::btnSaveClick);
 
-	_btnAbandon->setColor(Palette::blockOffset(15)-1);
+	_btnAbandon->setColor(colors[1]);
 	_btnAbandon->setText(_game->getLanguage()->getString("STR_ABANDON_GAME"));
 	_btnAbandon->onMouseClick((ActionHandler)&GeoscapeOptionsState::btnAbandonClick);
 
-	_btnCancel->setColor(Palette::blockOffset(15)-1);
+	_btnCancel->setColor(colors[1]);
 	_btnCancel->setText(_game->getLanguage()->getString("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&GeoscapeOptionsState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&GeoscapeOptionsState::btnCancelClick, (SDLKey)Options::getInt("keyCancel"));
 
-	_txtTitle->setColor(Palette::blockOffset(15)-1);
+	_txtTitle->setColor(colors[1]);
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setBig();
 	_txtTitle->setText(_game->getLanguage()->getString("STR_GAME_OPTIONS"));
@@ -107,8 +129,26 @@ GeoscapeOptionsState::~GeoscapeOptionsState()
  */
 void GeoscapeOptionsState::init()
 {
+	std::string backpalette;
+	Uint8 color;
+
+	if (Options::getString("GUIstyle") == "xcom2")
+	{
+		// Basic properties for display in TFTD style
+		backpalette = "TFTD_BACKPALS.DAT";
+
+		color = Palette::blockOffset(4);
+	}
+	else
+	{
+		// Basic properties for display in UFO style
+		backpalette = "BACKPALS.DAT";
+
+		color = Palette::blockOffset(0);
+	}
+
 	// Set palette
-	_game->setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(0)), Palette::backPos, 16);
+	_game->setPalette(_game->getResourcePack()->getPalette(backpalette)->getColors(color), Palette::backPos, 16);
 }
 
 /**

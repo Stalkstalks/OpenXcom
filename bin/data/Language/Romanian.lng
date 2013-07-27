@@ -149,6 +149,8 @@ STR_TRANSFER_UC
 TRANSFER
 STR_PURCHASE_RECRUIT
 CUMPĂRĂ/RECRUTEAZĂ
+STR_SACK
+SACK
 STR_SELL_SACK_UC
 VINDE/CONCEDIAZĂ
 STR_GEOSCAPE_UC
@@ -189,6 +191,8 @@ STR_PROGRESS
 EVOLUȚIE
 STR_NEW_PROJECT
 Proiect Nou
+STR_CANCEL_PROJECT
+Cancel Project
 STR_NEW_RESEARCH_PROJECTS
 NOI PROIECTE DE CERCETARE
 STR_SCIENTISTS_AVAILABLE_UC
@@ -2282,9 +2286,9 @@ ARTICOL
 STR_DISPLAY_FILTER
 Filtru Afișaj
 STR_QUICK_SAVE
-Quick Save
+Salvare Rapidă
 STR_QUICK_LOAD
-Quick Load
+Încărcare Rapidă
 STR_ADVANCED
 AVANSAT
 STR_ADVANCED_OPTIONS
@@ -2293,9 +2297,9 @@ STR_AGGRESSIVERETALIATION
 Represalii agresive
 STR_AGGRESSIVERETALIATION_DESC
 OZNurile vor încerca să îți detecteze bazele întotdeauna, indiferent de parametrii misiunii lor.
-STR_ALIENCONTAINMENTHASUPPERLIMIT
+STR_ALIENCONTAINMENTLIMITENFORCED
 Limite carantină extratereștrii
-STR_ALIENCONTAINMENTHASUPPERLIMIT_DESC
+STR_ALIENCONTAINMENTLIMITENFORCED_DESC
 Vor fi impuse limite pentru numărul de extratereștrii vii din carantină.
 STR_CANSELLLIVEALIENS
 Vânzarea extratereștrilor vii
@@ -2378,9 +2382,9 @@ STR_BATTLEEXPLOSIONHEIGHT
 STR_BATTLEEXPLOSIONHEIGHT_DESC
 Modifică înălțimea la care pot ajunge exploziile.{NEWLINE}(Plată: 0, Sferică: 3)
 STR_AUTOSAVE
-Autosave mode
+Mod salvare automată
 STR_AUTOSAVE_DESC
-0 - Disabled. 1 - Quick save and quick load. 2 - Autosave only at 00:00. All save and load buttons is disabled. 3 - Same as previous, as well autosave on exit of the game.
+0 - Dezactivată. 1 - Salvare și încărcare rapidă. 2 - Salvare automată numai la 00:00. Toate butoanele de salvare și încărcare sunt inactive. 3 - Asemenea precedentei, precum și la ieșirea din joc.
 STR_ALLOWPSIONICCAPTURE
 Permite captura psi
 STR_ALLOWPSIONICCAPTURE_DESC
@@ -2395,9 +2399,21 @@ STR_WEAPONSELFDESTRUCTION
 Recuperare articole tip XCom 2012
 STR_WEAPONSELFDESTRUCTION_DESC
 Armele cărate de extratereștrii se autodistrug dacă posesorul este omorât.
+STR_RESEARCHEDITEMSWILLSPENT
+Researched items will be spent
+STR_RESEARCHEDITEMSWILLSPENT_DESC
+Researched items are removed from your stores and will be disassembled. After "researching" living aliens, the body will be returned to the based stores.
 STR_ARROWS
 SĂGEȚI
 STR_FULL
 COMPLETĂ
 STR_SAVE_VOXEL_VIEW
-Save First-Person Screenshot
+Salvează Vedere la Persoana-Întâi
+STR_TIME_UNITS_RESERVED_FOR_KNEELING
+Unități de Timp rezervate pentru Îngenunchere
+STR_TUS_RESERVED_FOR_KNEELING_AND_FIRING
+UT rezervate pentru Îngenunchere și Foc
+STR_RESERVE_TUS_FOR_KNEEL
+Rezervă Unități de Timp pentru îngenunchere
+STR_EXPEND_ALL_TIME_UNITS
+Consumă toate Unitățile de Timp rămase

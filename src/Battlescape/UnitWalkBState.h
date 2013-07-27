@@ -46,6 +46,7 @@ private:
     const Position _finalFacing;
     const bool _pathfindForFinalTurn;
 	std::size_t _numUnitsSpotted;
+	int _preMovementCost;
 public:
 	/// Creates a new UnitWalkBState class
 	UnitWalkBState(BattlescapeGame *parent, BattleAction _action, int depth, const Position finalFacing = Position(0,0,INT_MAX), const bool pathfindForFinalTurn = true);

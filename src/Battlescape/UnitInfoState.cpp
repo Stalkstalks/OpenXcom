@@ -201,7 +201,7 @@ UnitInfoState::UnitInfoState(Game *game, BattleUnit *unit) : State(game), _unit(
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_UNIBORD.PCK";
+		background = "TFTD_BATTLE_UNIBORD.PCK";
 
 		colors[0] = colors[1] = Palette::blockOffset(0)+1;
 		colors[2] = colors[14] = Palette::blockOffset(6);

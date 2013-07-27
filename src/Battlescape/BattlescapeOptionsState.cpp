@@ -188,7 +188,7 @@ BattlescapeOptionsState::BattlescapeOptionsState(Game *game) : State(game)
 	if (Options::getString("GUIstyle") == "xcom2")
 	{
 		// Basic properties for display in TFTD style
-		background = "TFTD_TAC00.SCR";
+		background = "TFTD_BATTLE_TAC00.SCR";
 
 		color = Palette::blockOffset(0)+1;
 	}
