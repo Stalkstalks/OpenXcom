@@ -99,7 +99,7 @@ public:
 	/// Saves the tile to binary
 	void saveBinary(Uint8** buffer) const;
 	/// Gets a pointer to the mapdata for a specific part of the tile.
-	MapData *getMapData(int part) const;
+	inline MapData *getMapData(int part) const;
 	/// Sets the pointer to the mapdata for a specific part of the tile
 	void setMapData(MapData *dat, int mapDataID, int mapDataSetID, int part);
 	/// Gets the IDs to the mapdata for a specific part of the tile
@@ -121,7 +121,7 @@ public:
 	/// Open a door, returns the ID, 0(normal), 1(ufo) or -1 if no door opened.
 	int openDoor(int part, BattleUnit *Unit = 0, bool debug = false);
 	/// Check if ufo door is open.
-	bool isUfoDoorOpen(int part) const;
+	inline bool isUfoDoorOpen(int part) const;
 	/// Close ufo door.
 	int closeUfoDoor();
 	/// Sets the black fog of war status of this tile.
@@ -199,6 +199,27 @@ public:
 	/// increment the overlap value on this tile.
 	void addOverlap();
 };
+
+/**
+ * Check if the ufo door is open or opening. Used for visibility/light blocking checks.
+ * This function assumes that there never are 2 doors on 1 tile or a door and another wall on 1 tile.
+ * @param part
+ * @return bool
+ */
+inline bool Tile::isUfoDoorOpen(int part) const
+{
+	return (_objects[part] && _objects[part]->isUFODoor() && _currentFrame[part] != 0);
+}
+
+/**
+ * Get the MapData pointer of a part of the tile.
+ * @param part the part 0-3.
+ * @return pointer to mapdata
+ */
+inline MapData *Tile::getMapData(int part) const
+{
+	return _objects[part];
+}
 
 }
 
