@@ -47,6 +47,10 @@
 #include "../Interface/Cursor.h"
 #include "../Engine/Options.h"
 #include "../Interface/NumberText.h"
+#include "../Engine/Screen.h"
+#include "../Savegame/BattleItem.h"
+#include "../Engine/ShaderDraw.h"
+#include "../Engine/ShaderMove.h"
 
 
 /*
@@ -209,6 +213,27 @@ void Map::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
 	_message->setBackground(_res->getSurface("TAC00.SCR"));
 	_message->setFonts(_res->getFont("Big.fnt"), _res->getFont("Small.fnt"));
 	_message->setText(_game->getLanguage()->getString("STR_HIDDEN_MOVEMENT"));
+}
+
+namespace
+{
+
+struct Transparent
+{
+	static inline void func(Uint8& dest, const Uint8& src, const int&, const int&, const int&)
+	{
+		if(src)
+		{
+			const int newShade = ((src&15)*3 + (dest&15))/4;
+			if (newShade > 15)
+				// so dark it would flip over to another color - make it black instead
+				dest = 15;
+			else
+				dest = (dest&(15<<4)) | newShade;
+		}
+	}
+};
+
 }
 
 /**
@@ -408,7 +433,7 @@ void Map::drawTerrain(Surface *surface)
 						_throwFrame->clear();
 						SDL_BlitSurface(_throwCrosshair->getSurface(), _throwFrame->getCrop(), _throwFrame->getSurface(), 0);
 						clipCorners(_throwFrame);
-						_throwFrame->blitNShade(surface, screenPosition.x, screenPosition.y + 26-1, 0);	// -1 because tiles is crossing previous tiles
+						ShaderDraw<Transparent>(ShaderSurface(surface), ShaderSurface(_throwFrame, screenPosition.x, screenPosition.y + 26-1)); // -1 because tiles is crossing previous tiles
 					}
 					// Draw cursor back
 					if (_cursorType != CT_NONE && _selectorX > itX - _cursorSize && _selectorY > itY - _cursorSize && _selectorX < itX+1 && _selectorY < itY+1 && !_save->getBattleState()->getMouseOverIcons())

@@ -36,6 +36,7 @@ class Explosion;
 class BattlescapeMessage;
 class Camera;
 class Timer;
+class BattleAction;
 
 enum CursorType { CT_NONE, CT_NORMAL, CT_AIM, CT_PSI, CT_WAYPOINT, CT_THROW };
 
