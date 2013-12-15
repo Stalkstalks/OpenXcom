@@ -412,7 +412,7 @@ struct PaletteShift
 		if(src)
 		{
 			int inverseOffset = mid ? 2 * (mid - src) : 0;
-			dest = off + (src * mul + inverseOffset + 6) % 6;
+			dest = off + src * mul + inverseOffset;
 		}
 	}
 };
