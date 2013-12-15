@@ -218,6 +218,7 @@ void Map::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
 void Map::drawTerrain(Surface *surface)
 {
 	int frameNumber = 0;
+	Surface bufferSurface(32, 40);
 	Surface *tmpSurface;
 	Tile *tile;
 	int beginX = 0, endX = _save->getMapSizeX() - 1;
@@ -445,11 +446,22 @@ void Map::drawTerrain(Surface *surface)
 								tmpSurface->blitNShade(surface, screenPosition.x, screenPosition.y - tile->getMapData(MapData::O_OBJECT)->getYOffset(), tileShade, false);
 						}
 						// draw an item on top of the floor (if any)
-						int sprite = tile->getTopItemSprite();
-						if (sprite != -1)
+						BattleItem* item = tile->getTopItem();
+						if (item)
 						{
-							tmpSurface = _res->getSurfaceSet("FLOOROB.PCK")->getFrame(sprite);
-							tmpSurface->blitNShade(surface, screenPosition.x, screenPosition.y + tile->getTerrainLevel(), tileShade, false);
+							BattleUnit* itemUnit = item->getUnit();
+							int sprite = item->getRules()->getFloorSprite();
+							if (sprite != -1)
+							{
+								tmpSurface = _res->getSurfaceSet("FLOOROB.PCK")->getFrame(sprite);
+								if(itemUnit)
+								{
+									bufferSurface.clear();
+									itemUnit->blitRecolored(tmpSurface, &bufferSurface);
+									tmpSurface = &bufferSurface;
+								}
+								tmpSurface->blitNShade(surface, screenPosition.x, screenPosition.y + tile->getTerrainLevel(), tileShade, false);
+							}
 						}
 
 					}

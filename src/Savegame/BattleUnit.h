@@ -112,6 +112,9 @@ private:
 	Unit *_unitRules;
 	int _rankInt;
 	int _turretType;
+	bool _nationalColors;
+	Uint8 _faceColor;
+	Uint8 _hairColor;
 public:
 	static const int MAX_SOLDIER_ID = 1000000;
 	/// Creates a BattleUnit.
@@ -421,6 +424,8 @@ public:
 	bool isSelectable(UnitFaction faction, bool checkReselect, bool checkInventory) const;
 	/// Does this unit have an inventory?
 	bool hasInventory() const;
+	/// Recolor sprite
+	void blitRecolored(Surface* src, Surface* dest) const;
 };
 
 }

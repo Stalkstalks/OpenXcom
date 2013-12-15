@@ -31,9 +31,6 @@
 #include "../Savegame/Soldier.h"
 #include "../Ruleset/RuleInventory.h"
 #include "../Ruleset/Ruleset.h"
-#include "../Engine/ShaderDraw.h"
-#include "../Engine/ShaderMove.h"
-#include "../Engine/Options.h"
 
 namespace OpenXcom
 {
@@ -47,7 +44,7 @@ namespace OpenXcom
  */
 UnitSprite::UnitSprite(int width, int height, int x, int y) : Surface(width, height, x, y), _unit(0), _itemA(0), _itemB(0), _unitSurface(0), _itemSurfaceA(0), _itemSurfaceB(0), _part(0), _animationFrame(0)
 {
-	_hairBleach = Options::getBool("battleHairBleach");
+
 }
 
 /**
@@ -98,33 +95,6 @@ void UnitSprite::setBattleItem(BattleItem *item)
 			_itemB = item;
 	}
 	_redraw = true;
-}
-
-
-namespace
-{
-
-struct ColorFace
-{
-	static const Uint8 ColorGroup = 15<<4;
-	static const Uint8 ColorShade = 15;
-
-	static const Uint8 Hair = 9 << 4;
-	static const Uint8 Face = 6 << 4;
-	static inline void func(Uint8& src, const Uint8& hair_color, const Uint8& face_color, int, int)
-	{
-		if((src & ColorGroup) == Hair)
-		{
-			src = hair_color + (src & ColorShade);
-		}
-		else if((src & ColorGroup) == Face)
-		{
-			src = face_color + (src & ColorShade);
-		}
-	}
-};
-
-
 }
 
 /**
@@ -221,36 +191,8 @@ void UnitSprite::drawRoutine0()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
-		torso->blit(this);
-		if (_unit->getGeoscapeSoldier() && _hairBleach)
-		{
-			SoldierLook look = _unit->getGeoscapeSoldier()->getLook();
 
-			if(look)
-			{
-				Uint8 face_color = ColorFace::Face;
-				Uint8 hair_color = ColorFace::Hair;
-				switch(look)
-				{
-					case LOOK_BLONDE:
-						break;
-					case LOOK_BROWNHAIR:
-						hair_color = (10<<4) + 4;
-						break;
-					case LOOK_ORIENTAL:
-						face_color = 10<<4;
-						hair_color = (15<<4) + 5;
-						break;
-					case LOOK_AFRICAN:
-						face_color = (10<<4) + 3;
-						hair_color = (10<<4) + 6;
-						break;
-				}
-				lock();
-				ShaderDraw<ColorFace>(ShaderSurface(this), ShaderScalar(hair_color), ShaderScalar(face_color));
-				unlock();
-			}
-		}
+		_unit->blitRecolored(torso, this);
 		return;
 	}
 
@@ -462,90 +404,49 @@ void UnitSprite::drawRoutine0()
 		itemB->setY(itemB->getY() + (22 - _unit->getStandHeight()));
 	}
 
-	Surface *newTorso = new Surface(*torso);
-	Surface *newLegs = new Surface(*legs);
-	Surface *newLeftArm = new Surface(*leftArm);
-	Surface *newRightArm = new Surface(*rightArm);
-	if (_unit->getGeoscapeSoldier() && _hairBleach)
-	{
-		SoldierLook look = _unit->getGeoscapeSoldier()->getLook();
-
-		if(look)
-		{
-			Uint8 face_color = ColorFace::Face;
-			Uint8 hair_color = ColorFace::Hair;
-			switch(look)
-			{
-				case LOOK_BLONDE:
-					break;
-				case LOOK_BROWNHAIR:
-					hair_color = (10<<4) + 4;
-					break;
-				case LOOK_ORIENTAL:
-					face_color = 10<<4;
-					hair_color = (15<<4) + 5;
-					break;
-				case LOOK_AFRICAN:
-					face_color = (10<<4) + 3;
-					hair_color = (10<<4) + 6;
-					break;
-			}
-			lock();
-			ShaderDraw<ColorFace>(ShaderSurface(newLeftArm), ShaderScalar(hair_color), ShaderScalar(face_color));
-			ShaderDraw<ColorFace>(ShaderSurface(newRightArm), ShaderScalar(hair_color), ShaderScalar(face_color));
-			ShaderDraw<ColorFace>(ShaderSurface(newTorso), ShaderScalar(hair_color), ShaderScalar(face_color));
-			ShaderDraw<ColorFace>(ShaderSurface(newLegs), ShaderScalar(hair_color), ShaderScalar(face_color));
-			unlock();
-			torso = newTorso;
-			legs = newLegs;
-			leftArm = newLeftArm;
-			rightArm = newRightArm;
-		}
-	}
-
+	#define blitItem(item) {item?item->blit(this):void();}
+	#define blitBody(item) {_unit->blitRecolored(item, this);}
 	// blit order depends on unit direction, and whether we are holding a 2 handed weapon.
 	switch (_unit->getDirection())
 	{
-	case 0: itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 1: leftArm->blit(this); legs->blit(this); itemB?itemB->blit(this):void(); torso->blit(this); itemA?itemA->blit(this):void(); rightArm->blit(this); break;
-	case 2: leftArm->blit(this); legs->blit(this); itemB?itemB->blit(this):void(); torso->blit(this); itemA?itemA->blit(this):void(); rightArm->blit(this); break;
+	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemB); blitBody(torso); blitItem(itemA); blitBody(rightArm); break;
+	case 2: blitBody(leftArm); blitBody(legs); blitItem(itemB); blitBody(torso); blitItem(itemA); blitBody(rightArm); break;
 	case 3:
 		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
 		{
-			legs->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); rightArm->blit(this);
+			blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); blitBody(rightArm);
 		}
 		else
 		{
-			legs->blit(this); torso->blit(this); leftArm->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void();
+			blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB);
 		}
 		break;
-	case 4:	legs->blit(this); rightArm->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void();	break;
+	case 4:	blitBody(legs); blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB);	break;
 	case 5:
 		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
 		{
-			rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void();
+			blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB);
 		}
 		else
 		{
-			rightArm->blit(this); legs->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); torso->blit(this); leftArm->blit(this);
+			blitBody(rightArm); blitBody(legs); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm);
 		}
 		break;
-	case 6: rightArm->blit(this); legs->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); torso->blit(this); leftArm->blit(this); break;
+	case 6: blitBody(rightArm); blitBody(legs); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm); break;
 	case 7:
 		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
 		{
-			rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); legs->blit(this); torso->blit(this);
+			blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso);
 		}
 		else
 		{
-			itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); rightArm->blit(this); legs->blit(this); torso->blit(this);
+			blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso);
 		}
 		break;
 	}
-	delete(newTorso);
-	delete(newLegs);
-	delete(newLeftArm);
-	delete(newRightArm);
+	#undef blitItem
+	#undef blitBody
 }
 
 

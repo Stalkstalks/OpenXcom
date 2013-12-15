@@ -37,9 +37,56 @@
 #include "../Ruleset/RuleSoldier.h"
 #include "Tile.h"
 #include "SavedGame.h"
+#include "../Engine/ShaderDraw.h"
+#include "../Engine/ShaderMove.h"
+#include "../Engine/Options.h"
 
 namespace OpenXcom
 {
+
+/**
+ * Helper namespace for BattleUnit::recolorSprite
+ */
+namespace
+{
+
+struct ColorFace
+{
+	static const Uint8 Hair = 9 << 4;
+	static const Uint8 Face = 6 << 4;
+	static inline void func(Uint8& dest, const Uint8& src, const Uint8& hair_color, const Uint8& face_color, int)
+	{
+		if(src)
+		{
+			const Uint8 group = src & helper::ColorGroup;
+			if(group == Hair)
+			{
+				dest = hair_color + src - Hair;
+			}
+			else if(group == Face)
+			{
+				dest = face_color + src - Face;
+			}
+			else
+			{
+				dest = src;
+			}
+		}
+	}
+};
+
+struct ColorCopy
+{
+	static inline void func(Uint8& dest, const Uint8& src, int, int, int)
+	{
+		if(src)
+		{
+			dest = src;
+		}
+	}
+};
+
+} //namespace
 
 /**
  * Initializes a BattleUnit from a Soldier
@@ -52,7 +99,8 @@ BattleUnit::BattleUnit(Soldier *soldier, UnitFaction faction) : _faction(faction
 																_dontReselect(false), _fire(0), _currentAIState(0), _visible(false), _cacheInvalid(true),
 																_expBravery(0), _expReactions(0), _expFiring(0), _expThrowing(0), _expPsiSkill(0), _expMelee(0),
 																_motionPoints(0), _kills(0), _hitByFire(false), _moraleRestored(0), _coverReserve(0), _charging(0),
-																_turnsExposed(255), _geoscapeSoldier(soldier), _unitRules(0), _rankInt(-1), _turretType(-1), _hidingForTurn(false)
+																_turnsExposed(255), _geoscapeSoldier(soldier), _unitRules(0), _rankInt(-1), _turretType(-1), _hidingForTurn(false),
+																_nationalColors(false), _faceColor(0), _hairColor(0)
 {
 	_name = soldier->getName();
 	_id = soldier->getId();
@@ -105,6 +153,30 @@ BattleUnit::BattleUnit(Soldier *soldier, UnitFaction faction) : _faction(faction
 	_activeHand = "STR_RIGHT_HAND";
 
 	lastCover = Position(-1, -1, -1);
+	_nationalColors = Options::getBool("battleHairBleach");
+	if(_nationalColors)
+	{
+		SoldierLook look = getGeoscapeSoldier()->getLook();
+
+		_faceColor = ColorFace::Face;
+		_hairColor = ColorFace::Hair;
+		switch(look)
+		{
+			case LOOK_BLONDE:
+				break;
+			case LOOK_BROWNHAIR:
+				_hairColor = (10<<4) + 4;
+				break;
+			case LOOK_ORIENTAL:
+				_faceColor = (10<<4);
+				_hairColor = (15<<4) + 5;
+				break;
+			case LOOK_AFRICAN:
+				_faceColor = (10<<4) + 3;
+				_hairColor = (10<<4) + 6;
+				break;
+		}
+	}
 }
 
 /**
@@ -121,7 +193,8 @@ BattleUnit::BattleUnit(Unit *unit, UnitFaction faction, int id, Armor *armor, in
 																						_expThrowing(0), _expPsiSkill(0), _expMelee(0), _motionPoints(0), _kills(0), _hitByFire(false),
 																						_moraleRestored(0), _coverReserve(0), _charging(0), _turnsExposed(255),
 																						_armor(armor), _geoscapeSoldier(0),  _unitRules(unit), _rankInt(-1),
-																						_turretType(-1), _hidingForTurn(false)
+																						_turretType(-1), _hidingForTurn(false),
+																						_nationalColors(false), _faceColor(0), _hairColor(0)
 {
 	_type = unit->getType();
 	_rank = unit->getRank();
@@ -2562,4 +2635,20 @@ bool BattleUnit::hasInventory() const
 	return (_armor->getSize() == 1 && _rank != "STR_LIVE_TERRORIST");
 }
 
+/**
+ * Function used to recoloring sprite based on nationality of unit
+ * @param surf surface to recolor
+ */
+void BattleUnit::blitRecolored(Surface* src, Surface* dest) const
+{
+	if(_nationalColors)
+	{
+		ShaderDraw<ColorFace>(ShaderSurface(dest), ShaderSurface(src), ShaderScalar(_hairColor), ShaderScalar(_faceColor));
+	}
+	else
+	{
+		ShaderDraw<ColorCopy>(ShaderSurface(dest), ShaderSurface(src));
+	}
 }
+
+} //namespace OpenXcom
