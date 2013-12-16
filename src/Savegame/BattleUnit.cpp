@@ -2646,11 +2646,11 @@ void BattleUnit::blitRecolored(Surface* src, Surface* dest) const
 {
 	if(_nationalColors)
 	{
-		ShaderDraw<ColorFace>(ShaderSurface(dest), ShaderSurface(src), ShaderScalar(_hairColor), ShaderScalar(_faceColor));
+		ShaderDraw<ColorFace>(ShaderSurface(dest, 0, 0), ShaderSurface(src), ShaderScalar(_hairColor), ShaderScalar(_faceColor));
 	}
 	else
 	{
-		ShaderDraw<ColorCopy>(ShaderSurface(dest), ShaderSurface(src));
+		ShaderDraw<ColorCopy>(ShaderSurface(dest, 0, 0), ShaderSurface(src));
 	}
 }
 

@@ -105,6 +105,28 @@ void UnitSprite::setAnimationFrame(int frame)
 {
 	_animationFrame = frame;
 }
+
+/**
+ * blit item sprite onto surface
+ * @param item item sprite, can be null
+ */
+void UnitSprite::blitItem(Surface* item)
+{
+	if(item)
+	{
+		item->blit(this);
+	}
+}
+
+/**
+ * blit body sprite onto surface with optional recoloring
+ * @param body
+ */
+void UnitSprite::blitBody(Surface* body)
+{
+	_unit->blitRecolored(body, this);
+}
+
 /**
  * Draws a unit, using the drawing rules of the unit.
  * This function is called by Map, for each unit on the screen.
@@ -192,7 +214,7 @@ void UnitSprite::drawRoutine0()
 	{
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
 
-		_unit->blitRecolored(torso, this);
+		blitBody(torso);
 		return;
 	}
 
@@ -404,8 +426,6 @@ void UnitSprite::drawRoutine0()
 		itemB->setY(itemB->getY() + (22 - _unit->getStandHeight()));
 	}
 
-	#define blitItem(item) {item?item->blit(this):void();}
-	#define blitBody(item) {_unit->blitRecolored(item, this);}
 	// blit order depends on unit direction, and whether we are holding a 2 handed weapon.
 	switch (_unit->getDirection())
 	{
@@ -445,8 +465,6 @@ void UnitSprite::drawRoutine0()
 		}
 		break;
 	}
-	#undef blitItem
-	#undef blitBody
 }
 
 
@@ -476,7 +494,7 @@ void UnitSprite::drawRoutine1()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
-		torso->blit(this);
+		blitBody(torso);
 		return;
 	}
 
@@ -577,14 +595,14 @@ void UnitSprite::drawRoutine1()
 	// blit order depends on unit direction.
 	switch (_unit->getDirection())
 	{
-	case 0: itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 1: leftArm->blit(this); torso->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 2: leftArm->blit(this); torso->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void();  break;
-	case 3:	torso->blit(this); leftArm->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 4:	torso->blit(this); leftArm->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 5:	rightArm->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 6: rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); torso->blit(this); leftArm->blit(this); break;
-	case 7:	rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); torso->blit(this); break;
+	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 2: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 3:	blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 4:	blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 5:	blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
+	case 6: blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm); break;
+	case 7:	blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(torso); break;
 	}
 }
 
@@ -614,12 +632,12 @@ void UnitSprite::drawRoutine2()
 	if (_part > 0 && hoverTank != 0)
 	{
 		s = _unitSurface->getFrame(104 + ((_part-1) * 8) + _animationFrame);
-		s->blit(this);
+		blitBody(s);
 	}
 
 	// draw the tank itself
 	s = _unitSurface->getFrame(hoverTank + (_part * 8) + _unit->getDirection());
-	s->blit(this);
+	blitBody(s);
 
 	// draw the turret, together with the last part
 	if (_part == 3 && turret != -1)
@@ -634,7 +652,7 @@ void UnitSprite::drawRoutine2()
 		}
 		s->setX(turretOffsetX);
 		s->setY(turretOffsetY);
-		s->blit(this);
+		blitBody(s);
 	}
 
 }
@@ -656,12 +674,12 @@ void UnitSprite::drawRoutine3()
 	if (_part > 0)
 	{
 		s = _unitSurface->getFrame(32 + ((_part-1) * 8) + _animationFrame);
-		s->blit(this);
+		blitBody(s);
 	}
 
 	s = _unitSurface->getFrame((_part * 8) + _unit->getDirection());
 
-	s->blit(this);
+	blitBody(s);
 }
 
 /**
@@ -694,7 +712,7 @@ void UnitSprite::drawRoutine4()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
 		s = _unitSurface->getFrame(die + _unit->getFallingPhase());
-		s->blit(this);
+		blitBody(s);
 		return;
 	}
 	else
@@ -723,15 +741,15 @@ void UnitSprite::drawRoutine4()
 		{
 			if(_itemA->getSlot()->getId() == "STR_RIGHT_HAND")
 			{
-			itemA = _itemSurfaceA->getFrame(_itemA->getRules()->getHandSprite() + _unit->getDirection());
-			itemA->setX(0);
-			itemA->setY(0);
+				itemA = _itemSurfaceA->getFrame(_itemA->getRules()->getHandSprite() + _unit->getDirection());
+				itemA->setX(0);
+				itemA->setY(0);
 			}
 			else
 			{
-			itemA = _itemSurfaceA->getFrame(_itemA->getRules()->getHandSprite() + _unit->getDirection());
-			itemA->setX(offX2[_unit->getDirection()]);
-			itemA->setY(offY2[_unit->getDirection()]);
+				itemA = _itemSurfaceA->getFrame(_itemA->getRules()->getHandSprite() + _unit->getDirection());
+				itemA->setX(offX2[_unit->getDirection()]);
+				itemA->setY(offY2[_unit->getDirection()]);
 			}
 		}
 	}
@@ -762,14 +780,14 @@ void UnitSprite::drawRoutine4()
 
 	switch (_unit->getDirection())
 	{
-	case 0: itemB?itemB->blit(this):void(); itemA?itemA->blit(this):void(); s->blit(this); break;
-	case 1: itemB?itemB->blit(this):void(); s->blit(this); itemA?itemA->blit(this):void(); break;
-	case 2: s->blit(this); itemB?itemB->blit(this):void(); itemA?itemA->blit(this):void(); break;
-	case 3: s->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 4: s->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 5: itemA?itemA->blit(this):void(); s->blit(this); itemB?itemB->blit(this):void(); break;
-	case 6: itemA?itemA->blit(this):void(); s->blit(this); itemB?itemB->blit(this):void(); break;
-	case 7: itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); s->blit(this); break;
+	case 0: blitItem(itemB); blitItem(itemA); blitBody(s); break;
+	case 1: blitItem(itemB); blitBody(s); blitItem(itemA); break;
+	case 2: blitBody(s); blitItem(itemB); blitItem(itemA); break;
+	case 3: blitBody(s); blitItem(itemA); blitItem(itemB); break;
+	case 4: blitBody(s); blitItem(itemA); blitItem(itemB); break;
+	case 5: blitItem(itemA); blitBody(s); blitItem(itemB); break;
+	case 6: blitItem(itemA); blitBody(s); blitItem(itemB); break;
+	case 7: blitItem(itemA); blitItem(itemB); blitBody(s); break;
 	}
 }
 
@@ -795,7 +813,7 @@ void UnitSprite::drawRoutine5()
 		s = _unitSurface->getFrame((_part * 8) + _unit->getDirection());
 	}
 
-	s->blit(this);
+	blitBody(s);
 }
 
 /**
@@ -827,13 +845,13 @@ void UnitSprite::drawRoutine6()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
-		torso->blit(this);
+		blitBody(torso);
 		return;
 	}
 
-		torso = _unitSurface->getFrame(Torso + _unit->getDirection());
-		leftArm = _unitSurface->getFrame(larmStand + _unit->getDirection());
-		rightArm = _unitSurface->getFrame(rarmStand + _unit->getDirection());
+	torso = _unitSurface->getFrame(Torso + _unit->getDirection());
+	leftArm = _unitSurface->getFrame(larmStand + _unit->getDirection());
+	rightArm = _unitSurface->getFrame(rarmStand + _unit->getDirection());
 
 
 	// when walking, torso(fixed sprite) has to be animated up/down
@@ -951,14 +969,14 @@ void UnitSprite::drawRoutine6()
 	// blit order depends on unit direction.
 	switch (_unit->getDirection())
 	{
-	case 0: itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 1: leftArm->blit(this); legs->blit(this); itemB?itemB->blit(this):void(); torso->blit(this); itemA?itemA->blit(this):void(); rightArm->blit(this); break;
-	case 2: leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 3: legs->blit(this); torso->blit(this); leftArm->blit(this); rightArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void();	break;
-	case 4:	rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 5:	rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); break;
-	case 6: rightArm->blit(this); legs->blit(this); itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); torso->blit(this); leftArm->blit(this); break;
-	case 7:	itemA?itemA->blit(this):void(); itemB?itemB->blit(this):void(); leftArm->blit(this); rightArm->blit(this); legs->blit(this); torso->blit(this); break;
+	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemB); blitBody(torso); blitItem(itemA); blitBody(rightArm); break;
+	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 3: blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
+	case 4:	blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
+	case 5:	blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
+	case 6: blitBody(rightArm); blitBody(legs); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm); break;
+	case 7:	blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso); break;
 	}
 }
 
@@ -986,7 +1004,7 @@ void UnitSprite::drawRoutine7()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
-		torso->blit(this);
+		blitBody(torso);
 		return;
 	}
 
@@ -1016,14 +1034,14 @@ void UnitSprite::drawRoutine7()
 	// blit order depends on unit direction
 	switch (_unit->getDirection())
 	{
-	case 0: leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 1: leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 2: leftArm->blit(this); legs->blit(this); torso->blit(this); rightArm->blit(this); break;
-	case 3: legs->blit(this); torso->blit(this); leftArm->blit(this); rightArm->blit(this); break;
-	case 4: rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); break;
-	case 5: rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); break;
-	case 6: rightArm->blit(this); legs->blit(this); torso->blit(this); leftArm->blit(this); break;
-	case 7: leftArm->blit(this); rightArm->blit(this); legs->blit(this); torso->blit(this); break;
+	case 0: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 3: blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); break;
+	case 4: blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); break;
+	case 5: blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); break;
+	case 6: blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); break;
+	case 7: blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso); break;
 	}
 }
 
@@ -1052,7 +1070,7 @@ void UnitSprite::drawRoutine8()
 	if (_unit->getStatus() == STATUS_AIMING)
 		legs = _unitSurface->getFrame(aim);
 
-	legs->blit(this);
+	blitBody(legs);
 }
 
 /**
@@ -1076,7 +1094,7 @@ void UnitSprite::drawRoutine9()
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 		torso = _unitSurface->getFrame(die + _unit->getFallingPhase());
 
-	torso->blit(this);
+	blitBody(torso);
 }
 
 /**
