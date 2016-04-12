@@ -19,14 +19,13 @@
 #define _USE_MATH_DEFINES
 #include "Craft.h"
 #include <cmath>
-#include <sstream>
 #include "../Engine/Language.h"
 #include "../Engine/RNG.h"
-#include "../Ruleset/RuleCraft.h"
+#include "../Mod/RuleCraft.h"
 #include "CraftWeapon.h"
-#include "../Ruleset/RuleCraftWeapon.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Savegame/SavedGame.h"
+#include "../Mod/RuleCraftWeapon.h"
+#include "../Mod/Mod.h"
+#include "SavedGame.h"
 #include "ItemContainer.h"
 #include "Soldier.h"
 #include "Base.h"
@@ -35,8 +34,9 @@
 #include "MissionSite.h"
 #include "AlienBase.h"
 #include "Vehicle.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/AlienDeployment.h"
+#include "../Mod/Armor.h"
+#include "../Mod/RuleItem.h"
+#include "../Mod/AlienDeployment.h"
 
 namespace OpenXcom
 {
@@ -89,10 +89,10 @@ Craft::~Craft()
 /**
  * Loads the craft from a YAML file.
  * @param node YAML node.
- * @param rule Ruleset for the saved game.
+ * @param mod Mod for the saved game.
  * @param save Pointer to the saved game.
  */
-void Craft::load(const YAML::Node &node, const Ruleset *rule, SavedGame *save)
+void Craft::load(const YAML::Node &node, const Mod *mod, SavedGame *save)
 {
 	MovingTarget::load(node);
 	_id = node["id"].as<int>(_id);
@@ -105,7 +105,7 @@ void Craft::load(const YAML::Node &node, const Ruleset *rule, SavedGame *save)
 		if (_rules->getWeapons() > j)
 		{
 			std::string type = (*i)["type"].as<std::string>();
-			RuleCraftWeapon* weapon = rule->getCraftWeapon(type);
+			RuleCraftWeapon* weapon = mod->getCraftWeapon(type);
 			if (type != "0" && weapon)
 			{
 				CraftWeapon *w = new CraftWeapon(weapon, 0);
@@ -124,7 +124,7 @@ void Craft::load(const YAML::Node &node, const Ruleset *rule, SavedGame *save)
 	_items->load(node["items"]);
 	for (std::map<std::string, int>::iterator i = _items->getContents()->begin(); i != _items->getContents()->end();)
 	{
-		if (std::find(rule->getItemsList().begin(), rule->getItemsList().end(), i->first) == rule->getItemsList().end())
+		if (std::find(mod->getItemsList().begin(), mod->getItemsList().end(), i->first) == mod->getItemsList().end())
 		{
 			_items->getContents()->erase(i++);
 		}
@@ -136,9 +136,9 @@ void Craft::load(const YAML::Node &node, const Ruleset *rule, SavedGame *save)
 	for (YAML::const_iterator i = node["vehicles"].begin(); i != node["vehicles"].end(); ++i)
 	{
 		std::string type = (*i)["type"].as<std::string>();
-		if (rule->getItem(type))
+		if (mod->getItem(type))
 		{
-			Vehicle *v = new Vehicle(rule->getItem(type), 0, 4);
+			Vehicle *v = new Vehicle(mod->getItem(type), 0, 4);
 			v->load(*i);
 			_vehicles.push_back(v);
 		}
@@ -421,9 +421,9 @@ void Craft::setDestination(Target *dest)
 		_takeoff = 60;
 	}
 	if (dest == 0)
-		setSpeed(_rules->getMaxSpeed()/2);
+		setSpeed(_stats.speedMax/2);
 	else
-		setSpeed(_rules->getMaxSpeed());
+		setSpeed(_stats.speedMax);
 	MovingTarget::setDestination(dest);
 }
 
@@ -464,10 +464,10 @@ int Craft::getNumSoldiers() const
 
 	int total = 0;
 
-	for (std::vector<Soldier*>::iterator i = _base->getSoldiers()->begin(); i != _base->getSoldiers()->end(); ++i)
+	for (Soldier *s : *_base->getSoldiers())
 	{
-		if ((*i)->getCraft() == this)
-			total++;
+		if (s->getCraft() == this && s->getArmor()->getSize() == 1)
+			++total;
 	}
 
 	return total;
@@ -490,7 +490,14 @@ int Craft::getNumEquipment() const
  */
 int Craft::getNumVehicles() const
 {
-	return _vehicles.size();
+	int total = 0;
+
+	for (Soldier *s : *_base->getSoldiers())
+	{
+		if (s->getCraft() == this && s->getArmor()->getSize() == 2)
+			++total;
+	}
+	return _vehicles.size() + total;
 }
 
 /**
@@ -534,7 +541,7 @@ void Craft::addCraftStats(const RuleCraftStats& s)
 	int overflowFuel = _fuel - _stats.fuelMax;
 	if (overflowFuel > 0 && !_rules->getRefuelItem().empty())
 	{
-		_base->getItems()->addItem(_rules->getRefuelItem(), overflowFuel / _rules->getRefuelRate());
+		_base->getStorageItems()->addItem(_rules->getRefuelItem(), overflowFuel / _rules->getRefuelRate());
 	}
 	setFuel(_fuel);
 }
@@ -809,7 +816,7 @@ bool Craft::detect(Target *target) const
 		return true;
 
 	Ufo *u = dynamic_cast<Ufo*>(target);
-	int chance = _rules->getRadarChance() * (100 + u->getVisibility()) / 100;
+	int chance = _stats.radarChance * (100 + u->getVisibility()) / 100;
 	return RNG::percent(chance);
 }
 
@@ -821,7 +828,7 @@ bool Craft::detect(Target *target) const
  */
 bool Craft::insideRadarRange(Target *target) const
 {
-	double range = _rules->getRadarRange() * (1 / 60.0) * (M_PI / 180);
+	double range = _stats.radarRange * (1 / 60.0) * (M_PI / 180);
 	return (getDistance(target) <= range);
 }
 
@@ -871,10 +878,10 @@ void Craft::refuel()
 /**
  * Rearms the craft's weapons by adding ammo every hour
  * while it's docked in the base.
- * @param rules Pointer to ruleset.
+ * @param mod Pointer to mod.
  * @return The ammo ID missing for rearming, or "" if none.
  */
-std::string Craft::rearm(Ruleset *rules)
+std::string Craft::rearm(Mod *mod)
 {
 	std::string ammo;
 	for (std::vector<CraftWeapon*>::iterator i = _weapons.begin(); ; ++i)
@@ -887,14 +894,14 @@ std::string Craft::rearm(Ruleset *rules)
 		if (*i != 0 && (*i)->isRearming())
 		{
 			std::string clip = (*i)->getRules()->getClipItem();
-			int available = _base->getItems()->getItem(clip);
+			int available = _base->getStorageItems()->getItem(clip);
 			if (clip.empty())
 			{
 				(*i)->rearm(0, 0);
 			}
 			else if (available > 0)
 			{
-				int used = (*i)->rearm(available, rules->getItem(clip)->getClipSize());
+				int used = (*i)->rearm(available, mod->getItem(clip)->getClipSize());
 
 				if (used == available && (*i)->isRearming())
 				{
@@ -902,7 +909,7 @@ std::string Craft::rearm(Ruleset *rules)
 					(*i)->setRearming(false);
 				}
 
-				_base->getItems()->removeItem(clip, used);
+				_base->getStorageItems()->removeItem(clip, used);
 			}
 			else
 			{
@@ -944,7 +951,7 @@ void Craft::setInBattlescape(bool inbattle)
  */
 bool Craft::isDestroyed() const
 {
-	return (_damage >= _rules->getMaxDamage());
+	return (_damage >= _stats.damageMax);
 }
 
 /**
@@ -965,11 +972,18 @@ int Craft::getSpaceAvailable() const
 int Craft::getSpaceUsed() const
 {
 	int vehicleSpaceUsed = 0;
-	for (std::vector<Vehicle*>::const_iterator i = _vehicles.begin(); i != _vehicles.end(); ++i)
+	for (Vehicle* v : _vehicles)
 	{
-		vehicleSpaceUsed += (*i)->getSize();
+		vehicleSpaceUsed += v->getSize();
 	}
-	return getNumSoldiers() + vehicleSpaceUsed;
+	for (Soldier *s : *_base->getSoldiers())
+	{
+		if (s->getCraft() == this)
+		{
+			vehicleSpaceUsed += s->getArmor()->getTotalSize();
+		}
+	}
+	return vehicleSpaceUsed;
 }
 
 /**

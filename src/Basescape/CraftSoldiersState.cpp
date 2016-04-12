@@ -17,25 +17,23 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "CraftSoldiersState.h"
-#include <string>
-#include <sstream>
 #include <climits>
 #include "../Engine/Action.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextList.h"
+#include "../Menu/ErrorMessageState.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Soldier.h"
 #include "../Savegame/Craft.h"
-#include "../Ruleset/RuleCraft.h"
-#include "../Engine/LocalizedText.h"
 #include "SoldierInfoState.h"
+#include "../Mod/Armor.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
@@ -72,12 +70,12 @@ CraftSoldiersState::CraftSoldiersState(Base *base, size_t craft) :  _base(base),
 	add(_txtUsed, "text", "craftSoldiers");
 	add(_lstSoldiers, "list", "craftSoldiers");
 
-	_otherCraftColor = _game->getRuleset()->getInterface("craftSoldiers")->getElement("otherCraft")->color;
+	_otherCraftColor = _game->getMod()->getInterface("craftSoldiers")->getElement("otherCraft")->color;
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK02.SCR"));
+	_window->setBackground(_game->getMod()->getSurface("BACK02.SCR"));
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftSoldiersState::btnOkClick);
@@ -198,7 +196,6 @@ void CraftSoldiersState::moveSoldierUp(Action *action, unsigned int row, bool ma
 	{
 		_base->getSoldiers()->erase(_base->getSoldiers()->begin() + row);
 		_base->getSoldiers()->insert(_base->getSoldiers()->begin(), s);
-		initList(0);
 	}
 	else
 	{
@@ -212,8 +209,8 @@ void CraftSoldiersState::moveSoldierUp(Action *action, unsigned int row, bool ma
 		{
 			_lstSoldiers->scrollUp(false);
 		}
-		initList(_lstSoldiers->getScroll());
 	}
+	initList(_lstSoldiers->getScroll());
 }
 
 /**
@@ -250,7 +247,6 @@ void CraftSoldiersState::moveSoldierDown(Action *action, unsigned int row, bool 
 	{
 		_base->getSoldiers()->erase(_base->getSoldiers()->begin() + row);
 		_base->getSoldiers()->insert(_base->getSoldiers()->end(), s);
-		initList(std::max(0, (int)(_lstSoldiers->getRows() - _lstSoldiers->getVisibleRows())));
 	}
 	else
 	{
@@ -264,8 +260,8 @@ void CraftSoldiersState::moveSoldierDown(Action *action, unsigned int row, bool 
 		{
 			_lstSoldiers->scrollDown(false);
 		}
-		initList(_lstSoldiers->getScroll());
 	}
+	initList(_lstSoldiers->getScroll());
 }
 
 /**
@@ -294,11 +290,20 @@ void CraftSoldiersState::lstSoldiersClick(Action *action)
 		{
 			color = _otherCraftColor;
 		}
-		else if (c->getSpaceAvailable() > 0 && s->getWoundRecovery() == 0)
+		else if (s->getWoundRecovery() == 0)
 		{
-			s->setCraft(c);
-			_lstSoldiers->setCellText(row, 2, c->getName(_game->getLanguage()));
-			color = _lstSoldiers->getSecondaryColor();
+			auto space = c->getSpaceAvailable();
+			auto armorSize = s->getArmor()->getSize();
+			if (space >= s->getArmor()->getTotalSize() && (armorSize == 1 || (c->getNumVehicles() < c->getRules()->getVehicles())))
+			{
+				s->setCraft(c);
+				_lstSoldiers->setCellText(row, 2, c->getName(_game->getLanguage()));
+				color = _lstSoldiers->getSecondaryColor();
+			}
+			else if (armorSize == 2 && space > 0)
+			{
+				_game->pushState(new ErrorMessageState(tr("STR_NOT_ENOUGH_CRAFT_SPACE"), _palette, _game->getMod()->getInterface("soldierInfo")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("soldierInfo")->getElement("errorPalette")->color));
+			}
 		}
 		_lstSoldiers->setRowColor(row, color);
 

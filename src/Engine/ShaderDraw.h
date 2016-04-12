@@ -21,114 +21,212 @@
 #define	OPENXCOM_SHADERDRAW_H
 
 #include "ShaderDrawHelper.h"
-	
+#include <tuple>
+#include <iostream>
+
 namespace OpenXcom
 {
 
-/**
- * Universal blit function
- * @tparam ColorFunc class that contains static function `func` that get 5 arguments
- * function is used to modify these arguments.
- * @param dest_frame destination surface modified by function.
- * @param src0_frame surface or scalar
- * @param src1_frame surface or scalar
- * @param src2_frame surface or scalar
- * @param src3_frame surface or scalar
- */
-template<typename ColorFunc, typename DestType, typename Src0Type, typename Src1Type, typename Src2Type, typename Src3Type>
-static inline void ShaderDraw(const DestType& dest_frame, const Src0Type& src0_frame, const Src1Type& src1_frame, const Src2Type& src2_frame, const Src3Type& src3_frame)
+namespace helper
 {
-	//creating helper objects
-	helper::controler<DestType> dest(dest_frame);
-	helper::controler<Src0Type> src0(src0_frame);
-	helper::controler<Src1Type> src1(src1_frame);
-	helper::controler<Src2Type> src2(src2_frame);
-	helper::controler<Src3Type> src3(src3_frame);
 
+/**
+ * Dummy object used to exploit argument order evaluation in std::initializer_list.
+ * @param Ignored
+ */
+struct DummySeq
+{
+	DummySeq(std::initializer_list<int>) { };
+};
+
+}//namespace helper
+
+/**
+ * Universal blit function implementation.
+ * @param f called function.
+ * @param src source surfaces control objects.
+ */
+template<typename Func, typename... SrcType>
+static inline void ShaderDrawImpl(Func& f, helper::controler<SrcType>... src)
+{
 	//get basic draw range in 2d space
-	GraphSubset end_temp = dest.get_range();
-	
+	GraphSubset end_temp = std::get<0>(std::tie(src...)).get_range();
+
 	//intersections with src ranges
-	src0.mod_range(end_temp);
-	src1.mod_range(end_temp);
-	src2.mod_range(end_temp);
-	src3.mod_range(end_temp);
-	
+	helper::DummySeq
+	{
+		(src.mod_range(end_temp), 0)...
+	};
+
 	const GraphSubset end = end_temp;
 	if (end.size_x() == 0 || end.size_y() == 0)
 		return;
 	//set final draw range in 2d space
-	dest.set_range(end);
-	src0.set_range(end);
-	src1.set_range(end);
-	src2.set_range(end);
-	src3.set_range(end);
+	helper::DummySeq
+	{
+		(src.set_range(end), 0)...
+	};
 
 
 	int begin_y = 0, end_y = end.size_y();
 	//determining iteration range in y-axis
-	dest.mod_y(begin_y, end_y);
-	src0.mod_y(begin_y, end_y);
-	src1.mod_y(begin_y, end_y);
-	src2.mod_y(begin_y, end_y);
-	src3.mod_y(begin_y, end_y);
-	if (begin_y>=end_y)
+	helper::DummySeq
+	{
+		(src.mod_y(begin_y, end_y), 0)...
+	};
+	if(begin_y>=end_y)
 		return;
 	//set final iteration range
-	dest.set_y(begin_y, end_y);
-	src0.set_y(begin_y, end_y);
-	src1.set_y(begin_y, end_y);
-	src2.set_y(begin_y, end_y);
-	src3.set_y(begin_y, end_y);
+	helper::DummySeq
+	{
+		(src.set_y(begin_y, end_y), 0)...
+	};
 
 	//iteration on y-axis
-	for (int y = end_y-begin_y; y>0; --y, dest.inc_y(), src0.inc_y(), src1.inc_y(), src2.inc_y(), src3.inc_y())
+	for (int y = end_y-begin_y; y>0; --y, helper::DummySeq{ (src.inc_y(), 0)... })
 	{
 		int begin_x = 0, end_x = end.size_x();
 		//determining iteration range in x-axis
-		dest.mod_x(begin_x, end_x);
-		src0.mod_x(begin_x, end_x);
-		src1.mod_x(begin_x, end_x);
-		src2.mod_x(begin_x, end_x);
-		src3.mod_x(begin_x, end_x);
+		helper::DummySeq
+		{
+			(src.mod_x(begin_x, end_x), 0)...
+		};
 		if (begin_x>=end_x)
 			continue;
 		//set final iteration range
-		dest.set_x(begin_x, end_x);
-		src0.set_x(begin_x, end_x);
-		src1.set_x(begin_x, end_x);
-		src2.set_x(begin_x, end_x);
-		src3.set_x(begin_x, end_x);
-		
-		//iteration on x-axis
-		for (int x = end_x-begin_x; x>0; --x, dest.inc_x(), src0.inc_x(), src1.inc_x(), src2.inc_x(), src3.inc_x())
+		helper::DummySeq
 		{
-			ColorFunc::func(dest.get_ref(), src0.get_ref(), src1.get_ref(), src2.get_ref(), src3.get_ref());				
+			(src.set_x(begin_x, end_x), 0)...
+		};
+
+		//iteration on x-axis
+		for (int x = end_x-begin_x; x>0; --x, helper::DummySeq{ (src.inc_x(), 0)... })
+		{
+			f(src.get_ref()...);
 		}
 	}
 
-}
-	
-template<typename ColorFunc, typename DestType, typename Src0Type, typename Src1Type, typename Src2Type>
-static inline void ShaderDraw(const DestType& dest_frame, const Src0Type& src0_frame, const Src1Type& src1_frame, const Src2Type& src2_frame)
+};
+
+/**
+ * Universal blit function.
+ * @tparam ColorFunc class that contains static function `func`.
+ * function is used to modify these arguments.
+ * @param src_frame destination and source surfaces modified by function.
+ */
+template<typename ColorFunc, typename... SrcType>
+static inline void ShaderDraw(const SrcType&... src_frame)
 {
-	ShaderDraw<ColorFunc>(dest_frame, src0_frame, src1_frame, src2_frame, helper::Nothing());
+	ShaderDrawImpl(ColorFunc::func, helper::controler<SrcType>(src_frame)...);
 }
-template<typename ColorFunc, typename DestType, typename Src0Type, typename Src1Type>
-static inline void ShaderDraw(const DestType& dest_frame, const Src0Type& src0_frame, const Src1Type& src1_frame)
+
+/**
+ * Universal blit function.
+ * @param f function that modify other arguments.
+ * @param src_frame destination and source surfaces modified by function.
+ */
+template<typename Func, typename... SrcType>
+static inline void ShaderDrawFunc(Func& f, const SrcType&... src_frame)
 {
-	ShaderDraw<ColorFunc>(dest_frame, src0_frame, src1_frame, helper::Nothing(), helper::Nothing());
+	ShaderDrawImpl(f, helper::controler<SrcType>(src_frame)...);
 }
-template<typename ColorFunc, typename DestType, typename Src0Type>
-static inline void ShaderDraw(const DestType& dest_frame, const Src0Type& src0_frame)
+
+namespace helper
 {
-	ShaderDraw<ColorFunc>(dest_frame, src0_frame, helper::Nothing(), helper::Nothing(), helper::Nothing());
-}
-template<typename ColorFunc, typename DestType>
-static inline void ShaderDraw(const DestType& dest_frame)
+
+const Uint8 ColorGroup = 0xF0;
+const Uint8 ColorShade = 0x0F;
+
+/**
+ * help class used for Surface::blitNShade
+ */
+struct ColorReplace
 {
-	ShaderDraw<ColorFunc>(dest_frame, helper::Nothing(), helper::Nothing(), helper::Nothing(), helper::Nothing());
-}
+	/**
+	* Function used by ShaderDraw in Surface::blitNShade
+	* set shade and replace color in that surface
+	* @param dest destination pixel
+	* @param src source pixel
+	* @param shade value of shade of this surface
+	* @param newColor new color to set (it should be offseted by 4)
+	*/
+	static inline void func(Uint8& dest, const Uint8& src, const int& shade, const int& newColor)
+	{
+		if (src)
+		{
+			const int newShade = (src & ColorShade) + shade;
+			if (newShade > ColorShade)
+				// so dark it would flip over to another color - make it black instead
+				dest = ColorShade;
+			else
+				dest = newColor | newShade;
+		}
+	}
+
+};
+
+/**
+ * help class used for Surface::blitNShade
+ */
+struct StandardShade
+{
+	/**
+	* Function used by ShaderDraw in Surface::blitNShade
+	* set shade
+	* @param dest destination pixel
+	* @param src source pixel
+	* @param shade value of shade of this surface
+	* @param notused
+	* @param notused
+	*/
+	static inline void func(Uint8& dest, const Uint8& src, const int& shade)
+	{
+		if (src)
+		{
+			const int newShade = (src & ColorShade) + shade;
+			if (newShade > ColorShade)
+				// so dark it would flip over to another color - make it black instead
+				dest = ColorShade;
+			else
+				dest = (src & ColorGroup) | newShade;
+		}
+	}
+
+};
+/**
+ * helper class used for bliting dying unit with overkill
+ */
+struct BurnShade
+{
+	static inline void func(Uint8& dest, const Uint8& src, const int& burn, const int& shade)
+	{
+		if (src)
+		{
+			if (burn)
+			{
+				const Uint8 tempBurn = (src & ColorShade) + burn;
+				if (tempBurn > 26)
+				{
+					//nothing
+				}
+				else if (tempBurn > 15)
+				{
+					StandardShade::func(dest, ColorShade, shade);
+				}
+				else
+				{
+					StandardShade::func(dest, (src & ColorGroup) + tempBurn, shade);
+				}
+			}
+			else
+			{
+				StandardShade::func(dest, src, shade);
+			}
+		}
+	}
+};
+
+}//namespace helper
 
 template<typename T>
 static inline helper::Scalar<T> ShaderScalar(T& t)
@@ -140,16 +238,28 @@ static inline helper::Scalar<const T> ShaderScalar(const T& t)
 {
 	return helper::Scalar<const T>(t);
 }
-	
-namespace helper
-{
-	
-const Uint8 ColorGroup = 15<<4;
-const Uint8 ColorShade = 15;
-const Uint8 ColorShadeMax = 15;
-const Uint8 BLACK = 15;
 
-}//namespace helper
+/**
+ * Create warper from vector
+ * @param s vector
+ * @return
+ */
+template<typename Pixel>
+inline helper::ShaderBase<Pixel> ShaderSurface(std::vector<Pixel>& s, int max_x, int max_y)
+{
+	return helper::ShaderBase<Pixel>(s, max_x, max_y);
+}
+
+/**
+ * Create warper from array
+ * @param s array
+ * @return
+ */
+template<typename Pixel, int Size>
+inline helper::ShaderBase<Pixel> ShaderSurface(Pixel(&s)[Size], int max_x, int max_y)
+{
+	return helper::ShaderBase<Pixel>(s, max_x, max_y, max_x*sizeof(Pixel));
+}
 
 }//namespace OpenXcom
 

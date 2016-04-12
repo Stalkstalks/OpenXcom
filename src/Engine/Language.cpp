@@ -16,8 +16,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 #include "Language.h"
 #include <assert.h>
+#include <algorithm>
 #include <locale>
 #include <fstream>
 #include <cassert>
@@ -28,7 +30,7 @@
 #include "Exception.h"
 #include "Options.h"
 #include "LanguagePlurality.h"
-#include "../Ruleset/ExtraStrings.h"
+#include "../Mod/ExtraStrings.h"
 #include "../Interface/TextList.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -433,11 +435,11 @@ void Language::load(ExtraStrings *extras)
 }
 
 /**
-* Replaces all special string markers with the appropriate characters
-* and converts the string encoding.
-* @param string Original UTF-8 string.
-* @return New widechar string.
-*/
+ * Replaces all special string markers with the appropriate characters
+ * and converts the string encoding.
+ * @param string Original UTF-8 string.
+ * @return New widechar string.
+ */
 std::wstring Language::loadString(const std::string &string) const
 {
 	std::string s = string;
@@ -476,7 +478,10 @@ const LocalizedText &Language::getString(const std::string &id) const
 	static LocalizedText hack(L"");
 	static std::set<std::string> notFoundIds;
 	if (id.empty())
+	{
+		hack = LocalizedText(L"");
 		return hack;
+	}
 	std::map<std::string, LocalizedText>::const_iterator s = _strings.find(id);
 	if (s == _strings.end())
 	{
@@ -651,4 +656,4 @@ STR_ENEMIES:
   other: "There are {N} enemies left."
 </pre>
 
-*/
+ */

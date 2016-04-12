@@ -1,7 +1,7 @@
 # Makefile for: http://mxe.cc/
 # Get mxe from `git clone https://github.com/mxe/mxe.git`
-# Build mxe with packs: `make gcc sdl sdl_gfx sdl_image sdl_mixer boost glew`
-# Get yaml-cpp form `hg clone https://code.google.com/p/yaml-cpp/` (requare Mercurial)
+# Build mxe with packs: `make gcc sdl sdl_gfx sdl_image sdl_mixer glew`
+# Get yaml-cpp form `git clone https://github.com/jbeder/yaml-cpp.git`
 TARGET =
 
 # Directories and files
@@ -26,8 +26,8 @@ SDL_PKG = i686-w64-mingw32.static-pkg-config
 BIN = OpenXcomEx.exe
 
 # Compiler settings
-CXXFLAGS = -Wall -O3 -s `$(SDL_CONFIG) --cflags` $(addprefix -D,$(TARGET)) -I$(SDL_INC) -I$(YAML_INC) `$(SDL_PKG)  SDL_mixer --cflags `
-LDFLAGS = -s `$(SDL_CONFIG) --libs` -lopengl32 -lshlwapi -lSDLmain -lSDL_gfx -lSDL_mixer -lSDL_image -lstdc++ `$(SDL_PKG) SDL_mixer --libs` `$(SDL_PKG) SDL_image --libs`
+CXXFLAGS = -Wall -O3 -s -std=gnu++11 `$(SDL_CONFIG) --cflags` $(addprefix -D,$(TARGET)) -I$(SDL_INC) -I$(YAML_INC) `$(SDL_PKG)  SDL_mixer --cflags `
+LDFLAGS = -s `$(SDL_CONFIG) --libs` -lopengl32 -lshlwapi -lSDLmain -lSDL_gfx -lSDL_mixer -lSDL_image -lstdc++ `$(SDL_PKG) SDL_mixer --libs` `$(SDL_PKG) SDL_image --libs` -ldbghelp
 
 # Rules
 all: $(BINDIR)$(BIN)
@@ -40,7 +40,7 @@ $(OBJDIR)%.o:: %.cpp
 
 $(OBJDIR)%.o:: Basescape/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
+
 $(OBJDIR)%.o:: Battlescape/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
@@ -61,16 +61,13 @@ $(OBJDIR)%.o:: Interface/%.cpp
 
 $(OBJDIR)%.o:: Menu/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
-$(OBJDIR)%.o:: Resource/%.cpp
+
+$(OBJDIR)%.o:: Mod/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
-$(OBJDIR)%.o:: Ruleset/%.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
+
 $(OBJDIR)%.o:: Savegame/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
+
 $(OBJDIR)%.o:: Ufopaedia/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

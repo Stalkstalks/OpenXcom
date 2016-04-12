@@ -18,16 +18,15 @@
  */
 #include "Tile.h"
 #include <algorithm>
-#include "../Ruleset/MapData.h"
-#include "../Ruleset/MapDataSet.h"
+#include "../Mod/MapData.h"
+#include "../Mod/MapDataSet.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Engine/Surface.h"
 #include "../Engine/RNG.h"
-#include "../Engine/Exception.h"
 #include "BattleUnit.h"
 #include "BattleItem.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/Armor.h"
+#include "../Mod/RuleItem.h"
+#include "../Mod/Armor.h"
 #include "SerializationHelper.h"
 #include "../Battlescape/Particle.h"
 
@@ -46,9 +45,9 @@ Tile::SerializationKey Tile::serializationKey =
 };
 
 /**
-* constructor
-* @param pos Position.
-*/
+ * constructor
+ * @param pos Position.
+ */
 Tile::Tile(const Position& pos): _smoke(0), _fire(0), _explosive(0), _explosiveType(0), _pos(pos), _unit(0), _animationOffset(0), _markerColor(0), _visible(false), _preview(-1), _TUMarker(-1), _overlaps(0), _danger(false)
 {
 	for (int i = 0; i < 4; ++i)
@@ -348,7 +347,7 @@ int Tile::openDoor(int part, BattleUnit *unit, BattleActionType reserve)
 		cost.Energy += tuCost / 2;
 	}
 
-	if (_objects[part]->isDoor())
+	if (_objects[part]->isDoor() && unit->getArmor()->getSize() == 1) // don't allow double-wide units to open swinging doors due to engine limitations
 	{
 		if (unit && !cost.haveTU())
 			return 4;
@@ -403,11 +402,6 @@ void Tile::setDiscovered(bool flag, int part)
 		{
 			_discovered[0] = true;
 			_discovered[1] = true;
-		}
-		// if light on tile changes, units and objects on it change light too
-		if (_unit != 0)
-		{
-			_unit->setCache(0);
 		}
 	}
 }
@@ -486,17 +480,18 @@ int Tile::getExternalShade() const
  * Destroy a part on this tile. We first remove the old object, then replace it with the destroyed one.
  * This is because the object type of the old and new one are not necessarily the same.
  * If the destroyed part is an explosive, set the tile's explosive value, which will trigger a chained explosion.
- * @param part
- * @return bool Return true objective was destroyed
+ * @param part the part to destroy.
+ * @param type the objective type for this mission we are checking against.
+ * @return bool Return true objective was destroyed.
  */
-bool Tile::destroy(int part)
+bool Tile::destroy(int part, SpecialTileType type)
 {
 	bool _objective = false;
 	if (_objects[part])
 	{
 		if (_objects[part]->isGravLift())
 			return false;
-		_objective = _objects[part]->getSpecialType() == MUST_DESTROY;
+		_objective = _objects[part]->getSpecialType() == type;
 		MapData *originalPart = _objects[part];
 		int originalMapDataSetID = _mapDataSetID[part];
 		setMapData(0, -1, -1, part);
@@ -523,13 +518,14 @@ bool Tile::destroy(int part)
  * damage terrain - check against armor
  * @param part Part to check.
  * @param power Power of the damage.
+ * @param type the objective type for this mission we are checking against.
  * @return bool Return true objective was destroyed
  */
-bool Tile::damage(int part, int power)
+bool Tile::damage(int part, int power, SpecialTileType type)
 {
 	bool objective = false;
 	if (power >= _objects[part]->getArmor())
-		objective = destroy(part);
+		objective = destroy(part, type);
 	return objective;
 }
 
@@ -815,16 +811,17 @@ void Tile::removeItem(BattleItem *item)
  * Get the topmost item sprite to draw on the battlescape.
  * @return item sprite ID in floorob, or -1 when no item
  */
-int Tile::getTopItemSprite()
+BattleItem* Tile::getTopItem()
 {
 	int biggestWeight = -1;
-	int biggestItem = -1;
+	BattleItem* biggestItem = 0;
 	for (std::vector<BattleItem*>::iterator i = _inventory.begin(); i != _inventory.end(); ++i)
 	{
-		if ((*i)->getRules()->getWeight() > biggestWeight)
+		int temp = (*i)->getRules()->getWeight();
+		if (temp > biggestWeight)
 		{
-			biggestWeight = (*i)->getRules()->getWeight();
-			biggestItem = (*i)->getFloorSprite();
+			biggestWeight = temp;
+			biggestItem = *i;
 		}
 	}
 	return biggestItem;
@@ -842,8 +839,12 @@ static inline void applyEnvi(BattleUnit* unit, int smoke, int fire)
 	{
 		if (fire)
 		{
-			// _smoke becomes our damage value
-			unit->setEnviFire(smoke);
+			//and avoid setting fire elementals on fire
+			if (unit->getSpecialAbility() != SPECAB_BURNFLOOR && unit->getSpecialAbility() != SPECAB_BURN_AND_EXPLODE)
+			{
+				// _smoke becomes our damage value
+				unit->setEnviFire(smoke);
+			}
 		}
 		// no fire: must be smoke
 		else

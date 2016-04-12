@@ -24,17 +24,14 @@
 #include "TileEngine.h"
 #include "Map.h"
 #include "Pathfinding.h"
-#include "../Engine/Game.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
-#include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
 #include "../Engine/Sound.h"
 #include "../Engine/RNG.h"
-#include "../Ruleset/Armor.h"
-#include "../Ruleset/RuleItem.h"
+#include "../Mod/RuleItem.h"
 #include "../Engine/Options.h"
 #include "AlienBAIState.h"
 #include "Camera.h"
@@ -125,6 +122,7 @@ void ProjectileFlyBState::init()
 	}
 
 	Tile *endTile = _parent->getSave()->getTile(_action.target);
+	int distance = _parent->getTileEngine()->distance(_action.actor->getPosition(), _action.target);
 	switch (_action.type)
 	{
 	case BA_SNAPSHOT:
@@ -143,8 +141,25 @@ void ProjectileFlyBState::init()
 			_parent->popState();
 			return;
 		}
-		if (_parent->getTileEngine()->distance(_action.actor->getPosition(), _action.target) > weapon->getRules()->getMaxRange())
+		if (distance > weapon->getRules()->getMaxRange())
 		{
+			// special handling for short ranges and diagonals
+			if (_action.actor->directionTo(_action.target) % 2 == 1)
+			{
+				// special handling for maxRange 1: allow it to target diagonally adjacent tiles, even though they are technically 2 tiles away.
+				if (weapon->getRules()->getMaxRange() == 1
+					&& distance == 2)
+				{
+					break;
+				}
+				// special handling for maxRange 2: allow it to target diagonally adjacent tiles on a level above/below, even though they are technically 3 tiles away.
+				else if (weapon->getRules()->getMaxRange() == 2
+					&& distance == 3
+					&& _action.target.z != _action.actor->getPosition().z)
+				{
+					break;
+				}
+			}
 			// out of range
 			_action.result = "STR_OUT_OF_RANGE";
 			_parent->popState();
@@ -264,7 +279,7 @@ bool ProjectileFlyBState::createNewProjectile()
 	++_action.autoShotCounter;
 
 	// create a new projectile
-	Projectile *projectile = new Projectile(_parent->getResourcePack(), _parent->getSave(), _action, _origin, _targetVoxel, _ammo);
+	Projectile *projectile = new Projectile(_parent->getMod(), _parent->getSave(), _action, _origin, _targetVoxel, _ammo);
 
 	// add the projectile on the map
 	_parent->getMap()->setProjectile(projectile);
@@ -274,9 +289,17 @@ bool ProjectileFlyBState::createNewProjectile()
 
 	// let it calculate a trajectory
 	_projectileImpact = V_EMPTY;
+
+	double accuracyDivider = 100.0;
+	// berserking units are half as accurate
+	if (!_parent->getPanicHandled())
+	{
+		accuracyDivider = 200.0;
+	}
+
 	if (_action.type == BA_THROW)
 	{
-		_projectileImpact = projectile->calculateThrow(_unit->getFiringAccuracy(_action.type, _action.weapon) / 100.0);
+		_projectileImpact = projectile->calculateThrow(_unit->getFiringAccuracy(_action.type, _action.weapon) / accuracyDivider);
 		if (_projectileImpact == V_FLOOR || _projectileImpact == V_UNIT || _projectileImpact == V_OBJECT)
 		{
 			if (_unit->getFaction() != FACTION_PLAYER && _projectileItem->getRules()->getBattleType() == BT_GRENADE)
@@ -284,9 +307,7 @@ bool ProjectileFlyBState::createNewProjectile()
 				_projectileItem->setFuseTimer(_projectileItem->getRules()->getFuseTimerDefault());
 			}
 			_projectileItem->moveToOwner(0);
-			_unit->setCache(0);
-			_parent->getMap()->cacheUnit(_unit);
-			_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::ITEM_THROW)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+			_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::ITEM_THROW)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 			_unit->addThrowingExp();
 		}
 		else
@@ -302,21 +323,19 @@ bool ProjectileFlyBState::createNewProjectile()
 	}
 	else if (_action.weapon->getRules()->getArcingShot()) // special code for the "spit" trajectory
 	{
-		_projectileImpact = projectile->calculateThrow(_unit->getFiringAccuracy(_action.type, _action.weapon) / 100.0);
+		_projectileImpact = projectile->calculateThrow(_unit->getFiringAccuracy(_action.type, _action.weapon) / accuracyDivider);
 		if (_projectileImpact != V_EMPTY && _projectileImpact != V_OUTOFBOUNDS)
 		{
 			// set the soldier in an aiming position
 			_unit->aim(true);
-			_unit->setCache(0);
-			_parent->getMap()->cacheUnit(_unit);
 			// and we have a lift-off
 			if (_ammo->getRules()->getFireSound() != -1)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _ammo->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), _ammo->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 			}
 			else if (_action.weapon->getRules()->getFireSound() != -1)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _action.weapon->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), _action.weapon->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 			}
 			if (!_parent->getSave()->getDebugMode() && _action.type != BA_LAUNCH && _ammo->spendBullet() == false)
 			{
@@ -329,7 +348,10 @@ bool ProjectileFlyBState::createNewProjectile()
 			// no line of fire
 			delete projectile;
 			_parent->getMap()->setProjectile(0);
-			_action.result = "STR_NO_LINE_OF_FIRE";
+			if (_parent->getPanicHandled())
+			{
+				_action.result = "STR_NO_LINE_OF_FIRE";
+			}
 			_unit->abortTurn();
 			_parent->popState();
 			return false;
@@ -339,26 +361,24 @@ bool ProjectileFlyBState::createNewProjectile()
 	{
 		if (_originVoxel != Position(-1,-1,-1))
 		{
-			_projectileImpact = projectile->calculateTrajectory(_unit->getFiringAccuracy(_action.type, _action.weapon) / 100.0, _originVoxel);
+			_projectileImpact = projectile->calculateTrajectory(_unit->getFiringAccuracy(_action.type, _action.weapon) / accuracyDivider, _originVoxel);
 		}
 		else
 		{
-			_projectileImpact = projectile->calculateTrajectory(_unit->getFiringAccuracy(_action.type, _action.weapon) / 100.0);
+			_projectileImpact = projectile->calculateTrajectory(_unit->getFiringAccuracy(_action.type, _action.weapon) / accuracyDivider);
 		}
 		if (_projectileImpact != V_EMPTY || _action.type == BA_LAUNCH)
 		{
 			// set the soldier in an aiming position
 			_unit->aim(true);
-			_unit->setCache(0);
-			_parent->getMap()->cacheUnit(_unit);
 			// and we have a lift-off
 			if (_ammo->getRules()->getFireSound() != -1)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _ammo->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(projectile->getOrigin()));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), _ammo->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(projectile->getOrigin()));
 			}
 			else if (_action.weapon->getRules()->getFireSound() != -1)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _action.weapon->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(projectile->getOrigin()));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), _action.weapon->getRules()->getFireSound())->play(-1, _parent->getMap()->getSoundAngle(projectile->getOrigin()));
 			}
 			if (!_parent->getSave()->getDebugMode() && _action.type != BA_LAUNCH && _ammo->spendBullet() == false)
 			{
@@ -371,7 +391,10 @@ bool ProjectileFlyBState::createNewProjectile()
 			// no line of fire
 			delete projectile;
 			_parent->getMap()->setProjectile(0);
-			_action.result = "STR_NO_LINE_OF_FIRE";
+			if (_parent->getPanicHandled())
+			{
+				_action.result = "STR_NO_LINE_OF_FIRE";
+			}
 			_unit->abortTurn();
 			_parent->popState();
 			return false;
@@ -416,7 +439,7 @@ void ProjectileFlyBState::think()
 				_parent->getMap()->getCamera()->setMapOffset(_action.cameraPosition);
 				_parent->getMap()->invalidate();
 			}
-			if (!_parent->getSave()->getUnitsFalling())
+			if (!_parent->getSave()->getUnitsFalling() && _parent->getPanicHandled())
 			{
 				_parent->getTileEngine()->checkReactionFire(_unit);
 			}
@@ -428,6 +451,7 @@ void ProjectileFlyBState::think()
 			{
 				_parent->setupCursor();
 			}
+			_parent->convertInfected();
 			_parent->popState();
 		}
 	}
@@ -454,7 +478,7 @@ void ProjectileFlyBState::think()
 					pos.x--;
 				}
 				BattleItem *item = _parent->getMap()->getProjectile()->getItem();
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::ITEM_DROP)->play(-1, _parent->getMap()->getSoundAngle(pos));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::ITEM_DROP)->play(-1, _parent->getMap()->getSoundAngle(pos));
 
 				if (item->getRules()->getBattleType() == BT_GRENADE && RNG::percent(item->getRules()->getSpecialChance()) && ((Options::battleInstantGrenade && item->getFuseTimer() == 0) || item->getRules()->getFuseTimerType() == BFT_INSTANT))
 				{
@@ -466,7 +490,7 @@ void ProjectileFlyBState::think()
 					_parent->dropItem(pos, item);
 					if (_unit->getFaction() != FACTION_PLAYER && _projectileItem->getRules()->getBattleType() == BT_GRENADE)
 					{
-						_parent->getTileEngine()->setDangerZone(pos, item->getRules()->getExplosionRadius(), _action.actor);
+						_parent->getTileEngine()->setDangerZone(pos, item->getRules()->getExplosionRadius(_action.actor), _action.actor);
 					}
 				}
 			}
@@ -498,7 +522,7 @@ void ProjectileFlyBState::think()
 					bool shotgun = _ammo && _ammo->getRules()->getShotgunPellets() != 0 && _ammo->getRules()->getDamageType()->isDirect();
 					int offset = 0;
 					// explosions impact not inside the voxel but two steps back (projectiles generally move 2 voxels at a time)
-					if (_ammo && _ammo->getRules()->getExplosionRadius() != 0 && _projectileImpact != V_UNIT)
+					if (_ammo && _ammo->getRules()->getExplosionRadius(_action.actor) != 0 && _projectileImpact != V_UNIT)
 					{
 						offset = -2;
 					}
@@ -518,7 +542,7 @@ void ProjectileFlyBState::think()
 						while (i != _ammo->getRules()->getShotgunPellets())
 						{
 							// create a projectile
-							Projectile *proj = new Projectile(_parent->getResourcePack(), _parent->getSave(), _action, _origin, _targetVoxel, _ammo);
+							Projectile *proj = new Projectile(_parent->getMod(), _parent->getSave(), _action, _origin, _targetVoxel, _ammo);
 							// let it trace to the point where it hits
 							_projectileImpact = proj->calculateTrajectory(std::max(0.0, (_unit->getFiringAccuracy(_action.type, _action.weapon) / 100.0) - i * 5.0));
 							if (_projectileImpact != V_EMPTY)
@@ -529,8 +553,9 @@ void ProjectileFlyBState::think()
 								if (_projectileImpact != V_OUTOFBOUNDS)
 								{
 									Explosion *explosion = new Explosion(proj->getPosition(1), _ammo->getRules()->getHitAnimation());
+									int power = _ammo->getRules()->getPowerBonus(_unit) - _ammo->getRules()->getPowerRangeReduction(proj->getDistance());
 									_parent->getMap()->getExplosions()->push_back(explosion);
-									_parent->getSave()->getTileEngine()->hit(proj->getPosition(1), _ammo->getRules()->getPower(), _ammo->getRules()->getDamageType(), 0);
+									_parent->getSave()->getTileEngine()->hit(proj->getPosition(1), power, _ammo->getRules()->getDamageType(), 0);
 								}
 							}
 							++i;
@@ -555,8 +580,6 @@ void ProjectileFlyBState::think()
 				else if (_action.type != BA_AUTOSHOT || _action.autoShotCounter == _action.weapon->getRules()->getAutoShots() || !_action.weapon->getAmmoItem())
 				{
 					_unit->aim(false);
-					_unit->setCache(0);
-					_parent->getMap()->cacheUnits();
 				}
 			}
 

@@ -19,11 +19,12 @@
 #ifndef OPENXCOM_TILE_H
 #define OPENXCOM_TILE_H
 
-#include <string>
+#include <list>
 #include <vector>
 #include "../Battlescape/Position.h"
-#include "../Ruleset/MapData.h"
+#include "../Mod/MapData.h"
 #include "BattleUnit.h"
+#include "BattleItem.h"
 
 #include <SDL_types.h> // for Uint8
 
@@ -160,9 +161,9 @@ public:
 	/// Get the shade amount except 2th (dynamic) layer.
 	int getExternalShade() const;
 	/// Destroy a tile part.
-	bool destroy(int part);
+	bool destroy(int part, SpecialTileType type);
 	/// Damage a tile part.
-	bool damage(int part, int power);
+	bool damage(int part, int power, SpecialTileType type);
 	/// Set a "virtual" explosive on this tile, to detonate later.
 	void setExplosive(int power, int damageType, bool force = false);
 	/// Get explosive power of this tile.
@@ -210,7 +211,7 @@ public:
 	/// Remove item
 	void removeItem(BattleItem *item);
 	/// Get top-most item
-	int getTopItemSprite();
+	BattleItem* getTopItem();
 	/// New turn preparations.
 	void prepareNewTurn();
 	/// Get inventory on this tile.

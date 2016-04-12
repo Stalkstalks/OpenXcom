@@ -21,12 +21,9 @@
 #include <cmath>
 #include <climits>
 #include <set>
-#include <functional>
 #include "TileEngine.h"
 #include <SDL.h>
-#include "BattleAIState.h"
 #include "AlienBAIState.h"
-#include "UnitTurnBState.h"
 #include "Map.h"
 #include "Camera.h"
 #include "../Savegame/SavedGame.h"
@@ -35,16 +32,12 @@
 #include "../Savegame/Tile.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
-#include "../Savegame/Soldier.h"
 #include "../Engine/RNG.h"
 #include "BattlescapeState.h"
-#include "../Ruleset/MapDataSet.h"
-#include "../Ruleset/MapData.h"
-#include "../Ruleset/Unit.h"
-#include "../Ruleset/RuleSoldier.h"
-#include "../Ruleset/Armor.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/MapDataSet.h"
+#include "../Mod/MapData.h"
+#include "../Mod/Unit.h"
+#include "../Mod/Armor.h"
 #include "Pathfinding.h"
 #include "../Engine/Game.h"
 #include "../Engine/Options.h"
@@ -89,8 +82,8 @@ void TileEngine::calculateSunShading()
 
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
-		_save->getTiles()[i]->resetLight(layer);
-		calculateSunShading(_save->getTiles()[i]);
+		_save->getTile(i)->resetLight(layer);
+		calculateSunShading(_save->getTile(i));
 	}
 }
 
@@ -135,35 +128,35 @@ void TileEngine::calculateTerrainLighting()
 	// reset all light to 0 first
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
-		_save->getTiles()[i]->resetLight(layer);
+		_save->getTile(i)->resetLight(layer);
 	}
 
 	// add lighting of terrain
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
 		// only floors and objects can light up
-		if (_save->getTiles()[i]->getMapData(O_FLOOR)
-			&& _save->getTiles()[i]->getMapData(O_FLOOR)->getLightSource())
+		if (_save->getTile(i)->getMapData(O_FLOOR)
+			&& _save->getTile(i)->getMapData(O_FLOOR)->getLightSource())
 		{
-			addLight(_save->getTiles()[i]->getPosition(), _save->getTiles()[i]->getMapData(O_FLOOR)->getLightSource(), layer);
+			addLight(_save->getTile(i)->getPosition(), _save->getTile(i)->getMapData(O_FLOOR)->getLightSource(), layer);
 		}
-		if (_save->getTiles()[i]->getMapData(O_OBJECT)
-			&& _save->getTiles()[i]->getMapData(O_OBJECT)->getLightSource())
+		if (_save->getTile(i)->getMapData(O_OBJECT)
+			&& _save->getTile(i)->getMapData(O_OBJECT)->getLightSource())
 		{
-			addLight(_save->getTiles()[i]->getPosition(), _save->getTiles()[i]->getMapData(O_OBJECT)->getLightSource(), layer);
+			addLight(_save->getTile(i)->getPosition(), _save->getTile(i)->getMapData(O_OBJECT)->getLightSource(), layer);
 		}
 
 		// fires
-		if (_save->getTiles()[i]->getFire())
+		if (_save->getTile(i)->getFire())
 		{
-			addLight(_save->getTiles()[i]->getPosition(), fireLightPower, layer);
+			addLight(_save->getTile(i)->getPosition(), fireLightPower, layer);
 		}
 
-		for (std::vector<BattleItem*>::iterator it = _save->getTiles()[i]->getInventory()->begin(); it != _save->getTiles()[i]->getInventory()->end(); ++it)
+		for (std::vector<BattleItem*>::iterator it = _save->getTile(i)->getInventory()->begin(); it != _save->getTile(i)->getInventory()->end(); ++it)
 		{
 			if ((*it)->getGlow())
 			{
-				addLight(_save->getTiles()[i]->getPosition(), (*it)->getRules()->getPower(), layer);
+				addLight(_save->getTile(i)->getPosition(), (*it)->getRules()->getPower(), layer);
 			}
 		}
 
@@ -183,7 +176,7 @@ void TileEngine::calculateUnitLighting()
 	// reset all light to 0 first
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
-		_save->getTiles()[i]->resetLight(layer);
+		_save->getTile(i)->resetLight(layer);
 	}
 
 	for (std::vector<BattleUnit*>::iterator i = _save->getUnits()->begin(); i != _save->getUnits()->end(); ++i)
@@ -913,7 +906,7 @@ TileEngine::ReactionScore *TileEngine::getReactor(std::vector<TileEngine::Reacti
 	ReactionScore *best = 0;
 	for (std::vector<ReactionScore>::iterator i = spotters.begin(); i != spotters.end(); ++i)
 	{
-		if (!(*i).unit->isOut() && (!best || (*i).reactionScore > best->reactionScore))
+		if (!(*i).unit->isOut() && !(*i).unit->getRespawn() && (!best || (*i).reactionScore > best->reactionScore))
 		{
 			best = &(*i);
 		}
@@ -1023,8 +1016,9 @@ bool TileEngine::tryReaction(BattleUnit *unit, BattleUnit *target, int attackTyp
 				unit->setAIState(aggro);
 			}
 
-			if (action.weapon->getAmmoItem()->getRules()->getExplosionRadius() &&
-				aggro->explosiveEfficacy(action.target, unit, action.weapon->getAmmoItem()->getRules()->getExplosionRadius(), -1) == 0)
+			int radius = action.weapon->getAmmoItem()->getRules()->getExplosionRadius(unit);
+			if (radius > 0 &&
+				aggro->explosiveEfficacy(action.target, unit, radius, -1) == 0)
 			{
 				action.targeting = false;
 			}
@@ -1094,7 +1088,7 @@ void TileEngine::hitTile(Tile* tile, int damage, const RuleDamageType* type)
  * @param type damage type of hit.
  * @return Did unit get hit?
  */
-bool TileEngine::hitUnit(BattleUnit *unit, BattleUnit *target, const Position &relative, int damage, const RuleDamageType *type)
+bool TileEngine::hitUnit(BattleUnit *unit, BattleUnit *target, const Position &relative, int damage, const RuleDamageType *type, bool rangeAtack)
 {
 	if (!target || target->getHealth() <= 0)
 	{
@@ -1104,10 +1098,17 @@ bool TileEngine::hitUnit(BattleUnit *unit, BattleUnit *target, const Position &r
 	const int wounds = target->getFatalWounds();
 	const int adjustedDamage = target->damage(relative, damage, type);
 
-	// if it's going to bleed to death and it's not a player, give credit for the kill.
-	if (unit && target->getFaction() != FACTION_PLAYER && wounds < target->getFatalWounds())
+	if (unit && target->getFaction() != FACTION_PLAYER)
 	{
-		target->killedBy(unit->getFaction());
+		// if it's going to bleed to death and it's not a player, give credit for the kill.
+		if (wounds < target->getFatalWounds())
+		{
+			target->killedBy(unit->getFaction());
+		}
+		if (rangeAtack && target->getOriginalFaction() == FACTION_HOSTILE)
+		{
+			unit->addFiringExp();
+		}
 	}
 
 	if (type->IgnoreNormalMoraleLose == false)
@@ -1133,7 +1134,7 @@ bool TileEngine::hitUnit(BattleUnit *unit, BattleUnit *target, const Position &r
 		float resistance = target->getArmor()->getDamageModifier(type->ResistType);
 		if (resistance > 0.0)
 		{
-			int burnTime = RNG::generate(0, int(5 * resistance));
+			int burnTime = RNG::generate(0, int(5.0f * resistance));
 			if (target->getFire() < burnTime)
 			{
 				target->setFire(burnTime); // catch fire and burn
@@ -1172,7 +1173,7 @@ BattleUnit *TileEngine::hit(const Position &center, int power, const RuleDamageT
 		{
 			for (std::vector<BattleItem*>::iterator i = tile->getInventory()->begin(); i != tile->getInventory()->end(); ++i)
 			{
-				if (hitUnit(unit, (*i)->getUnit(), Position(0,0,0), damage, type))
+				if (hitUnit(unit, (*i)->getUnit(), Position(0,0,0), damage, type, rangeAtack))
 				{
 					nothing = false;
 					break;
@@ -1190,7 +1191,7 @@ BattleUnit *TileEngine::hit(const Position &center, int power, const RuleDamageT
 					_save->getModuleMap()[(center.x/16)/10][(center.y/16)/10].second--;
 				}
 			}
-			if (tile->damage(part, tileDmg))
+			if (tile->damage(part, tileDmg, _save->getObjectiveType()))
 			{
 				_save->addDestroyedObjective();
 			}
@@ -1213,22 +1214,13 @@ BattleUnit *TileEngine::hit(const Position &center, int power, const RuleDamageT
 				}
 			}
 		}
-		if (bu)
+		if (bu && bu->getHealth() != 0)
 		{
 			const int sz = bu->getArmor()->getSize() * 8;
 			const Position target = bu->getPosition().toVexel() + Position(sz,sz, bu->getFloatHeight() - tile->getTerrainLevel());
 			const Position relative = (center - target) - Position(0,0,verticaloffset);
 
-			hitUnit(unit, bu, relative, damage, type);
-
-			if (bu->getOriginalFaction() == FACTION_HOSTILE &&
-				unit &&
-				unit->getOriginalFaction() == FACTION_PLAYER &&
-				type->ResistType != DT_NONE &&
-				rangeAtack)
-			{
-				unit->addFiringExp();
-			}
+			hitUnit(unit, bu, relative, damage, type, rangeAtack);
 		}
 	}
 	applyGravity(tile);
@@ -1250,7 +1242,7 @@ BattleUnit *TileEngine::hit(const Position &center, int power, const RuleDamageT
  * @param maxRadius The maximum radius othe explosion.
  * @param unit The unit that caused the explosion.
  */
-void TileEngine::explode(const Position &center, int power, const RuleDamageType *type, int maxRadius, BattleUnit *unit)
+void TileEngine::explode(const Position &center, int power, const RuleDamageType *type, int maxRadius, BattleUnit *unit, bool rangeAtack)
 {
 	double centerZ = center.z / 24 + 0.5;
 	double centerX = center.x / 16 + 0.5;
@@ -1317,13 +1309,13 @@ void TileEngine::explode(const Position &center, int power, const RuleDamageType
 							if (distance(dest->getPosition(), Position(centerX, centerY, centerZ)) < 2)
 							{
 								// ground zero effect is in effect
-								hitUnit(unit, bu, Position(0, 0, 0), damage, type);
+								hitUnit(unit, bu, Position(0, 0, 0), damage, type, rangeAtack);
 							}
 							else
 							{
 								// directional damage relative to explosion position.
 								// units above the explosion will be hit in the legs, units lateral to or below will be hit in the torso
-								hitUnit(unit, bu, Position(centerX, centerY, centerZ + 5) - dest->getPosition(), damage, type);
+								hitUnit(unit, bu, Position(centerX, centerY, centerZ + 5) - dest->getPosition(), damage, type, rangeAtack);
 							}
 
 							// Affect all items and units in inventory
@@ -1332,7 +1324,7 @@ void TileEngine::explode(const Position &center, int power, const RuleDamageType
 							{
 								for (std::vector<BattleItem*>::iterator it = bu->getInventory()->begin(); it != bu->getInventory()->end(); ++it)
 								{
-									if (!hitUnit(unit, (*it)->getUnit(), Position(0, 0, 0), itemDamage, type) && itemDamage * type->ToItem > (*it)->getRules()->getArmor())
+									if (!hitUnit(unit, (*it)->getUnit(), Position(0, 0, 0), itemDamage, type, rangeAtack) && itemDamage * type->ToItem > (*it)->getRules()->getArmor())
 									{
 										toRemove.push_back(*it);
 									}
@@ -1479,7 +1471,7 @@ bool TileEngine::detonate(Tile* tile, int explosive)
 				currentpart2 = tiles[i]->getMapData(currentpart)->getDataset()->getObjects()->at(diemcd)->getObjectType();
 			else
 				currentpart2 = currentpart;
-			if (tiles[i]->destroy(currentpart))
+			if (tiles[i]->destroy(currentpart, _save->getObjectiveType()))
 				objective = true;
 			currentpart =  currentpart2;
 			if (tiles[i]->getMapData(currentpart)) // take new values
@@ -1521,9 +1513,9 @@ Tile *TileEngine::checkForTerrainExplosions()
 {
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
-		if (_save->getTiles()[i]->getExplosive())
+		if (_save->getTile(i)->getExplosive())
 		{
-			return _save->getTiles()[i];
+			return _save->getTile(i);
 		}
 	}
 	return 0;
@@ -1722,11 +1714,13 @@ int TileEngine::horizontalBlockage(Tile *startTile, Tile *endTile, ItemDamageTyp
 		break;
 	}
 
-	if (skipObject) return block; //
+	if (!skipObject)
+		block += blockage(startTile,O_OBJECT, type, direction);
 
-    block += blockage(startTile,O_OBJECT, type, direction);
 	if (type != DT_NONE)
 	{
+		if (skipObject) return block;
+
 		direction += 4;
 		if (direction > 7)
 			direction -= 8;
@@ -1906,8 +1900,6 @@ int TileEngine::unitOpensDoor(BattleUnit *unit, bool rClick, int dir)
 	int TUCost = 0;
 	int size = unit->getArmor()->getSize();
 	int z = unit->getTile()->getTerrainLevel() < -12 ? 1 : 0; // if we're standing on stairs, check the tile above instead.
-	if (size > 1 && rClick)
-		return door;
 	if (dir == -1)
 	{
 		dir = unit->getDirection();
@@ -2094,10 +2086,10 @@ int TileEngine::closeUfoDoors()
 	// prepare a list of tiles on fire/smoke & close any ufo doors
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
-		if (_save->getTiles()[i]->getUnit() && _save->getTiles()[i]->getUnit()->getArmor()->getSize() > 1)
+		if (_save->getTile(i)->getUnit() && _save->getTile(i)->getUnit()->getArmor()->getSize() > 1)
 		{
-			BattleUnit *bu = _save->getTiles()[i]->getUnit();
-			Tile *tile = _save->getTiles()[i];
+			BattleUnit *bu = _save->getTile(i)->getUnit();
+			Tile *tile = _save->getTile(i);
 			Tile *oneTileNorth = _save->getTile(tile->getPosition() + Position(0, -1, 0));
 			Tile *oneTileWest = _save->getTile(tile->getPosition() + Position(-1, 0, 0));
 			if ((tile->isUfoDoorOpen(O_NORTHWALL) && oneTileNorth && oneTileNorth->getUnit() && oneTileNorth->getUnit() == bu) ||
@@ -2106,7 +2098,7 @@ int TileEngine::closeUfoDoors()
 				continue;
 			}
 		}
-		doorsclosed += _save->getTiles()[i]->closeUfoDoor();
+		doorsclosed += _save->getTile(i)->closeUfoDoor();
 	}
 
 	return doorsclosed;
@@ -2134,6 +2126,7 @@ int TileEngine::calculateLine(const Position& origin, const Position& target, bo
 	int cx, cy, cz;
 	Position lastPoint(origin);
 	int result;
+	int steps = 0;
 
 	//start and end points
 	x0 = origin.x;	 x1 = target.x;
@@ -2204,18 +2197,21 @@ int TileEngine::calculateLine(const Position& origin, const Position& target, bo
 		}
 		else
 		{
-            int temp_res = verticalBlockage(_save->getTile(lastPoint), _save->getTile(Position(cx, cy, cz)), DT_NONE);
-			result = horizontalBlockage(_save->getTile(lastPoint), _save->getTile(Position(cx, cy, cz)), DT_NONE);
-            if (result == -1)
-            {
-                if (temp_res > 127)
-                {
-                    result = 0;
-                } else {
-                return result; // We hit a big wall
-                }
-            }
-            result += temp_res;
+			int temp_res = verticalBlockage(_save->getTile(lastPoint), _save->getTile(Position(cx, cy, cz)), DT_NONE);
+			result = horizontalBlockage(_save->getTile(lastPoint), _save->getTile(Position(cx, cy, cz)), DT_NONE, steps<2);
+			steps++;
+			if (result == -1)
+			{
+				if (temp_res > 127)
+				{
+					result = 0;
+				}
+				else
+				{
+					return result; // We hit a big wall
+				}
+			}
+			result += temp_res;
 			if (result > 127)
 			{
 				return result;
@@ -2576,7 +2572,7 @@ bool TileEngine::psiAttack(BattleAction *action)
 			victim->convertToFaction(action->actor->getFaction());
 			calculateFOV(victim->getPosition());
 			calculateUnitLighting();
-			victim->setTimeUnits(victim->getBaseStats()->tu);
+			victim->recoverTimeUnits();
 			victim->allowReselect();
 			victim->abortTurn(); // resets unit status to STANDING
 			// if all units from either faction are mind controlled - auto-end the mission.

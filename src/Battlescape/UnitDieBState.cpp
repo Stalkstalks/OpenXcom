@@ -18,24 +18,21 @@
  */
 
 #include "UnitDieBState.h"
-#include "ExplosionBState.h"
 #include "TileEngine.h"
 #include "BattlescapeState.h"
 #include "Map.h"
-#include "Camera.h"
 #include "../Engine/Game.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
-#include "../Ruleset/Ruleset.h"
+#include "../Mod/Mod.h"
 #include "../Engine/Sound.h"
 #include "../Engine/RNG.h"
 #include "../Engine/Options.h"
 #include "../Engine/Language.h"
-#include "../Ruleset/Armor.h"
-#include "../Ruleset/Unit.h"
+#include "../Mod/Armor.h"
+#include "../Mod/Unit.h"
 #include "InfoboxOKState.h"
 #include "InfoboxState.h"
 #include "../Savegame/Node.h"
@@ -205,7 +202,7 @@ void UnitDieBState::think()
 		{
 			playDeathSound();
 		}
-		if (_unit->getStatus() == STATUS_UNCONSCIOUS && (_unit->getSpecialAbility() == SPECAB_EXPLODEONDEATH || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE))
+		if (_unit->getStatus() == STATUS_UNCONSCIOUS && _unit->getSpecialAbility() == SPECAB_EXPLODEONDEATH)
 		{
 			_unit->instaKill();
 		}
@@ -216,7 +213,7 @@ void UnitDieBState::think()
 		if (!_unit->getSpawnUnit().empty() && !_overKill)
 		{
 			// converts the dead zombie to a chryssalid
-			_parent->convertUnit(_unit, _unit->getSpawnUnit());
+			_parent->convertUnit(_unit);
 		}
 		else
 		{
@@ -224,7 +221,6 @@ void UnitDieBState::think()
 		}
 	}
 
-	_parent->getMap()->cacheUnit(_unit);
 }
 
 /**
@@ -258,13 +254,14 @@ void UnitDieBState::convertUnitToCorpse()
 		std::vector<BattleItem*> itemsToKeep;
 		for (std::vector<BattleItem*>::iterator i = _unit->getInventory()->begin(); i != _unit->getInventory()->end(); ++i)
 		{
+			_parent->dropItem(lastPosition, (*i));
 			if (!(*i)->getRules()->isFixed())
 			{
-				if (dropItems)
-				{
-					_parent->dropItem(lastPosition, (*i));
-					(*i)->setOwner(0);
-				}
+				(*i)->setOwner(0);
+			}
+			else
+			{
+				itemsToKeep.push_back(*i);
 			}
 		}
 
@@ -292,7 +289,7 @@ void UnitDieBState::convertUnitToCorpse()
 			{
 				if ((*it)->getUnit() == _unit)
 				{
-					RuleItem *corpseRules = _parent->getRuleset()->getItem(_unit->getArmor()->getCorpseBattlescape()[0]); // we're in an inventory, so we must be a 1x1 unit
+					RuleItem *corpseRules = _parent->getMod()->getItem(_unit->getArmor()->getCorpseBattlescape()[0]); // we're in an inventory, so we must be a 1x1 unit
 					(*it)->convertToCorpse(corpseRules);
 					break;
 				}
@@ -309,7 +306,7 @@ void UnitDieBState::convertUnitToCorpse()
 			{
 				if (!_overKill)
 				{
-					BattleItem *corpse = new BattleItem(_parent->getRuleset()->getItem(_unit->getArmor()->getCorpseBattlescape()[i]), _parent->getSave()->getCurrentItemId());
+					BattleItem *corpse = new BattleItem(_parent->getMod()->getItem(_unit->getArmor()->getCorpseBattlescape()[i]), _parent->getSave()->getCurrentItemId());
 					corpse->setUnit(_unit);
 					_parent->dropItem(lastPosition + Position(x,y,0), corpse, true);
 					i++;
@@ -328,20 +325,14 @@ void UnitDieBState::convertUnitToCorpse()
  */
 void UnitDieBState::playDeathSound()
 {
-	if (_unit->getDeathSound() == -1)
+	const std::vector<int> &sounds = _unit->getDeathSounds();
+	if (!sounds.empty())
 	{
-		if (_unit->getGender() == GENDER_MALE)
+		int i = sounds[RNG::generate(0, sounds.size() - 1)];
+		if (i >= 0)
 		{
-			_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::MALE_SCREAM[RNG::generate(0, 2)])->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+			_parent->getMod()->getSoundByDepth(_parent->getDepth(), i)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 		}
-		else
-		{
-			_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::FEMALE_SCREAM[RNG::generate(0, 2)])->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
-		}
-	}
-	else if (_unit->getDeathSound() >= 0)
-	{
-		_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _unit->getDeathSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 	}
 }
 

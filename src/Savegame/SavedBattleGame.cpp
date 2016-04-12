@@ -18,27 +18,23 @@
  */
 #include <assert.h>
 #include <vector>
-#include <deque>
-#include <queue>
 #include "BattleItem.h"
 #include "SavedBattleGame.h"
 #include "SavedGame.h"
 #include "Tile.h"
 #include "Node.h"
-#include "../Ruleset/MapDataSet.h"
-#include "../Ruleset/MCDPatch.h"
+#include "../Mod/MapDataSet.h"
+#include "../Mod/MCDPatch.h"
 #include "../Battlescape/Pathfinding.h"
 #include "../Battlescape/TileEngine.h"
 #include "../Battlescape/BattlescapeState.h"
 #include "../Battlescape/BattlescapeGame.h"
 #include "../Battlescape/Position.h"
 #include "../Battlescape/Inventory.h"
-#include "../Resource/ResourcePack.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/Armor.h"
-#include "../Engine/Language.h"
+#include "../Mod/Mod.h"
+#include "../Mod/Armor.h"
 #include "../Engine/Game.h"
-#include "../Ruleset/RuleInventory.h"
+#include "../Mod/RuleInventory.h"
 #include "../Battlescape/CivilianBAIState.h"
 #include "../Battlescape/AlienBAIState.h"
 #include "../Engine/RNG.h"
@@ -52,11 +48,11 @@ namespace OpenXcom
 /**
  * Initializes a brand new battlescape saved game.
  */
-SavedBattleGame::SavedBattleGame(Ruleset *rule) :
+SavedBattleGame::SavedBattleGame(Mod *rule) :
 	_battleState(0), _rule(rule), _mapsize_x(0), _mapsize_y(0), _mapsize_z(0), _selectedUnit(0),
 	_lastSelectedUnit(0), _pathfinding(0), _tileEngine(0), _globalShade(0), _side(FACTION_PLAYER), _turn(1),
-    _debugMode(false), _aborted(false), _itemId(0), _objectivesDestroyed(0), _objectivesNeeded(0), _unitsFalling(false),
-	_cheating(false), _tuReserved(BA_NONE), _kneelReserved(false), _depth(0), _ambience(-1)
+    _debugMode(false), _aborted(false), _itemId(0), _objectiveType(-1), _objectivesDestroyed(0), _objectivesNeeded(0), _unitsFalling(false),
+	_cheating(false), _tuReserved(BA_NONE), _kneelReserved(false), _depth(0), _ambience(-1), _ambientVolume(0.5)
 {
 	_tileSearch.resize(11*11);
 	for (int i = 0; i < 121; ++i)
@@ -71,12 +67,6 @@ SavedBattleGame::SavedBattleGame(Ruleset *rule) :
  */
 SavedBattleGame::~SavedBattleGame()
 {
-	for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
-	{
-		delete _tiles[i];
-	}
-	delete[] _tiles;
-
 	for (std::vector<MapDataSet*>::iterator i = _mapDataSets.begin(); i != _mapDataSets.end(); ++i)
 	{
 		(*i)->unloadData();
@@ -116,10 +106,10 @@ SavedBattleGame::~SavedBattleGame()
 /**
  * Loads the saved battle game from a YAML file.
  * @param node YAML node.
- * @param rule for the saved game.
+ * @param mod for the saved game.
  * @param savedGame Pointer to saved game.
  */
-void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* savedGame)
+void SavedBattleGame::load(const YAML::Node &node, Mod *mod, SavedGame* savedGame)
 {
 	_mapsize_x = node["width"].as<int>(_mapsize_x);
 	_mapsize_y = node["length"].as<int>(_mapsize_y);
@@ -135,7 +125,7 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 	for (YAML::const_iterator i = node["mapdatasets"].begin(); i != node["mapdatasets"].end(); ++i)
 	{
 		std::string name = i->as<std::string>();
-		MapDataSet *mds = rule->getMapDataSet(name);
+		MapDataSet *mds = mod->getMapDataSet(name);
 		_mapDataSets.push_back(mds);
 	}
 
@@ -175,7 +165,7 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 		{
 			int index = unserializeInt(&r, serKey.index);
 			assert (index >= 0 && index < _mapsize_x * _mapsize_z * _mapsize_y);
-			_tiles[index]->loadBinary(r, serKey); // loadBinary's privileges to advance *r have been revoked
+			_tiles[index].loadBinary(r, serKey); // loadBinary's privileges to advance *r have been revoked
 			r += serKey.totalBytes-serKey.index; // r is now incremented strictly by totalBytes in case there are obsolete fields present in the data
 		}
 	}
@@ -215,8 +205,8 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 			std::string type = (*i)["genUnitType"].as<std::string>();
 			std::string armor = (*i)["genUnitArmor"].as<std::string>();
 			// create a new Unit.
-			if(!rule->getUnit(type) || !rule->getArmor(armor)) continue;
-			unit = new BattleUnit(rule->getUnit(type), originalFaction, id, rule->getArmor(armor), savedGame->getDifficulty(), _depth);
+			if(!mod->getUnit(type) || !mod->getArmor(armor)) continue;
+			unit = new BattleUnit(mod->getUnit(type), originalFaction, id, mod->getArmor(armor), savedGame->getDifficultyCoefficient(), _depth);
 		}
 		unit->load(*i);
 		unit->setSpecialWeapon(this);
@@ -259,13 +249,13 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 		{
 			std::string type = (*i)["type"].as<std::string>();
 			_itemId = (*i)["id"].as<int>(_itemId);
-			if (rule->getItem(type))
+			if (mod->getItem(type))
 			{
-				BattleItem *item = new BattleItem(rule->getItem(type), &_itemId);
+				BattleItem *item = new BattleItem(mod->getItem(type), &_itemId);
 				item->load(*i);
 				type = (*i)["inventoryslot"].as<std::string>();
 				if (type != "NULL")
-					item->setSlot(rule->getInventory(type));
+					item->setSlot(mod->getInventory(type));
 				int owner = (*i)["owner"].as<int>();
 				int prevOwner = (*i)["previousOwner"].as<int>(-1);
 				int unit = (*i)["unit"].as<int>();
@@ -295,7 +285,7 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 				{
 					Position pos = (*i)["position"].as<Position>();
 					if (pos.x != -1)
-						getTile(pos)->addItem(item, rule->getInventory("STR_GROUND"));
+						getTile(pos)->addItem(item, mod->getInventory("STR_GROUND"));
 				}
 				toContainer[pass]->push_back(item);
 			}
@@ -306,7 +296,7 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 	std::vector<BattleItem*>::iterator weaponi = _items.begin();
 	for (YAML::const_iterator i = node["items"].begin(); i != node["items"].end(); ++i)
 	{
-		if (rule->getItem((*i)["type"].as<std::string>()))
+		if (mod->getItem((*i)["type"].as<std::string>()))
 		{
 			int ammo = (*i)["ammoItem"].as<int>();
 			if (ammo != -1)
@@ -323,26 +313,28 @@ void SavedBattleGame::load(const YAML::Node &node, Ruleset *rule, SavedGame* sav
 			 ++weaponi;
 		}
 	}
+	_objectiveType = node["objectiveType"].as<int>(_objectiveType);
 	_objectivesDestroyed = node["objectivesDestroyed"].as<int>(_objectivesDestroyed);
 	_objectivesNeeded = node["objectivesNeeded"].as<int>(_objectivesNeeded);
 	_tuReserved = (BattleActionType)node["tuReserved"].as<int>(_tuReserved);
 	_kneelReserved = node["kneelReserved"].as<bool>(_kneelReserved);
 	_ambience = node["ambience"].as<int>(_ambience);
+	_ambientVolume = node["ambientVolume"].as<double>(_ambientVolume);
 	_music = node["music"].as<std::string>(_music);
 }
 
 /**
  * Loads the resources required by the map in the battle save.
- * @param game Pointer to the game.
+ * @param mod Pointer to the mod.
  */
-void SavedBattleGame::loadMapResources(Game *game)
+void SavedBattleGame::loadMapResources(Mod *mod)
 {
 	for (std::vector<MapDataSet*>::const_iterator i = _mapDataSets.begin(); i != _mapDataSets.end(); ++i)
 	{
 		(*i)->loadData();
-		if (game->getRuleset()->getMCDPatch((*i)->getName()))
+		if (mod->getMCDPatch((*i)->getName()))
 		{
-			game->getRuleset()->getMCDPatch((*i)->getName())->modifyData(*i);
+			mod->getMCDPatch((*i)->getName())->modifyData(*i);
 		}
 	}
 
@@ -352,15 +344,15 @@ void SavedBattleGame::loadMapResources(Game *game)
 	{
 		for (int part = 0; part < 4; ++part)
 		{
-			_tiles[i]->getMapData(&mdID, &mdsID, part);
+			_tiles[i].getMapData(&mdID, &mdsID, part);
 			if (mdID != -1 && mdsID != -1)
 			{
-				_tiles[i]->setMapData(_mapDataSets[mdsID]->getObjects()->at(mdID), mdID, mdsID, part);
+				_tiles[i].setMapData(_mapDataSets[mdsID]->getObjects()->at(mdID), mdID, mdsID, part);
 			}
 		}
 	}
 
-	initUtilities(game->getResourcePack(), game->getRuleset());
+	initUtilities(mod);
 	getTileEngine()->calculateSunShading();
 	getTileEngine()->calculateTerrainLighting();
 	getTileEngine()->calculateUnitLighting();
@@ -378,6 +370,7 @@ YAML::Node SavedBattleGame::save() const
 	{
 		node["objectivesDestroyed"] = _objectivesDestroyed;
 		node["objectivesNeeded"] = _objectivesNeeded;
+		node["objectiveType"] = _objectiveType;
 	}
 	node["width"] = _mapsize_x;
 	node["length"] = _mapsize_y;
@@ -393,9 +386,9 @@ YAML::Node SavedBattleGame::save() const
 #if 0
 	for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
 	{
-		if (!_tiles[i]->isVoid())
+		if (!_tiles[i].isVoid())
 		{
-			node["tiles"].push_back(_tiles[i]->save());
+			node["tiles"].push_back(_tiles[i].save());
 		}
 	}
 #else
@@ -414,10 +407,10 @@ YAML::Node SavedBattleGame::save() const
 
 	for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
 	{
-		if (!_tiles[i]->isVoid())
+		if (!_tiles[i].isVoid())
 		{
 			serializeInt(&w, Tile::serializationKey.index, i);
-			_tiles[i]->saveBinary(&w);
+			_tiles[i].saveBinary(&w);
 		}
 		else
 		{
@@ -448,6 +441,7 @@ YAML::Node SavedBattleGame::save() const
     node["kneelReserved"] = _kneelReserved;
     node["depth"] = _depth;
 	node["ambience"] = _ambience;
+	node["ambientVolume"] = _ambientVolume;
 	for (std::vector<BattleItem*>::const_iterator i = _recoverGuaranteed.begin(); i != _recoverGuaranteed.end(); ++i)
 	{
 		node["recoverGuaranteed"].push_back((*i)->save());
@@ -462,15 +456,6 @@ YAML::Node SavedBattleGame::save() const
 }
 
 /**
- * Gets the array of tiles.
- * @return A pointer to the Tile array.
- */
-Tile **SavedBattleGame::getTiles() const
-{
-	return _tiles;
-}
-
-/**
  * Initializes the array of tiles and creates a pathfinding object.
  * @param mapsize_x
  * @param mapsize_y
@@ -480,11 +465,7 @@ void SavedBattleGame::initMap(int mapsize_x, int mapsize_y, int mapsize_z)
 {
 	if (!_nodes.empty())
 	{
-		for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
-		{
-			delete _tiles[i];
-		}
-		delete[] _tiles;
+		_tiles.clear();
 
 		for (std::vector<Node*>::iterator i = _nodes.begin(); i != _nodes.end(); ++i)
 		{
@@ -497,28 +478,27 @@ void SavedBattleGame::initMap(int mapsize_x, int mapsize_y, int mapsize_z)
 	_mapsize_x = mapsize_x;
 	_mapsize_y = mapsize_y;
 	_mapsize_z = mapsize_z;
-	_tiles = new Tile*[_mapsize_z * _mapsize_y * _mapsize_x];
+	_tiles.reserve(_mapsize_z * _mapsize_y * _mapsize_x);
 	/* create tile objects */
 	for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
 	{
 		Position pos;
 		getTileCoords(i, &pos.x, &pos.y, &pos.z);
-		_tiles[i] = new Tile(pos);
+		_tiles.push_back(Tile(pos));
 	}
 
 }
 
 /**
  * Initializes the map utilities.
- * @param res Pointer to resource pack.
- * @param rule Pointer to the ruleset.
+ * @param mod Pointer to mod.
  */
-void SavedBattleGame::initUtilities(ResourcePack *res, Ruleset *rule)
+void SavedBattleGame::initUtilities(Mod *mod)
 {
 	delete _pathfinding;
 	delete _tileEngine;
 	_pathfinding = new Pathfinding(this);
-	_tileEngine = new TileEngine(this, res->getVoxelData(), rule->getMaxViewDistance(), rule->getMaxDarknessToSeeUnits());
+	_tileEngine = new TileEngine(this, mod->getVoxelData(), mod->getMaxViewDistance(), mod->getMaxDarknessToSeeUnits());
 }
 
 /**
@@ -651,13 +631,13 @@ void SavedBattleGame::setSelectedUnit(BattleUnit *unit)
 }
 
 /**
-* Selects the previous player unit.
-* @param checkReselect Whether to check if we should reselect a unit.
-* @param setReselect Don't reselect a unit.
-* @param checkInventory Whether to check if the unit has an inventory.
-* @return Pointer to new selected BattleUnit, NULL if none can be selected.
-* @sa selectPlayerUnit
-*/
+ * Selects the previous player unit.
+ * @param checkReselect Whether to check if we should reselect a unit.
+ * @param setReselect Don't reselect a unit.
+ * @param checkInventory Whether to check if the unit has an inventory.
+ * @return Pointer to new selected BattleUnit, NULL if none can be selected.
+ * @sa selectPlayerUnit
+ */
 BattleUnit *SavedBattleGame::selectPreviousPlayerUnit(bool checkReselect, bool setReselect, bool checkInventory)
 {
 	return selectPlayerUnit(-1, checkReselect, setReselect, checkInventory);
@@ -808,9 +788,9 @@ TileEngine *SavedBattleGame::getTileEngine() const
 }
 
 /**
-* Gets the array of mapblocks.
-* @return Pointer to the array of mapblocks.
-*/
+ * Gets the array of mapblocks.
+ * @return Pointer to the array of mapblocks.
+ */
 std::vector<MapDataSet*> *SavedBattleGame::getMapDataSets()
 {
 	return &_mapDataSets;
@@ -836,8 +816,8 @@ bool SavedBattleGame::canUseWeapon(const BattleItem* weapon, const BattleUnit* u
 	if (!weapon || !unit) return false;
 
 	const RuleItem *rule = weapon->getRules();
-	volatile bool x = true;
-	if (unit->getOriginalFaction() == FACTION_HOSTILE && getTurn() < rule->getAIUseDelay(getRuleset()))
+
+	if (unit->getOriginalFaction() == FACTION_HOSTILE && getTurn() < rule->getAIUseDelay(getMod()))
 	{
 		return false;
 	}
@@ -853,7 +833,7 @@ bool SavedBattleGame::canUseWeapon(const BattleItem* weapon, const BattleUnit* u
 	{
 		return false;
 	}
-	return x;
+	return true;
 }
 
 /**
@@ -957,7 +937,7 @@ void SavedBattleGame::setDebugMode()
 {
 	for (int i = 0; i < _mapsize_z * _mapsize_y * _mapsize_x; ++i)
 	{
-		_tiles[i]->setDiscovered(true, 2);
+		_tiles[i].setDiscovered(true, 2);
 	}
 
 	_debugMode = true;
@@ -1425,11 +1405,12 @@ bool SavedBattleGame::isAborted() const
 }
 
 /**
- * Sets whether the objective is destroyed.
+ * increments the number of objectives to be destroyed.
  */
-void SavedBattleGame::addToObjectiveCount()
+void SavedBattleGame::setObjectiveCount(int counter)
 {
-	_objectivesNeeded++;
+	_objectivesNeeded = counter;
+	_objectivesDestroyed = 0;
 }
 
 /**
@@ -1437,12 +1418,25 @@ void SavedBattleGame::addToObjectiveCount()
  */
 void SavedBattleGame::addDestroyedObjective()
 {
-	_objectivesDestroyed++;
-	if (allObjectivesDestroyed() && Options::battleAutoEnd)
+	if (!allObjectivesDestroyed())
 	{
-		setSelectedUnit(0);
-		_battleState->getBattleGame()->cancelCurrentAction(true);
-		_battleState->getBattleGame()->requestEndTurn();
+		_objectivesDestroyed++;
+		if (allObjectivesDestroyed())
+		{
+			if (getObjectiveType() == MUST_DESTROY)
+			{
+				if (Options::battleAutoEnd)
+				{
+					setSelectedUnit(0);
+					_battleState->getBattleGame()->cancelCurrentAction(true);
+					_battleState->getBattleGame()->requestEndTurn();
+				}
+			}
+			else
+			{
+				_battleState->getBattleGame()->missionComplete();
+			}
+		}
 	}
 }
 
@@ -1588,9 +1582,9 @@ void SavedBattleGame::prepareNewTurn()
 	// prepare a list of tiles on fire
 	for (int i = 0; i < _mapsize_x * _mapsize_y * _mapsize_z; ++i)
 	{
-		if (getTiles()[i]->getFire() > 0)
+		if (getTile(i)->getFire() > 0)
 		{
-			tilesOnFire.push_back(getTiles()[i]);
+			tilesOnFire.push_back(getTile(i));
 		}
 	}
 
@@ -1629,11 +1623,11 @@ void SavedBattleGame::prepareNewTurn()
 				{
 					if ((*i)->getMapData(O_OBJECT)->getFlammable() != 255 && (*i)->getMapData(O_OBJECT)->getArmor() != 255)
 					{
-						if ((*i)->destroy(O_OBJECT))
+						if ((*i)->destroy(O_OBJECT, getObjectiveType()))
 						{
 							addDestroyedObjective();
 						}
-						if ((*i)->destroy(O_FLOOR))
+						if ((*i)->destroy(O_FLOOR, getObjectiveType()))
 						{
 							addDestroyedObjective();
 						}
@@ -1643,7 +1637,7 @@ void SavedBattleGame::prepareNewTurn()
 				{
 					if ((*i)->getMapData(O_FLOOR)->getFlammable() != 255 && (*i)->getMapData(O_FLOOR)->getArmor() != 255)
 					{
-						if ((*i)->destroy(O_FLOOR))
+						if ((*i)->destroy(O_FLOOR, getObjectiveType()))
 						{
 							addDestroyedObjective();
 						}
@@ -1657,9 +1651,9 @@ void SavedBattleGame::prepareNewTurn()
 	// prepare a list of tiles on fire/with smoke in them (smoke acts as fire intensity)
 	for (int i = 0; i < _mapsize_x * _mapsize_y * _mapsize_z; ++i)
 	{
-		if (getTiles()[i]->getSmoke() > 0)
+		if (getTile(i)->getSmoke() > 0)
 		{
-			tilesOnSmoke.push_back(getTiles()[i]);
+			tilesOnSmoke.push_back(getTile(i));
 		}
 	}
 
@@ -1720,17 +1714,17 @@ void SavedBattleGame::prepareNewTurn()
 		// do damage to units, average out the smoke, etc.
 		for (int i = 0; i < _mapsize_x * _mapsize_y * _mapsize_z; ++i)
 		{
-			if (getTiles()[i]->getSmoke() != 0)
-				getTiles()[i]->prepareNewTurn();
+			if (getTile(i)->getSmoke() != 0)
+				getTile(i)->prepareNewTurn();
 		}
 		// fires could have been started, stopped or smoke could reveal/conceal units.
 		getTileEngine()->calculateTerrainLighting();
 	}
 
-	Ruleset *ruleset = getBattleState()->getGame()->getRuleset();
+	Mod *mod = getBattleState()->getGame()->getMod();
 	for (std::vector<BattleUnit*>::iterator i = getUnits()->begin(); i != getUnits()->end(); ++i)
 	{
-		(*i)->calculateEnviDamage(ruleset);
+		(*i)->calculateEnviDamage(mod);
 	}
 
 	reviveUnconsciousUnits();
@@ -1769,12 +1763,10 @@ void SavedBattleGame::reviveUnconsciousUnits(bool noTU)
 					// recover from unconscious
 					(*i)->turn(false); // makes the unit stand up again
 					(*i)->kneel(false);
-					(*i)->setCache(0);
 					if (noTU) (*i)->setTimeUnits(0);
 					getTileEngine()->calculateFOV((*i));
 					getTileEngine()->calculateUnitLighting();
 					removeUnconsciousBodyItem((*i));
-					break;
 				}
 			}
 		}
@@ -1808,14 +1800,14 @@ void SavedBattleGame::removeUnconsciousBodyItem(BattleUnit *bu)
 bool SavedBattleGame::setUnitPosition(BattleUnit *bu, const Position &position, bool testOnly)
 {
 	int size = bu->getArmor()->getSize() - 1;
-
+	Position zOffset (0,0,0);
 	// first check if the tiles are occupied
 	for (int x = size; x >= 0; x--)
 	{
 		for (int y = size; y >= 0; y--)
 		{
-			Tile *t = getTile(position + Position(x,y,0));
-			Tile *tb = getTile(position + Position(x,y,-1));
+			Tile *t = getTile(position + Position(x,y,0) + zOffset);
+			Tile *tb = getTile(position + Position(x,y,-1) + zOffset);
 			if (t == 0 ||
 				(t->getUnit() != 0 && t->getUnit() != bu) ||
 				t->getTUCost(O_OBJECT, bu->getMovementType()) == 255 ||
@@ -1823,6 +1815,13 @@ bool SavedBattleGame::setUnitPosition(BattleUnit *bu, const Position &position, 
 				(t->getMapData(O_OBJECT) && t->getMapData(O_OBJECT)->getBigWall() && t->getMapData(O_OBJECT)->getBigWall() <= 3))
 			{
 				return false;
+			}
+			// move the unit up to the next level (desert and seabed terrains)
+			if (t && t->getTerrainLevel() == -24)
+			{
+				zOffset.z += 1;
+				x = size;
+				y = size + 1;
 			}
 		}
 	}
@@ -1832,7 +1831,7 @@ bool SavedBattleGame::setUnitPosition(BattleUnit *bu, const Position &position, 
 		getPathfinding()->setUnit(bu);
 		for (int dir = 2; dir <= 4; ++dir)
 		{
-			if (getPathfinding()->isBlocked(getTile(position), 0, dir, 0))
+			if (getPathfinding()->isBlocked(getTile(position + zOffset), 0, dir, 0))
 				return false;
 		}
 	}
@@ -1845,9 +1844,9 @@ bool SavedBattleGame::setUnitPosition(BattleUnit *bu, const Position &position, 
 		{
 			if (x==0 && y==0)
 			{
-				bu->setPosition(position);
+				bu->setPosition(position + zOffset);
 			}
-			getTile(position + Position(x,y,0))->setUnit(bu, getTile(position + Position(x,y,-1)));
+			getTile(position + Position(x,y,0) + zOffset)->setUnit(bu, getTile(position + Position(x,y,-1) + zOffset));
 		}
 	}
 
@@ -2034,7 +2033,7 @@ bool SavedBattleGame::placeUnitNearPosition(BattleUnit *unit, Position entryPoin
 	{
 		return true;
 	}
-	
+
 	int me = 0 - unit->getArmor()->getSize();
 	int you = largeFriend ? 2 : 1;
 	int xArray[8] = {0, you, you, you, 0, me, me, me};
@@ -2078,9 +2077,9 @@ void SavedBattleGame::resetTiles()
 {
 	for (int i = 0; i != getMapSizeXYZ(); ++i)
 	{
-		_tiles[i]->setDiscovered(false, 0);
-		_tiles[i]->setDiscovered(false, 1);
-		_tiles[i]->setDiscovered(false, 2);
+		_tiles[i].setDiscovered(false, 0);
+		_tiles[i].setDiscovered(false, 1);
+		_tiles[i].setDiscovered(false, 2);
 	}
 }
 
@@ -2161,11 +2160,14 @@ void SavedBattleGame::calculateModuleMap()
 	{
 		for (int y = 0; y != _mapsize_y; ++y)
 		{
-			Tile *tile = getTile(Position(x,y,_mapsize_z-1));
-			if (tile && tile->getMapData(O_OBJECT) && tile->getMapData(O_OBJECT)->isBaseModule())
+			for (int z = 0; z != _mapsize_z; ++z)
 			{
-				_baseModules[x/10][y/10].first += _baseModules[x/10][y/10].first > 0 ? 1 : 2;
-				_baseModules[x/10][y/10].second = _baseModules[x/10][y/10].first;
+				Tile *tile = getTile(Position(x,y,z));
+				if (tile && tile->getMapData(O_OBJECT) && tile->getMapData(O_OBJECT)->isBaseModule())
+				{
+					_baseModules[x/10][y/10].first += _baseModules[x/10][y/10].first > 0 ? 1 : 2;
+					_baseModules[x/10][y/10].second = _baseModules[x/10][y/10].first;
+				}
 			}
 		}
 	}
@@ -2238,7 +2240,7 @@ int SavedBattleGame::getAmbientSound() const
  * get ruleset.
  * @return the ruleset of game.
  */
-const Ruleset *SavedBattleGame::getRuleset() const
+const Mod *SavedBattleGame::getMod() const
 {
 	return _rule;
 }
@@ -2277,5 +2279,36 @@ const std::string &SavedBattleGame::getMusic() const
 void SavedBattleGame::setMusic(const std::string &track)
 {
 	_music = track;
+}
+
+/**
+ * Set the objective type for the current battle.
+ * @param the objective type.
+ */
+void SavedBattleGame::setObjectiveType(int type)
+{
+	_objectiveType = type;
+}
+
+/**
+ * Get the objective type for the current battle.
+ * @return the objective type.
+ */
+SpecialTileType SavedBattleGame::getObjectiveType()
+{
+	return (SpecialTileType)(_objectiveType);
+}
+
+
+
+/// sets the ambient sound effect;
+void SavedBattleGame::setAmbientVolume(double volume)
+{
+	_ambientVolume = volume;
+}
+/// gets the ambient sound effect;
+double SavedBattleGame::getAmbientVolume() const
+{
+	return _ambientVolume;
 }
 }

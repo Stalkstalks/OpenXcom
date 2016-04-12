@@ -17,17 +17,13 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ActionMenuState.h"
-#include <sstream>
-#include <cmath>
 #include "../Engine/Game.h"
 #include "../Engine/Options.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Action.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
-#include "../Ruleset/RuleItem.h"
+#include "../Mod/RuleItem.h"
 #include "ActionMenuItem.h"
 #include "PrimeGrenadeState.h"
 #include "MedikitState.h"
@@ -225,7 +221,14 @@ void ActionMenuState::btnActionMenuItemClick(Action *action)
 	{
 		_action->type = _actionMenu[btnID]->getAction();
 		_action->updateTU();
-		if (weapon->isWaterOnly() &&
+		if (_action->type != BA_THROW &&
+			_action->actor->getOriginalFaction() == FACTION_PLAYER &&
+			!_game->getSavedGame()->isResearched(weapon->getRequirements()))
+		{
+			_action->result = "STR_UNABLE_TO_USE_ALIEN_ARTIFACT_UNTIL_RESEARCHED";
+			_game->popState();
+		}
+		else if (weapon->isWaterOnly() &&
 			_game->getSavedGame()->getSavedBattle()->getDepth() == 0 &&
 			_action->type != BA_THROW)
 		{
@@ -280,7 +283,7 @@ void ActionMenuState::btnActionMenuItemClick(Action *action)
 			if (targetUnit)
 			{
 				_game->popState();
-				int type = weapon->getMediKitType();
+				BattleMediKitType type = weapon->getMediKitType();
 				if (type)
 				{
 					if ((type == BMT_HEAL && _action->weapon->getHealQuantity() > 0) ||
@@ -313,6 +316,8 @@ void ActionMenuState::btnActionMenuItemClick(Action *action)
 								break;
 							case BMT_PAINKILLER:
 								tileEngine->medikitPainKiller(_action, targetUnit);
+								break;
+							case BMT_NORMAL:
 								break;
 							}
 						}

@@ -17,10 +17,9 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "CrossPlatform.h"
-#include <set>
 #include <algorithm>
-#include <iostream>
 #include <sstream>
+#include <fstream>
 #include <string>
 #include <locale>
 #include <stdint.h>
@@ -29,7 +28,6 @@
 #include "Logger.h"
 #include "Exception.h"
 #include "Options.h"
-#include "Language.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -48,6 +46,9 @@
 #pragma comment(lib, "shlwapi.lib")
 #endif
 #else
+#include "Language.h"
+#include <iostream>
+#include <SDL_image.h>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -58,7 +59,6 @@
 #endif
 #include <SDL.h>
 #include <SDL_syswm.h>
-#include <SDL_image.h>
 
 namespace OpenXcom
 {
@@ -173,7 +173,7 @@ std::vector<std::string> findDataFolders()
 		}
 	}
 #ifdef __APPLE__
-	list.push_back("Users/Shared/OpenXcom/");
+	list.push_back("/Users/Shared/OpenXcom/");
 #else
 	list.push_back("/usr/local/share/openxcom/");
 #ifndef __FreeBSD__
@@ -727,7 +727,24 @@ bool moveFile(const std::string &src, const std::string &dest)
 #ifdef _WIN32
 	return (MoveFileExA(src.c_str(), dest.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
 #else
-	return (rename(src.c_str(), dest.c_str()) == 0);
+	//return (rename(src.c_str(), dest.c_str()) == 0);
+	std::ifstream srcStream;
+	std::ofstream destStream;
+	srcStream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+	destStream.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+	try
+	{
+		srcStream.open(src.c_str(), std::ios::binary);
+		destStream.open(dest.c_str(), std::ios::binary);
+		destStream << srcStream.rdbuf();
+		srcStream.close();
+		destStream.close();
+	}
+	catch (std::fstream::failure)
+	{
+		return false;
+	}
+	return deleteFile(src);
 #endif
 }
 

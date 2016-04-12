@@ -21,7 +21,6 @@
 #include "BattlescapeGame.h"
 #include "BattlescapeState.h"
 #include "TileEngine.h"
-#include "Pathfinding.h"
 #include "Map.h"
 #include "InfoboxState.h"
 #include "Camera.h"
@@ -34,9 +33,8 @@
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
 #include "../Engine/Sound.h"
-#include "../Resource/ResourcePack.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/Armor.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleItem.h"
 
 namespace OpenXcom
 {
@@ -44,7 +42,7 @@ namespace OpenXcom
 /**
  * Sets up a MeleeAttackBState.
  */
-MeleeAttackBState::MeleeAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _target(0), _weapon(0), _ammo(0), _initialized(false), _deathMessage(false)
+MeleeAttackBState::MeleeAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _target(0), _weapon(0), _ammo(0), _hitNumber(0), _initialized(false)
 {
 }
 
@@ -118,7 +116,10 @@ void MeleeAttackBState::init()
 
 	AlienBAIState *ai = dynamic_cast<AlienBAIState*>(_unit->getCurrentAIState());
 
-	if (ai && ai->getTarget())
+	if (_unit->getFaction() == _parent->getSave()->getSide() &&
+		_unit->getFaction() != FACTION_PLAYER &&
+		_parent->_debugPlay == false &&
+		ai && ai->getTarget())
 	{
 		_target = ai->getTarget();
 	}
@@ -130,6 +131,10 @@ void MeleeAttackBState::init()
 	int height = _target->getFloatHeight() + (_target->getHeight() / 2) - _parent->getSave()->getTile(_action.target)->getTerrainLevel();
 	_voxel = _action.target.toVexel() + Position(8, 8, height);
 
+	if (_unit->getFaction() == FACTION_HOSTILE)
+	{
+		_hitNumber = _weapon->getRules()->getAIMeleeHitCount() - 1;
+	}
 	performMeleeAttack();
 }
 /**
@@ -137,13 +142,6 @@ void MeleeAttackBState::init()
  */
 void MeleeAttackBState::think()
 {
-	if (_deathMessage)
-	{
-		Game *game = _parent->getSave()->getBattleState()->getGame();
-		game->pushState(new InfoboxState(game->getLanguage()->getString("STR_HAS_BEEN_KILLED", _target->getGender()).arg(_target->getName(game->getLanguage()))));
-		_parent->popState();
-		return;
-	}
 	_parent->getSave()->getBattleState()->clearMouseScrollingState();
 
 	// if the unit burns floortiles, burn floortiles
@@ -151,8 +149,9 @@ void MeleeAttackBState::think()
 	{
 		_parent->getSave()->getTile(_action.target)->ignite(15);
 	}
-		// aliens
-	if (_unit->getFaction() != FACTION_PLAYER &&
+	if (_hitNumber > 0 &&
+		// not performing a reaction attack
+		_unit->getFaction() == _parent->getSave()->getSide() &&
 		// whose target is still alive or at least conscious
 		_target && _target->getHealth() > 0 &&
 		_target->getHealth() > _target->getStunlevel() &&
@@ -161,6 +160,7 @@ void MeleeAttackBState::think()
 		// spend the TUs immediately
 		_action.spendTU())
 	{
+		--_hitNumber;
 		performMeleeAttack();
 	}
 	else
@@ -180,15 +180,8 @@ void MeleeAttackBState::think()
 		{
 			_parent->setupCursor();
 		}
-		if (_parent->convertInfected() && Options::battleNotifyDeath && _target && _target->getFaction() == FACTION_PLAYER)
-		{
-			_deathMessage = true;
-			_parent->setStateInterval(BattlescapeState::DEFAULT_ANIM_SPEED);
-		}
-		else
-		{
-			_parent->popState();
-		}
+		_parent->convertInfected();
+		_parent->popState();
 	}
 }
 
@@ -199,8 +192,6 @@ void MeleeAttackBState::performMeleeAttack()
 {
 	// set the soldier in an aiming position
 	_unit->aim(true);
-	_unit->setCache(0);
-	_parent->getMap()->cacheUnit(_unit);
 
 	// use up ammo if applicable
 	if (!_parent->getSave()->getDebugMode() && _weapon->getRules()->getBattleType() == BT_MELEE && _ammo && _ammo->spendBullet() == false)
@@ -220,6 +211,7 @@ void MeleeAttackBState::performMeleeAttack()
 
 	// make an explosion action
 	_parent->statePushFront(new ExplosionBState(_parent, damagePosition, BA_HIT, _action.weapon, _action.actor, 0, true));
+
 }
 
 }

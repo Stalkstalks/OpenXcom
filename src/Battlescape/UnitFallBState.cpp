@@ -17,23 +17,18 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include "UnitFallBState.h"
-#include "ProjectileFlyBState.h"
 #include "TileEngine.h"
 #include "Pathfinding.h"
-#include "BattlescapeState.h"
 #include "Map.h"
 #include "Camera.h"
-#include "BattleAIState.h"
-#include "ExplosionBState.h"
-#include "../Engine/Game.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
 #include "../Engine/Options.h"
-#include "../Ruleset/Armor.h"
-#include "../Ruleset/Ruleset.h"
+#include "../Mod/Armor.h"
+#include "../Mod/Mod.h"
 
 namespace OpenXcom
 {
@@ -136,7 +131,6 @@ void UnitFallBState::think()
 		if ((*unit)->getStatus() == STATUS_WALKING || (*unit)->getStatus() == STATUS_FLYING)
 		{
 			(*unit)->keepWalking(tileBelow, true); 	// advances the phase
-			_parent->getMap()->cacheUnit(*unit);	// make sure the unit sprites are up to date
 		}
 
 		falling = largeCheck
@@ -261,8 +255,6 @@ void UnitFallBState::think()
 				Position destination = (*unit)->getPosition() + Position(0,0,-1);
 				Tile *tileBelow = _parent->getSave()->getTile(destination);
 				(*unit)->startWalking(Pathfinding::DIR_DOWN, destination, tileBelow, onScreen);
-				(*unit)->setCache(0);
-				_parent->getMap()->cacheUnit(*unit);
 				++unit;
 			}
 			else
@@ -272,12 +264,10 @@ void UnitFallBState::think()
 				{
 					(*unit)->getTile()->ignite(1);
 					Position here = ((*unit)->getPosition() * Position(16,16,24)) + Position(8,8,-((*unit)->getTile()->getTerrainLevel()));
-					_parent->getTileEngine()->hit(here, (*unit)->getBaseStats()->strength, _parent->getRuleset()->getDamageType(DT_IN), (*unit), false);
+					_parent->getTileEngine()->hit(here, (*unit)->getBaseStats()->strength, _parent->getMod()->getDamageType(DT_IN), (*unit), false);
 				}
 				// move our personal lighting with us
 				_terrain->calculateUnitLighting();
-				_parent->getMap()->cacheUnit(*unit);
-				(*unit)->setCache(0);
 				_terrain->calculateFOV(*unit);
 				_parent->checkForProximityGrenades(*unit);
 				if (_parent->getTileEngine()->checkReactionFire(*unit))

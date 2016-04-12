@@ -110,7 +110,7 @@ void Screen::makeVideoFlags()
  */
 Screen::Screen() : _baseWidth(ORIGINAL_WIDTH), _baseHeight(ORIGINAL_HEIGHT), _scaleX(1.0), _scaleY(1.0), _flags(0), _numColors(0), _firstColor(0), _pushPalette(false), _surface(0)
 {
-	resetDisplay();	
+	resetDisplay();
 	memset(deferredPalette, 0, 256*sizeof(SDL_Color));
 }
 
@@ -149,10 +149,10 @@ void Screen::handle(Action *action)
 				case 1: Timer::gameSlowSpeed = 5; break;
 				case 5: Timer::gameSlowSpeed = 15; break;
 				default: Timer::gameSlowSpeed = 1; break;
-			}				
+			}
 		}
 	}
-	
+
 	if (action->getDetails()->type == SDL_KEYDOWN && action->getDetails()->key.keysym.sym == SDLK_RETURN && (SDL_GetModState() & KMOD_ALT) != 0)
 	{
 		Options::fullscreen = !Options::fullscreen;
@@ -165,7 +165,7 @@ void Screen::handle(Action *action)
 		do
 		{
 			ss.str("");
-			ss << Options::getUserFolder() << "screen" << std::setfill('0') << std::setw(3) << i << ".png";
+			ss << Options::getMasterUserFolder() << "screen" << std::setfill('0') << std::setw(3) << i << ".png";
 			i++;
 		}
 		while (CrossPlatform::fileExists(ss.str()));
@@ -583,13 +583,13 @@ int Screen::getDY()
 }
 
 /**
-* Changes a given scale, and if necessary, switch the current base resolution.
-* @param type reference to which scale option we are using, battlescape or geoscape.
-* @param selection the new scale level.
-* @param width reference to which x scale to adjust.
-* @param height reference to which y scale to adjust.
-* @param change should we change the current scale.
-*/
+ * Changes a given scale, and if necessary, switch the current base resolution.
+ * @param type reference to which scale option we are using, battlescape or geoscape.
+ * @param selection the new scale level.
+ * @param width reference to which x scale to adjust.
+ * @param height reference to which y scale to adjust.
+ * @param change should we change the current scale.
+ */
 void Screen::updateScale(int &type, int selection, int &width, int &height, bool change)
 {
 	double pixelRatioY = 1.0;

@@ -16,10 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <algorithm>
 #include "CraftWeapon.h"
-#include "../Ruleset/RuleCraftWeapon.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/RuleItem.h"
+#include "../Mod/RuleCraftWeapon.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleItem.h"
 #include "CraftWeaponProjectile.h"
 
 namespace OpenXcom
@@ -162,13 +163,13 @@ CraftWeaponProjectile* CraftWeapon::fire() const
 
 /*
  * get how many clips are loaded into this weapon.
- * @param ruleset a pointer to the core ruleset.
+ * @param mod a pointer to the core mod.
  * @return number of clips loaded.
  */
-int CraftWeapon::getClipsLoaded(Ruleset *ruleset)
+int CraftWeapon::getClipsLoaded(Mod *mod)
 {
 	int retVal = (int)floor((double)_ammo / _rules->getRearmRate());
-	RuleItem *clip = ruleset->getItem(_rules->getClipItem());
+	RuleItem *clip = mod->getItem(_rules->getClipItem());
 
 	if (clip && clip->getClipSize() > 0)
 	{

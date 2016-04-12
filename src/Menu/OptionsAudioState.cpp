@@ -20,11 +20,9 @@
 #include <sstream>
 #include <SDL_mixer.h>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/ComboBox.h"
-#include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Slider.h"
@@ -190,9 +188,11 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 	_txtMusicFormat->setVisible(_origin == OPT_MENU);
 	_cbxMusicFormat->setVisible(_origin == OPT_MENU);
 	_txtCurrentMusic->setVisible(_origin == OPT_MENU);
-	_txtSoundFormat->setVisible(_origin == OPT_MENU);
-	_cbxSoundFormat->setVisible(_origin == OPT_MENU);
-	_txtCurrentSound->setVisible(_origin == OPT_MENU);
+
+	// These options only apply to UFO
+	_txtSoundFormat->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
+	_cbxSoundFormat->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
+	_txtCurrentSound->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
 }
 
 /**
@@ -229,7 +229,7 @@ void OptionsAudioState::slrSoundVolumeChange(Action *)
  */
 void OptionsAudioState::slrSoundVolumeRelease(Action *)
 {
-	_game->getResourcePack()->getSound("GEO.CAT", ResourcePack::UFO_FIRE)->play();
+	_game->getMod()->getSound("GEO.CAT", Mod::UFO_FIRE)->play();
 }
 
 /**

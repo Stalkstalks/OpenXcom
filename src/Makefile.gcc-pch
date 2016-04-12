@@ -23,7 +23,7 @@ endif
 
 # Compiler settings
 CXXFLAGS ?= -Wall -Wextra -Wno-unused-function -O2 -rdynamic -g -D_DEBUG
-CXXFLAGS += $(addprefix -D,$(TARGET))
+CXXFLAGS += -std=gnu++11 $(addprefix -D,$(TARGET))
 CXXFLAGS += $(shell $(PKG-CONFIG) --cflags sdl yaml-cpp)
 CXXFLAGS += -include pch.h
 
@@ -68,10 +68,7 @@ $(OBJDIR)%.o:: Interface/%.cpp
 $(OBJDIR)%.o:: Menu/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 	
-$(OBJDIR)%.o:: Resource/%.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
-	
-$(OBJDIR)%.o:: Ruleset/%.cpp
+$(OBJDIR)%.o:: Mod/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 	
 $(OBJDIR)%.o:: Savegame/%.cpp

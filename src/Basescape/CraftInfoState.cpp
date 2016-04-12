@@ -18,10 +18,10 @@
  */
 #include "CraftInfoState.h"
 #include <sstream>
+#include <math.h>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -29,10 +29,11 @@
 #include "../Interface/TextEdit.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Engine/Action.h"
+#include "../Engine/Palette.h"
 #include "../Savegame/Craft.h"
-#include "../Ruleset/RuleCraft.h"
+#include "../Mod/RuleCraft.h"
 #include "../Savegame/CraftWeapon.h"
-#include "../Ruleset/RuleCraftWeapon.h"
+#include "../Mod/RuleCraftWeapon.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/SavedGame.h"
 #include "CraftSoldiersState.h"
@@ -87,14 +88,15 @@ CraftInfoState::CraftInfoState(Base *base, size_t craftId) : _base(base), _craft
 	{
 		const int x = i % 2 ? 204 : 46;
 		const int y = top + (i / 2) * top_row;
-		_txtWName[i] = new Text(95, 16, x - 20, y);
+		const int d = i % 2 ? 20 : 0;
+		_txtWName[i] = new Text(95, 16, x - d, y);
 		_txtWAmmo[i] = new Text(75, 24, x, y + 16);
 	}
 	_sprite = new Surface(32, 40, 144, 56);
 	for(int i = 0; i < _weaponNum; ++i)
 	{
 		const int x = i % 2 ? 184 : 121;
-		const int y = top + (i / 2) * top_row;
+		const int y = top + 16 + (i / 2) * top_row;
 		_weapon[i] = new Surface(15, 17, x, y);
 	}
 	_crew = new Surface(220, 18, 85, bottom - 1);
@@ -128,7 +130,7 @@ CraftInfoState::CraftInfoState(Base *base, size_t craftId) : _base(base), _craft
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK14.SCR"));
+	_window->setBackground(_game->getMod()->getSurface("BACK14.SCR"));
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftInfoState::btnOkClick);
@@ -184,7 +186,8 @@ void CraftInfoState::init()
 
 	_edtCraft->setText(_craft->getName(_game->getLanguage()));
 
-	SurfaceSet *texture = _game->getResourcePack()->getSurfaceSet("BASEBITS.PCK");
+	_sprite->clear();
+	SurfaceSet *texture = _game->getMod()->getSurfaceSet("BASEBITS.PCK");
 	texture->getFrame(_craft->getRules()->getSprite() + 33)->setX(0);
 	texture->getFrame(_craft->getRules()->getSprite() + 33)->setY(0);
 	texture->getFrame(_craft->getRules()->getSprite() + 33)->blit(_sprite);
@@ -248,6 +251,7 @@ void CraftInfoState::init()
 	{
 		CraftWeapon *w1 = _craft->getWeapons()->at(i);
 
+		_weapon[i]->clear();
 		if (w1 != 0)
 		{
 			Surface *frame = texture->getFrame(w1->getRules()->getSprite() + 48);
@@ -273,7 +277,6 @@ void CraftInfoState::init()
 		}
 		else
 		{
-			_weapon[i]->clear();
 			_txtWName[i]->setText(L"");
 			_txtWAmmo[i]->setText(L"");
 		}

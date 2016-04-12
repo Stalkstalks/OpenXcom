@@ -19,7 +19,6 @@
 #ifndef OPENXCOM_BATTLEITEM_H
 #define OPENXCOM_BATTLEITEM_H
 
-#include "../Battlescape/Position.h"
 #include <yaml-cpp/yaml.h>
 
 namespace OpenXcom
@@ -29,6 +28,9 @@ class RuleItem;
 class RuleInventory;
 class BattleUnit;
 class Tile;
+class SurfaceSet;
+class Surface;
+class ScriptWorker;
 
 /**
  * Represents a single item in the battlescape.
@@ -49,8 +51,12 @@ private:
 	BattleItem *_ammoItem;
 	int _fuseTimer, _ammoQuantity;
 	int _painKiller, _heal, _stimulant;
-	bool _XCOMProperty, _droppedOnAlienTurn;
+	bool _XCOMProperty, _droppedOnAlienTurn, _isAmmo;
 public:
+
+	/// Init all required data in script using object data
+	static void ScriptFill(ScriptWorker* w, BattleItem* item, bool inventory, int anim_frame, int shade);
+
 	/// Creates a item of the specified type.
 	BattleItem(RuleItem *rules, int *id);
 	/// Cleans up the item.
@@ -141,6 +147,10 @@ public:
 	void convertToCorpse(RuleItem *rules);
 	/// Get if item can glow.
 	bool getGlow() const;
+	/// Sets a flag on the item indicating if this is a clip in a weapon or not.
+	void setIsAmmo(bool ammo);
+	/// Checks a flag on the item to see if it's a clip in a weapon or not.
+	bool isAmmo();
 };
 
 }

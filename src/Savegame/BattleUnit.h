@@ -23,10 +23,10 @@
 #include <string>
 #include "../Battlescape/Position.h"
 #include "../Battlescape/BattlescapeGame.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/Unit.h"
-#include "../Ruleset/Armor.h"
-#include "../Ruleset/MapData.h"
+#include "../Mod/RuleItem.h"
+#include "../Mod/Armor.h"
+#include "../Mod/Unit.h"
+#include "../Mod/MapData.h"
 #include "Soldier.h"
 #include "BattleItem.h"
 
@@ -46,10 +46,14 @@ class SavedGame;
 class Language;
 class AlienBAIState;
 class CivilianBAIState;
+template<typename...> class ScriptContainer;
+template<typename, typename...> class ScriptParser;
+class ScriptWorker;
 
-enum UnitStatus {STATUS_STANDING, STATUS_WALKING, STATUS_FLYING, STATUS_TURNING, STATUS_AIMING, STATUS_COLLAPSING, STATUS_DEAD, STATUS_UNCONSCIOUS, STATUS_PANICKING, STATUS_BERSERK, STATUS_TIME_OUT};
+enum UnitStatus {STATUS_STANDING, STATUS_WALKING, STATUS_FLYING, STATUS_TURNING, STATUS_AIMING, STATUS_COLLAPSING, STATUS_DEAD, STATUS_UNCONSCIOUS, STATUS_PANICKING, STATUS_BERSERK, STATUS_IGNORE_ME};
 enum UnitFaction {FACTION_PLAYER, FACTION_HOSTILE, FACTION_NEUTRAL};
 enum UnitBodyPart {BODYPART_HEAD, BODYPART_TORSO, BODYPART_RIGHTARM, BODYPART_LEFTARM, BODYPART_RIGHTLEG, BODYPART_LEFTLEG, BODYPART_MAX};
+enum UnitBodyPartEx {BODYPART_LEGS = BODYPART_MAX, BODYPART_COLLAPSING, BODYPART_ITEM, BODYPART_BIG_TORSO, BODYPART_BIG_PROPULSION = BODYPART_BIG_TORSO + 4, BODYPART_BIG_TURRET = BODYPART_BIG_PROPULSION + 4};
 
 
 /**
@@ -84,8 +88,6 @@ private:
 	BattleItem* _specWeapon[SPEC_WEAPON_MAX];
 	BattleAIState *_currentAIState;
 	bool _visible;
-	Surface *_cache[5];
-	bool _cacheInvalid;
 	int _expBravery, _expReactions, _expFiring, _expThrowing, _expPsiSkill, _expPsiStrength, _expMelee;
 	int improveStat(int exp);
 	int _motionPoints;
@@ -108,7 +110,8 @@ private:
 	std::wstring _name;
 	UnitStats _stats;
 	int _standHeight, _kneelHeight, _floatHeight;
-	int _value, _deathSound, _aggroSound, _moveSound;
+	std::vector<int> _deathSound;
+	int _value, _aggroSound, _moveSound;
 	int _intelligence, _aggression, _maxViewDistanceAtDarkSq;
 	SpecialAbility _specab;
 	Armor *_armor;
@@ -126,8 +129,25 @@ private:
 
 	/// Helper function initing recolor vector.
 	void setRecolor(int basicLook, int utileLook, int rankLook);
+	/// Helper function preparing Time Units recovery at beginning of turn.
+	void prepareTimeUnits(int tu);
+	/// Helper function preparing Energy recovery at beginning of turn.
+	void prepareEnergy(int energy);
+	/// Helper function preparing Health recovery at beginning of turn.
+	void prepareHealth(int helath);
+	/// Helper function preparing Stun recovery at beginning of turn.
+	void prepareStun(int strun);
+	/// Helper function preparing Morale recovery at beginning of turn.
+	void prepareMorale(int morale);
 public:
 	static const int MAX_SOLDIER_ID = 1000000;
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+	/// Init all required data in script using object data.
+	static void ScriptFill(ScriptWorker* w, BattleUnit* unit, int body_part, int anim_frame, int shade, int burn);
+	/// Global unit scriptr parser.
+	static const Armor::RecolorParser Parser;
+
 	/// Creates a BattleUnit from solder.
 	BattleUnit(Soldier *soldier, int depth);
 	/// Creates a BattleUnit from unit.
@@ -186,10 +206,6 @@ public:
 	SoldierGender getGender() const;
 	/// Gets the unit's faction.
 	UnitFaction getFaction() const;
-	/// Set the cached flag.
-	void setCache(Surface *cache, int part = 0);
-	/// If this unit is cached on the battlescape.
-	Surface *getCache(bool *invalid, int part = 0) const;
 	/// Gets unit sprite recolors values.
 	const std::vector<std::pair<Uint8, Uint8> > &getRecolor() const;
 	/// Kneel down.
@@ -345,7 +361,9 @@ public:
 	/// Get motion points for the motion scanner.
 	int getMotionPoints() const;
 	/// Gets the unit's armor.
-	Armor *getArmor() const;
+	Armor *getArmor();
+	/// Gets the unit's armor.
+	const Armor *getArmor() const;
 	/// Gets the unit's name.
 	std::wstring getName(Language *lang, bool debugAppendId = false) const;
 	/// Gets the unit's stats.
@@ -360,8 +378,8 @@ public:
 	int getLoftemps(int entry = 0) const;
 	/// Get the unit's value.
 	int getValue() const;
-	/// Get the unit's death sound.
-	int getDeathSound() const;
+	/// Get the unit's death sounds.
+	const std::vector<int> &getDeathSounds() const;
 	/// Get the unit's move sound.
 	int getMoveSound() const;
 	/// Get whether the unit is affected by fatal wounds.
@@ -464,7 +482,7 @@ public:
 	/// Set smoke damage form environment.
 	void setEnviSmoke(int damage);
 	/// Calculate smoke and fire damage form environment.
-	void calculateEnviDamage(Ruleset *ruleset);
+	void calculateEnviDamage(Mod *mod);
 	/// Use this function to check the unit's movement type.
 	MovementType getMovementType() const;
 	/// Create special weapon for unit.
@@ -477,9 +495,10 @@ public:
 	void setHiding(bool hiding) { _hidingForTurn = hiding; };
 	/// Puts the unit in the corner to think about what he's done.
 	void goToTimeOut();
-
+	/// Recovers the unit's time units and energy.
+	void recoverTimeUnits();
 };
 
-}
+} //namespace OpenXcom
 
 #endif

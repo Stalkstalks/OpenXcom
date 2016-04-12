@@ -17,11 +17,9 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "PlaceFacilityState.h"
-#include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -29,10 +27,11 @@
 #include "../Savegame/Base.h"
 #include "../Savegame/BaseFacility.h"
 #include "../Savegame/ItemContainer.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/SavedGame.h"
 #include "../Menu/ErrorMessageState.h"
 #include "../Engine/Options.h"
+#include "../Mod/RuleInterface.h"
 #include <limits>
 
 namespace OpenXcom
@@ -77,9 +76,9 @@ PlaceFacilityState::PlaceFacilityState(Base *base, RuleBaseFacility *rule) : _ba
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
 
-	_view->setTexture(_game->getResourcePack()->getSurfaceSet("BASEBITS.PCK"));
+	_view->setTexture(_game->getMod()->getSurfaceSet("BASEBITS.PCK"));
 	_view->setBase(_base);
 	_view->setSelectable(rule->getSize());
 	_view->onMouseClick((ActionHandler)&PlaceFacilityState::viewClick);
@@ -131,23 +130,23 @@ void PlaceFacilityState::viewClick(Action *)
 {
 	if (!_view->isPlaceable(_rule))
 	{
-		_game->pushState(new ErrorMessageState(tr("STR_CANNOT_BUILD_HERE"), _palette, _game->getRuleset()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getRuleset()->getInterface("placeFacility")->getElement("errorPalette")->color));
+		_game->pushState(new ErrorMessageState(tr("STR_CANNOT_BUILD_HERE"), _palette, _game->getMod()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("placeFacility")->getElement("errorPalette")->color));
 	}
 	else if (_game->getSavedGame()->getFunds() < _rule->getBuildCost())
 	{
 		_game->popState();
-		_game->pushState(new ErrorMessageState(tr("STR_NOT_ENOUGH_MONEY"), _palette, _game->getRuleset()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getRuleset()->getInterface("placeFacility")->getElement("errorPalette")->color));
+		_game->pushState(new ErrorMessageState(tr("STR_NOT_ENOUGH_MONEY"), _palette, _game->getMod()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("placeFacility")->getElement("errorPalette")->color));
 	}
 	else
 	{
 		const std::map<std::string, std::pair<int, int> > &itemCost = _rule->getBuildCostItems();
 		for (std::map<std::string, std::pair<int, int> >::const_iterator i = itemCost.begin(); i != itemCost.end(); ++i)
 		{
-			int needed = i->second.first - _base->getItems()->getItem(i->first);
+			int needed = i->second.first - _base->getStorageItems()->getItem(i->first);
 			if (needed > 0)
 			{
 				_game->popState();
-				_game->pushState(new ErrorMessageState(tr("STR_NOT_ENOUGH_ITEMS").arg(tr(i->first)).arg(needed), _palette, _game->getRuleset()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getRuleset()->getInterface("placeFacility")->getElement("errorPalette")->color));
+				_game->pushState(new ErrorMessageState(tr("STR_NOT_ENOUGH_ITEMS").arg(tr(i->first)).arg(needed), _palette, _game->getMod()->getInterface("placeFacility")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("placeFacility")->getElement("errorPalette")->color));
 				return;
 			}
 		}
@@ -164,7 +163,7 @@ void PlaceFacilityState::viewClick(Action *)
 		_game->getSavedGame()->setFunds(_game->getSavedGame()->getFunds() - _rule->getBuildCost());
 		for (std::map<std::string, std::pair<int, int> >::const_iterator i = itemCost.begin(); i != itemCost.end(); ++i)
 		{
-			_base->getItems()->removeItem(i->first, i->second.first);
+			_base->getStorageItems()->removeItem(i->first, i->second.first);
 		}
 		_game->popState();
 	}

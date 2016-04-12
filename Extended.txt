@@ -1,8 +1,13 @@
 [b]Extended version of OpenXcom[/b]
-[b]Mod version 2.3a[/b]
-OpenXcom version: Nightly [commitOriginDate/][br/]
+[b]Mod version 2.9[/b]
+OpenXcom date:   Nightly [dateOrigin/][br/]
 OpenXcom commit: [commitOrigin/][br/]
+Extended date:   [date/][br/]
 Extended commit: [commit/][br/]
+
+[br/][br/]
+[i]Ubuntu required libs[/i]
+sudo apt-get install libsdl1.2debian libsdl-mixer1.2 libsdl-gfx1.2-4 libsdl-image1.2 libyaml-cpp0.5[br/]
 
 [br/][br/]
 [i]Behavior change[/i]
@@ -76,6 +81,21 @@ Option for custom sound and animation for miss attack and psi weapons.[br/]
 Option for defining percent of all action cost stats. Old use of `flatPrime` and `flatThrow` is deprecated.[br/]
 Facilities can now require items to build.[br/]
 Medikit can now be used without UI and can use `hitSound`.[br/]
+[br/]
+2.4:[br/]
+Option for defining bonus and damage type for melee in range weapons.[br/]
+Option for big explosion sound for each items.[br/]
+Option for showing fixed weapons on unit.[br/]
+[br/]
+2.5:[br/]
+Update to nightly and bug fix.[br/]
+[br/]
+2.9:[br/]
+Scripting support in unit graphic (more info in game log with debug on).[br/]
+`bigSpriteAlt` and `floorSpriteAlt` is now obsolete, will be replaced by scripts in next version.[br/]
+New property `refNode` used to shared values between items/solders/armors etc.[br/]
+Option for setting numbers of melee hits done by AI.[br/]
+Control space usage of soldiers with 2x2 armors in crafts.[br/]
 [br/]
 
 [examples]
@@ -185,6 +205,10 @@ items:
       energyNormalized: 0.0   #curret energy normalized to 1 (max energy give 1.0).
       moraleNormalized: 0.0   #curret morale normalized to 1 (max morale give 1.0).
       stunNormalized: 0.0     #curret stun level normalized to 1 (max stun compared to current health give 1.0).
+    meleeBonus: #used by range weapons melee hit.
+      #...
+      #same stats like `damageBonus`.
+      #...
     accuracyMultiplier: #used by wapons and psi-amp.
       #set `psi` to 0.02 if weapon is psi-amp
       #...
@@ -233,6 +257,12 @@ items:
       ToEnergy: 0.0     #how much power is applied to energy loss.
       ToTime: 0.0       #how much power is applied to time units loss.
       ToMorale: 0.0     #how much power is applied to morale loss.
+    meleeType: 2        #work like `damageType` but for range weapon melee hit.
+    meleeAlter:         #work like `damageAlter` but for range weapon melee hit.
+      #set defaut values based on `meleeType`.
+      #...
+      #same stats like `damageAlter`.
+      #...
     requiresBuy: #what tech is required for the item to be visible in the Hire/Purchase screen.
       - SOME_TECH
       - SOME_TECH_MK2
@@ -242,8 +272,7 @@ items:
     painKillerRecovery: 0 #how much missing health convert to morale. Default `1.0`.
     allowSelfHeal: true   #can medikit target user.
     medikitType: 0        #change how medikit wroks, `0` default with UI, `1` fast heal, `2` fast stimulant, `3` fast pain killer.
-    bigSpriteAlt: 1       #like bigSprite but used for unconscious units, loaded weapons or armed grenades.
-    floorSpriteAlt: 1     #like floorSprite but used for unconscious units, loaded weapons or armed grenades.
+    fixedWeaponShow: true #if it's true then it will show fixed weapon on unit.
     hitMissSound: 0       #override `hitSound` when any psi attack was unsuccessful.
     meleeMissSound: 12    #override `meleeSound` when melee attack was unsuccessful.
     psiSound: 0           #override `hitSound` when used for MC or Panic attack.
@@ -252,8 +281,10 @@ items:
     meleeMissAnimation: 0 #override `meleeMissAnimation` when melee, MC or Panic attack was unsuccessful. Use `HIT.PCK`.
     psiAnimation: 0       #override `meleeAnimation` when used for MC or Panic attack. Use `HIT.PCK`.
     psiMissAnimation: 0   #override `meleeMissAnimation` when MC or Panic attack was unsuccessful. Use `HIT.PCK`.
+    explosionHitSound: 2  #override default big explosion sound.
     ai:
-      useDelay: 3 #determine on what turn item can be used by aliens.
+      useDelay: 3       #determine on what turn item can be used by aliens.
+      meleeHitCount: 25 #number of hits that AI try to do.
 [/code]
 
 [code]
@@ -306,6 +337,22 @@ armors:
         #...
         #same stats like `damageBonus` in `items`.
         #...
+    recolorScript: |
+      #recolor script call for each pixel.
+      #`i0` have value of unit pixel color.
+      #more info in "openxcom.log" with debug on.
+      #default imp:
+      unit.getRecolor i0;
+      add_burn_shade i0 burn shade;
+      ret i0;
+    spriteScript: |
+      #sprite select script call for each body part.
+      #`i0` have basic position of graphic in armor sheet.
+      #`i1` have offset to choose direction or leg move phase.
+      #more info in "openxcom.log" with debug on.
+      #default imp:
+      add i0 i1;
+      ret i0;
 [/code]
 
 [code]
@@ -433,6 +480,7 @@ extraStrings:
       STR_NOT_ENOUGH_HEALTH: "Not enough blood!"      #required when using item health use cost.
       STR_NOT_ENOUGH_STUN: "Too much pain!"           #required when using item stun use cost.
       STR_NO_USES_LEFT: "You can't use medi-kit"      #required when using `medikitType`.
+      STR_NOT_ENOUGH_CRAFT_SPACE: "You can't fit it!" #required when you try change armor with 2x2 size and craft don't have space.
 [/code]
 [/examples]
 

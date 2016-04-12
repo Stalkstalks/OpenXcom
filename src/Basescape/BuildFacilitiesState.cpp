@@ -16,20 +16,21 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <algorithm>
 #include "BuildFacilitiesState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextList.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Base.h"
 #include "PlaceFacilityState.h"
+#include "../Mod/Mod.h"
 
 namespace OpenXcom
 {
@@ -47,7 +48,7 @@ BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(bas
 	// Create objects
 	_window = new Window(this, 128, 160, 192, 40, POPUP_VERTICAL);
 	_btnOk = new TextButton(112, 16, 200, 176);
-	_lstFacilities = new TextList(100, 104, 200, 64);
+	_lstFacilities = new TextList(104, 104, 200, 64);
 	_txtTitle = new Text(118, 17, 197, 48);
 
 	// Set palette
@@ -61,7 +62,7 @@ BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(bas
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK05.SCR"));
+	_window->setBackground(_game->getMod()->getSurface("BACK05.SCR"));
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BuildFacilitiesState::btnOkClick);
@@ -71,11 +72,12 @@ BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(bas
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setText(tr("STR_INSTALLATION"));
 
-	_lstFacilities->setColumns(1, 100);
+	_lstFacilities->setColumns(1, 104);
 	_lstFacilities->setSelectable(true);
 	_lstFacilities->setBackground(_window);
 	_lstFacilities->setMargin(2);
 	_lstFacilities->setWordWrap(true);
+	_lstFacilities->setScrolling(true, 0);
 	_lstFacilities->onMouseClick((ActionHandler)&BuildFacilitiesState::lstFacilitiesClick);
 
 	PopulateBuildList();
@@ -96,10 +98,10 @@ void BuildFacilitiesState::PopulateBuildList()
 {
 	const std::set<std::string> &providedBaseFunc = _base->getProvidedBaseFunc();
 
-	const std::vector<std::string> &facilities = _game->getRuleset()->getBaseFacilitiesList();
+	const std::vector<std::string> &facilities = _game->getMod()->getBaseFacilitiesList();
 	for (std::vector<std::string>::const_iterator i = facilities.begin(); i != facilities.end(); ++i)
 	{
-		RuleBaseFacility *rule = _game->getRuleset()->getBaseFacility(*i);
+		RuleBaseFacility *rule = _game->getMod()->getBaseFacility(*i);
 		const std::vector<std::string> &req = rule->getRequireBaseFunc();
 		if (!std::includes(providedBaseFunc.begin(), providedBaseFunc.end(), req.begin(), req.end()))
 		{

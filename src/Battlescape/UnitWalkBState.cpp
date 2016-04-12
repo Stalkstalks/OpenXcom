@@ -24,20 +24,14 @@
 #include "BattlescapeState.h"
 #include "Map.h"
 #include "Camera.h"
-#include "BattleAIState.h"
-#include "ExplosionBState.h"
-#include "../Engine/Game.h"
-#include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
-#include "../Ruleset/Ruleset.h"
 #include "../Engine/Sound.h"
 #include "../Engine/Options.h"
-#include "../Ruleset/Armor.h"
 #include "../Engine/Logger.h"
-#include "../Ruleset/Ruleset.h"
+#include "../Mod/Armor.h"
+#include "../Mod/Mod.h"
 #include "UnitFallBState.h"
 
 namespace OpenXcom
@@ -92,9 +86,7 @@ void UnitWalkBState::think()
 	{
 		if (_parent->kneel(_unit))
 		{
-			_unit->setCache(0);
 			_terrain->calculateFOV(_unit);
-			_parent->getMap()->cacheUnit(_unit);
 			return;
 		}
 		else
@@ -182,12 +174,21 @@ void UnitWalkBState::think()
 		{
 			// update the TU display
 			_parent->getSave()->getBattleState()->updateSoldierInfo();
-			// if the unit burns floortiles, burn floortiles
-			if (_unit->getSpecialAbility() == SPECAB_BURNFLOOR || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE)
+			// if the unit burns floortiles, burn floortiles as long as we're not falling
+			if (!_falling && (_unit->getSpecialAbility() == SPECAB_BURNFLOOR || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE))
 			{
 				_unit->getTile()->ignite(1);
-				Position here = (_unit->getPosition() * Position(16,16,24)) + Position(8,8,-(_unit->getTile()->getTerrainLevel()));
-				_parent->getTileEngine()->hit(here, _unit->getBaseStats()->strength, _parent->getRuleset()->getDamageType(DT_IN), _unit, false);
+				Position posHere = _unit->getPosition();
+				Position voxelHere = (posHere * Position(16,16,24)) + Position(8,8,-(_unit->getTile()->getTerrainLevel()));
+				_parent->getTileEngine()->hit(voxelHere, _unit->getBaseStats()->strength, _parent->getMod()->getDamageType(DT_IN), _unit, false);
+
+				if (_unit->getPosition() != posHere) // ie: we burned a hole in the floor and fell through it
+				{
+					_action.clearTU();
+					_pf->abortPath();
+					_parent->popState();
+					return;
+				}
 			}
 
 			// move our personal lighting with us
@@ -206,8 +207,6 @@ void UnitWalkBState::think()
 			}
 			if (unitSpotted)
 			{
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				_pf->abortPath();
 				_parent->popState();
 				return;
@@ -218,8 +217,6 @@ void UnitWalkBState::think()
 				if (_terrain->checkReactionFire(_unit))
 				{
 					// unit got fired upon - stop walking
-					_unit->setCache(0);
-					_parent->getMap()->cacheUnit(_unit);
 					_pf->abortPath();
 					_parent->popState();
 					return;
@@ -234,12 +231,8 @@ void UnitWalkBState::think()
 				// This is where we fake out the strafe movement direction so the unit "moonwalks"
 				int dirTemp = _unit->getDirection();
 				_unit->setDirection(_unit->getFaceDirection());
-				_parent->getMap()->cacheUnit(_unit);
+				//TODO fix moonwalk
 				_unit->setDirection(dirTemp);
-			}
-			else
-			{
-				_parent->getMap()->cacheUnit(_unit);
 			}
 		}
 	}
@@ -252,7 +245,6 @@ void UnitWalkBState::think()
 		{
 			if (Options::traceAI) { Log(LOG_INFO) << "Uh-oh! Company!"; }
 			_unit->setHiding(false); // clearly we're not hidden now
-			_parent->getMap()->cacheUnit(_unit);
 			postPathProcedures();
 			return;
 		}
@@ -306,8 +298,6 @@ void UnitWalkBState::think()
 					_action.result = "STR_NOT_ENOUGH_TIME_UNITS";
 				}
 				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				_parent->popState();
 				return;
 			}
@@ -319,8 +309,6 @@ void UnitWalkBState::think()
 					_action.result = "STR_NOT_ENOUGH_ENERGY";
 				}
 				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				_parent->popState();
 				return;
 			}
@@ -328,8 +316,6 @@ void UnitWalkBState::think()
 			if (_parent->getPanicHandled() && !_falling && _parent->checkReservedTU(_unit, tu, energy) == false)
 			{
 				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				return;
 			}
 
@@ -338,8 +324,6 @@ void UnitWalkBState::think()
 			if (dir != _unit->getDirection() && dir < Pathfinding::DIR_UP && !_pf->getStrafeMove())
 			{
 				_unit->lookAt(dir);
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				return;
 			}
 
@@ -353,11 +337,11 @@ void UnitWalkBState::think()
 				}
 				if (door == 0)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // normal door
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // normal door
 				}
 				if (door == 1)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
 					return; // don't start walking yet, wait for the ufo door to open
 				}
 			}
@@ -381,8 +365,6 @@ void UnitWalkBState::think()
 					{
 						_action.clearTU();
 						_pf->abortPath();
-						_unit->setCache(0);
-						_parent->getMap()->cacheUnit(_unit);
 						_parent->popState();
 						return;
 					}
@@ -414,7 +396,6 @@ void UnitWalkBState::think()
 					_unit->setDirection(_unit->getFaceDirection());
 					_unit->setDirection(dirTemp);
 				}
-				_parent->getMap()->cacheUnit(_unit);
 			}
 		}
 		else
@@ -440,10 +421,6 @@ void UnitWalkBState::think()
 		_terrain->calculateFOV(_unit);
 		unitSpotted = (!_falling && !_action.desperate && _parent->getPanicHandled() && _numUnitsSpotted != _unit->getUnitsSpottedThisTurn().size());
 
-		// make sure the unit sprites are up to date
-		_unit->setCache(0);
-		_parent->getMap()->cacheUnit(_unit);
-
 		if (unitSpotted && !_action.desperate && !_unit->getCharging() && !_falling)
 		{
 			if (_beforeFirstStep)
@@ -454,8 +431,6 @@ void UnitWalkBState::think()
 			_unit->setHiding(false); // not hidden, are we...
 			_pf->abortPath();
 			_unit->abortTurn(); //revert to a standing state.
-			_unit->setCache(0);
-			_parent->getMap()->cacheUnit(_unit);
 			_parent->popState();
 		}
 	}
@@ -525,10 +500,8 @@ void UnitWalkBState::postPathProcedures()
 		_unit->setTimeUnits(0);
 	}
 
-	_unit->setCache(0);
 	_terrain->calculateUnitLighting();
 	_terrain->calculateFOV(_unit);
-	_parent->getMap()->cacheUnit(_unit);
 	if (!_falling)
 		_parent->popState();
 }
@@ -558,7 +531,7 @@ void UnitWalkBState::playMovementSound()
 		// if a sound is configured in the ruleset, play that one
 		if (_unit->getWalkingPhase() == 0)
 		{
-			_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _unit->getMoveSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+			_parent->getMod()->getSoundByDepth(_parent->getDepth(), _unit->getMoveSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 		}
 	}
 	else
@@ -572,7 +545,7 @@ void UnitWalkBState::playMovementSound()
 			{
 				if (tile->getFootstepSound(tileBelow) > -1)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 				}
 			}
 			// play footstep sound 2
@@ -580,7 +553,7 @@ void UnitWalkBState::playMovementSound()
 			{
 				if (tile->getFootstepSound(tileBelow) > -1)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), 1 + ResourcePack::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), 1 + Mod::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 				}
 			}
 		}
@@ -589,7 +562,7 @@ void UnitWalkBState::playMovementSound()
 			// play default flying sound
 			if (_unit->getWalkingPhase() == 1 && !_falling)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::FLYING_SOUND)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+				_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::FLYING_SOUND)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 			}
 		}
 	}

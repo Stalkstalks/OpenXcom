@@ -32,7 +32,7 @@ CXXFLAGS ?= -O3
 CXXFLAGS += -Wall -rdynamic
 endif
 
-CXXFLAGS += $(addprefix -D,$(TARGET))
+CXXFLAGS += -std=gnu++11 $(addprefix -D,$(TARGET))
 CXXFLAGS += $(shell $(PKG-CONFIG) --cflags sdl yaml-cpp)
 ifeq ($(TARGET),OSX)
 LIBS = $(shell $(PKG-CONFIG) --libs sdl yaml-cpp) -lSDL_gfx -lSDL_mixer -lSDL_image -framework OpenGL
@@ -73,10 +73,7 @@ $(OBJDIR)%.o:: Interface/%.cpp
 $(OBJDIR)%.o:: Menu/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(OBJDIR)%.o:: Resource/%.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-$(OBJDIR)%.o:: Ruleset/%.cpp
+$(OBJDIR)%.o:: Mod/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(OBJDIR)%.o:: Savegame/%.cpp

@@ -20,17 +20,14 @@
 #include "UfopaediaStartState.h"
 #include "UfopaediaSelectState.h"
 #include "Ufopaedia.h"
-#include "../Ruleset/ArticleDefinition.h"
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
 #include "../Engine/Options.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Surface.h"
-#include "../Engine/Language.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
 
 namespace OpenXcom
 {
@@ -77,7 +74,7 @@ namespace OpenXcom
 
 		centerAllSurfaces();
 
-		_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+		_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
 
 		_txtTitle->setBig();
 		_txtTitle->setAlign(ALIGN_CENTER);
