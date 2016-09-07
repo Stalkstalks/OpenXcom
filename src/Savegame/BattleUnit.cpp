@@ -2367,6 +2367,29 @@ void BattleUnit::updateGeoscapeStats(Soldier *soldier)
 	soldier->addKillCount(_kills);
 }
 
+ /**
+ * Calculates stat increase based solely on difference between current
+ * and maximum values
+ * @param iterations, starting stat, maximum stat
+ * @return Stat increase.
+ */
+inline int improveStatAlternate(int iterations, int starting, int max)
+{
+	int difference;
+	int current = starting;
+	for (int i = 0; i < iterations; i++)
+	{
+		difference = max - current;
+		if (difference > 0)
+		{
+			current += 1 + (difference / 10);
+		}
+		else
+			break;
+	}
+	return (current - starting);
+}
+
 /**
  * Check if unit eligible for squaddie promotion. If yes, promote the unit.
  * Increase the mission counter. Calculate the experience increases.
@@ -2387,39 +2410,57 @@ bool BattleUnit::postMissionProcedures(SavedGame *geoscape)
 	const UnitStats caps = s->getRules()->getStatCaps();
 	int healthLoss = _stats.health - _health;
 
+//  Additional code to reduce downside of high HP - healing happens faster for most people
+	healthLoss *= 25;
+	healthLoss /= _stats.health;
+//  end of additional code
 	if (healthLoss < 0)
 	{
 		healthLoss = 0;
 	}
 	s->setWoundRecovery(RNG::generate((healthLoss*0.5),(healthLoss*1.5)));
 
+//  Additional code to make leveling less grindy in tactical
+//  and also allow some units to grow very quickly
+	int iterations;
+	switch (s->getRank())
+	{
+	case RANK_SERGEANT:	 iterations = 2; break;
+	case RANK_CAPTAIN:	 iterations = 3; break;
+	case RANK_COLONEL:	 iterations = 4; break;
+	case RANK_COMMANDER: iterations = 5; break;
+	default:			 iterations = 1; break;
+	}
+//  additional code ends, altered code follows	
+
 	if (_expBravery && stats->bravery < caps.bravery)
 	{
-		if (_expBravery > RNG::generate(0,10)) stats->bravery += 10;
+		//if (_expBravery > RNG::generate(0,10)) stats->bravery += 10;
+		if (_expBravery > 1) stats->bravery += 10;
 	}
 	if (_expReactions && stats->reactions < caps.reactions)
 	{
-		stats->reactions += improveStat(_expReactions);
+		stats->reactions += improveStatAlternate(iterations, stats->reactions, caps.reactions); //improveStat(_expReactions);
 	}
 	if (_expFiring && stats->firing < caps.firing)
 	{
-		stats->firing += improveStat(_expFiring);
+		stats->firing += improveStatAlternate(iterations, stats->firing, caps.firing); //improveStat(_expFiring);
 	}
 	if (_expMelee && stats->melee < caps.melee)
 	{
-		stats->melee += improveStat(_expMelee);
+		stats->melee += improveStatAlternate(iterations, stats->melee, caps.melee); //improveStat(_expMelee);
 	}
 	if (_expThrowing && stats->throwing < caps.throwing)
 	{
-		stats->throwing += improveStat(_expThrowing);
+		stats->throwing += improveStatAlternate(iterations, stats->throwing, caps.throwing); //improveStat(_expThrowing);
 	}
 	if (_expPsiSkill && stats->psiSkill < caps.psiSkill)
 	{
-		stats->psiSkill += improveStat(_expPsiSkill);
+		stats->psiSkill += improveStatAlternate(iterations, stats->psiSkill, caps.psiSkill); //improveStat(_expPsiSkill);
 	}
 	if (_expPsiStrength && stats->psiStrength < caps.psiStrength)
 	{
-		stats->psiStrength += improveStat(_expPsiStrength);
+		stats->psiStrength += improveStatAlternate(iterations, stats->psiStrength, caps.psiStrength); //improveStat(_expPsiStrength);
 	}
 
 	bool hasImproved = false;
@@ -2430,13 +2471,13 @@ bool BattleUnit::postMissionProcedures(SavedGame *geoscape)
 			s->promoteRank();
 		int v;
 		v = caps.tu - stats->tu;
-		if (v > 0) stats->tu += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->tu += improveStatAlternate(iterations, stats->tu, caps.tu); //RNG::generate(0, v/10 + 2);
 		v = caps.health - stats->health;
-		if (v > 0) stats->health += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->health += improveStatAlternate(iterations, stats->health, caps.health); //RNG::generate(0, v/10 + 2);
 		v = caps.strength - stats->strength;
-		if (v > 0) stats->strength += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->strength += improveStatAlternate(iterations, stats->strength, caps.strength); //RNG::generate(0, v/10 + 2);
 		v = caps.stamina - stats->stamina;
-		if (v > 0) stats->stamina += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->stamina += improveStatAlternate(iterations, stats->stamina, caps.stamina); //RNG::generate(0, v/10 + 2);
 	}
 
 	return hasImproved;
