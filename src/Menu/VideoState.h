@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_VIDEOSTATE_H
-#define OPENXCOM_VIDEOSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -30,17 +28,15 @@ namespace OpenXcom
 class VideoState : public State
 {
 private:
-	const std::vector<std::string> *_videos;
+	const std::vector<std::string> *_videos, *_tracks;
 	bool _useUfoAudioSequence;
 public:
 	/// Creates the Intro state.
-	VideoState(const std::vector<std::string> *videos, bool useUfoAudioSequence);
+	VideoState(const std::vector<std::string> *videos, const std::vector<std::string> *tracks, bool useUfoAudioSequence);
 	/// Cleans up the Intro state.
 	~VideoState();
 	/// Plays the video
-	void init();
+	void init() override;
 };
 
 }
-
-#endif

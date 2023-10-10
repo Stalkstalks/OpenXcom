@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MANUFACTURESTATE_H
-#define OPENXCOM_MANUFACTURESTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -41,8 +39,10 @@ private:
 	TextButton *_btnNew, *_btnOk;
 	Window *_window;
 	Text *_txtTitle, *_txtAvailable, *_txtAllocated, *_txtSpace, *_txtFunds, *_txtItem, *_txtEngineers, *_txtProduced, *_txtCost, *_txtTimeLeft;
-	TextList *_lstManufacture;	
-	void lstManufactureClick(Action * action);
+	TextList *_lstManufacture;
+	void lstManufactureClickLeft(Action * action);
+	void lstManufactureClickMiddle(Action * action);
+	void lstManufactureMousePress(Action *action);
 public:
 	/// Creates the Manufacture state.
 	ManufactureState(Base *base);
@@ -50,14 +50,14 @@ public:
 	~ManufactureState();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handler for opening the Global Production UI.
+	void onCurrentGlobalProductionClick(Action *action);
 	/// Updates the production list.
-	void init();
+	void init() override;
 	/// Handler for the New Production button.
 	void btnNewProductionClick(Action * action);
 	/// Fills the list of base productions.
-	void fillProductionList();
+	void fillProductionList(size_t scrl);
 };
 
 }
-
-#endif

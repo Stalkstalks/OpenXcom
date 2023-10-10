@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,15 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_EXTRASOUNDS_H
-#define OPENXCOM_EXTRASOUNDS_H
-
 #include <yaml-cpp/yaml.h>
+#include <string>
+#include <map>
 
 namespace OpenXcom
 {
+
+class SoundSet;
+struct ModData;
 
 /**
  * For adding a set of extra sound data to the game.
@@ -30,21 +33,26 @@ namespace OpenXcom
 class ExtraSounds
 {
 private:
+	std::string _type;
 	std::map<int, std::string> _sounds;
-	int _modIndex;
+	const ModData* _current;
+
+	void loadSound(SoundSet *set, int index, const std::string &fileName) const;
 public:
 	/// Creates a blank external sound set.
 	ExtraSounds();
 	/// Cleans up the external sound set.
 	virtual ~ExtraSounds();
 	/// Loads the data from yaml
-	void load(const YAML::Node &node, int modIndex);
+	void load(const YAML::Node &node, const ModData* current);
+	/// Gets the sound's type.
+	const std::string& getType() const;
 	/// Gets the list of sounds defined by this mod
 	std::map<int, std::string> *getSounds();
-	/// get the mod index for this external sound set.
-	int getModIndex();
+	/// Load the external sound into a set.
+	SoundSet *loadSoundSet(SoundSet *set) const;
+	/// Gets mod data that define this sounds.
+	const ModData* getModOwner() { return _current; }
 };
 
 }
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -24,6 +24,7 @@
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Engine/RNG.h"
+#include "BattlescapeGame.h"
 
 namespace OpenXcom
 {
@@ -66,25 +67,24 @@ void UnitPanicBState::think()
 			BattleAction ba;
 			ba.actor = _unit;
 			ba.weapon = _unit->getMainHandWeapon();
-			if (_parent->getSave()->canUseWeapon(ba.weapon, ba.actor))
 			{
 				// make autoshots if possible.
 				ba.type = BA_AUTOSHOT;
 				ba.updateTU();
-				bool canShoot = ba.haveTU();
+				bool canShoot = ba.haveTU() && _parent->getSave()->canUseWeapon(ba.weapon, ba.actor, _berserking, ba.type);
 
 				if (!canShoot)
 				{
 					ba.type = BA_SNAPSHOT;
 					ba.updateTU();
-					canShoot = ba.haveTU();
+					canShoot = ba.haveTU() && _parent->getSave()->canUseWeapon(ba.weapon, ba.actor, _berserking, ba.type);
 				}
 
 				if (!canShoot)
 				{
 					ba.type = BA_AIMEDSHOT;
 					ba.updateTU();
-					canShoot = ba.haveTU();
+					canShoot = ba.haveTU() && _parent->getSave()->canUseWeapon(ba.weapon, ba.actor, _berserking, ba.type);
 				}
 
 				if (canShoot)
@@ -93,12 +93,12 @@ void UnitPanicBState::think()
 					if (!_unit->getVisibleUnits()->empty())
 					{
 						int dist = 255;
-						for (std::vector<BattleUnit*>::const_iterator i = _unit->getVisibleUnits()->begin(); i != _unit->getVisibleUnits()->end(); ++i)
+						for (auto* bu : *_unit->getVisibleUnits())
 						{
-							int newDist = _parent->getTileEngine()->distance(_unit->getPosition(), (*i)->getPosition());
+							int newDist = Position::distance2d(_unit->getPosition(), bu->getPosition());
 							if (newDist < dist)
 							{
-								ba.target = (*i)->getPosition();
+								ba.target = bu->getPosition();
 								dist = newDist;
 							}
 						}
@@ -113,6 +113,7 @@ void UnitPanicBState::think()
 					{
 						turnCost = 8-turnCost;
 					}
+					turnCost = turnCost * _unit->getTurnCost();
 
 					_unit->spendTimeUnits(turnCost);
 					_parent->statePushFront(new UnitTurnBState(_parent, ba, false));
@@ -130,7 +131,7 @@ void UnitPanicBState::think()
 			_unit->abortTurn(); // set the unit status to standing in case it wasn't otherwise changed from berserk/panicked
 		}
 		// reset the unit's time units when all panicking is done
-		_unit->setTimeUnits(0);
+		_unit->clearTimeUnits();
 		_unit->moraleChange(+15);
 	}
 	_parent->popState();

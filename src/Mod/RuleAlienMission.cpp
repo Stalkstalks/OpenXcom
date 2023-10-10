@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -32,6 +32,13 @@ namespace YAML
 			node["trajectory"] = rhs.trajectory;
 			node["timer"] = rhs.spawnTimer;
 			node["objective"] = rhs.objective;
+			node["objectiveOnTheLandingSite"] = rhs.objectiveOnTheLandingSite;
+			node["objectiveOnXcomBase"] = rhs.objectiveOnXcomBase;
+			node["hunterKillerPercentage"] = rhs.hunterKillerPercentage;
+			node["huntMode"] = rhs.huntMode;
+			node["huntBehavior"] = rhs.huntBehavior;
+			node["escort"] = rhs.escort;
+			node["interruptPercentage"] = rhs.interruptPercentage;
 			return node;
 		}
 
@@ -45,6 +52,13 @@ namespace YAML
 			rhs.trajectory = node["trajectory"].as<std::string>();
 			rhs.spawnTimer = node["timer"].as<size_t>();
 			rhs.objective = node["objective"].as<bool>(false);
+			rhs.objectiveOnTheLandingSite = node["objectiveOnTheLandingSite"].as<bool>(false);
+			rhs.objectiveOnXcomBase = node["objectiveOnXcomBase"].as<bool>(false);
+			rhs.hunterKillerPercentage = node["hunterKillerPercentage"].as<int>(-1);
+			rhs.huntMode = node["huntMode"].as<int>(-1);
+			rhs.huntBehavior = node["huntBehavior"].as<int>(-1);
+			rhs.escort = node["escort"].as<bool>(false);
+			rhs.interruptPercentage = node["interruptPercentage"].as<int>(0);
 			return true;
 		}
 	};
@@ -53,7 +67,11 @@ namespace YAML
 namespace OpenXcom
 {
 
-RuleAlienMission::RuleAlienMission(const std::string &type) : _type(type), _points(0), _objective(OBJECTIVE_SCORE), _spawnZone(-1), _retaliationOdds(-1)
+RuleAlienMission::RuleAlienMission(const std::string &type) :
+	_type(type), _points(0), _objective(OBJECTIVE_SCORE), _spawnZone(-1),
+	_retaliationOdds(-1), _endlessInfiltration(true), _multiUfoRetaliation(false), _ignoreBaseDefenses(false), _despawnEvenIfTargeted(false), _showAlienBase(false),
+	_operationType(AMOT_SPACE), _operationSpawnZone(-1),
+	_targetBaseOdds(0)
 {
 }
 
@@ -62,9 +80,13 @@ RuleAlienMission::RuleAlienMission(const std::string &type) : _type(type), _poin
  */
 RuleAlienMission::~RuleAlienMission()
 {
-	for (std::vector<std::pair<size_t, WeightedOptions*> >::const_iterator ii = _raceDistribution.begin(); ii != _raceDistribution.end(); ++ii)
+	for (auto& pair : _raceDistribution)
 	{
-		delete ii->second;
+		delete pair.second;
+	}
+	for (auto& pair : _regionWeights)
+	{
+		delete pair.second;
 	}
 }
 
@@ -78,7 +100,7 @@ void RuleAlienMission::load(const YAML::Node &node)
 	{
 		load(parent);
 	}
-	_type = node["type"].as<std::string>(_type);
+
 	_points = node["points"].as<int>(_points);
 	_waves = node["waves"].as< std::vector<MissionWave> >(_waves);
 	_objective = (MissionObjective)node["objective"].as<int>(_objective);
@@ -86,11 +108,33 @@ void RuleAlienMission::load(const YAML::Node &node)
 	_spawnZone = node["spawnZone"].as<int>(_spawnZone);
 	_weights = node["missionWeights"].as< std::map<size_t, int> >(_weights);
 	_retaliationOdds = node["retaliationOdds"].as<int>(_retaliationOdds);
+	_endlessInfiltration = node["endlessInfiltration"].as<bool>(_endlessInfiltration);
+	_multiUfoRetaliation = node["multiUfoRetaliation"].as<bool>(_multiUfoRetaliation);
+	_ignoreBaseDefenses = node["ignoreBaseDefenses"].as<bool>(_ignoreBaseDefenses);
+	_despawnEvenIfTargeted = node["despawnEvenIfTargeted"].as<bool>(_despawnEvenIfTargeted);
+	_showAlienBase = node["showAlienBase"].as<bool>(_showAlienBase);
+	_interruptResearch = node["interruptResearch"].as<std::string>(_interruptResearch);
+	_siteType = node["siteType"].as<std::string>(_siteType);
+	_operationType = (AlienMissionOperationType)node["operationType"].as<int>(_operationType);
+	_operationSpawnZone = node["operationSpawnZone"].as<int>(_operationSpawnZone);
+	_operationBaseType = node["operationBaseType"].as<std::string>(_operationBaseType);
+	_targetBaseOdds = node["targetBaseOdds"].as<int>(_targetBaseOdds);
+
+	if (const YAML::Node &regWeights = node["regionWeights"])
+	{
+		for (YAML::const_iterator nn = regWeights.begin(); nn != regWeights.end(); ++nn)
+		{
+			WeightedOptions *nw = new WeightedOptions();
+			nw->load(nn->second);
+			_regionWeights.push_back(std::make_pair(nn->first.as<size_t>(0), nw));
+		}
+	}
+
 	//Only allow full replacement of mission racial distribution.
 	if (const YAML::Node &weights = node["raceWeights"])
 	{
 		typedef std::map<size_t, WeightedOptions*> Associative;
-		typedef std::vector<std::pair<size_t, WeightedOptions*> > Linear;
+		typedef std::vector< std::pair<size_t, WeightedOptions*> > Linear;
 
 		Associative assoc;
 		//Place in the associative container so we can index by month and keep entries sorted.
@@ -107,9 +151,9 @@ void RuleAlienMission::load(const YAML::Node &node)
 			if (assoc.end() == existing)
 			{
 				// New entry, load and add it.
-				std::auto_ptr<WeightedOptions> nw(new WeightedOptions);
+				WeightedOptions *nw = new WeightedOptions();
 				nw->load(nn->second);
-				assoc.insert(std::make_pair(month, nw.release()));
+				assoc.insert(std::make_pair(month, nw));
 			}
 			else
 			{
@@ -138,6 +182,14 @@ void RuleAlienMission::load(const YAML::Node &node)
 }
 
 /**
+ * @return if this mission uses a weighted distribution to pick a race.
+ */
+bool RuleAlienMission::hasRaceWeights() const
+{
+	return !_raceDistribution.empty();
+}
+
+/**
  * Chooses one of the available races for this mission.
  * The racial distribution may vary based on the current game date.
  * @param monthsPassed The number of months that have passed in the game world.
@@ -145,9 +197,10 @@ void RuleAlienMission::load(const YAML::Node &node)
  */
 std::string RuleAlienMission::generateRace(const size_t monthsPassed) const
 {
-	std::vector<std::pair<size_t, WeightedOptions*> >::const_reverse_iterator rc = _raceDistribution.rbegin();
-	while (monthsPassed < rc->first)
-		++rc;
+	std::vector<std::pair<size_t, WeightedOptions*> >::const_reverse_iterator rc;
+	for (rc = _raceDistribution.rbegin(); rc != _raceDistribution.rend() && monthsPassed < rc->first; ++rc);
+	if (rc == _raceDistribution.rend())
+		return "";
 	return rc->second->choose();
 }
 
@@ -172,13 +225,13 @@ int RuleAlienMission::getWeight(const size_t monthsPassed) const
 		return 1;
 	}
 	int weight = 0;
-	for (std::map<size_t, int>::const_iterator i = _weights.begin(); i != _weights.end(); ++i)
+	for (auto& pair : _weights)
 	{
-		if (i->first > monthsPassed)
+		if (pair.first > monthsPassed)
 		{
 			break;
 		}
-		weight = i->second;
+		weight = pair.second;
 	}
 	return weight;
 }
@@ -191,4 +244,37 @@ int RuleAlienMission::getRetaliationOdds() const
 {
 	return _retaliationOdds;
 }
+
+/**
+ * Should the infiltration end after first cycle or continue indefinitely?
+ * @return True, if infiltration should continue indefinitely.
+ */
+bool RuleAlienMission::isEndlessInfiltration() const
+{
+	return _endlessInfiltration;
+}
+
+/**
+ * Does this mission have region weights?
+ * @return if this mission uses a weighted distribution to pick a region.
+ */
+bool RuleAlienMission::hasRegionWeights() const
+{
+	return !_regionWeights.empty();
+}
+
+/**
+ * Chooses one of the available regions for this mission.
+ * The region distribution may vary based on the current game date.
+ * @param monthsPassed The number of months that have passed in the game world.
+ * @return The string id of the region.
+ */
+std::string RuleAlienMission::generateRegion(const size_t monthsPassed) const
+{
+	std::vector<std::pair<size_t, WeightedOptions*> >::const_reverse_iterator rc = _regionWeights.rbegin();
+	while (monthsPassed < rc->first)
+		++rc;
+	return rc->second->choose();
+}
+
 }

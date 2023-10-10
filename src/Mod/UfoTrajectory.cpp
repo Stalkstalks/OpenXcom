@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,16 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "UfoTrajectory.h"
-
-namespace {
-const char *altitudeString[] = {
-	"STR_GROUND",
-	"STR_VERY_LOW",
-	"STR_LOW_UC",
-	"STR_HIGH_UC",
-	"STR_VERY_HIGH"
-};
-}
+#include "../Savegame/Ufo.h"
 
 namespace YAML
 {
@@ -75,7 +66,7 @@ void UfoTrajectory::load(const YAML::Node &node)
 	{
 		load(parent);
 	}
-	_id = node["id"].as<std::string>(_id);
+
 	_groundTimer = node["groundTimer"].as<size_t>(_groundTimer);
 	_waypoints = node["waypoints"].as< std::vector<TrajectoryWaypoint> >(_waypoints);
 }
@@ -87,7 +78,7 @@ void UfoTrajectory::load(const YAML::Node &node)
  */
 std::string UfoTrajectory::getAltitude(size_t wp) const
 {
-	return altitudeString[_waypoints[wp].altitude];
+	return Ufo::ALTITUDE_STRING[_waypoints[wp].altitude];
 }
 
 }

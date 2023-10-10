@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BASEVIEW_H
-#define OPENXCOM_BASEVIEW_H
-
 #include "../Engine/InteractiveSurface.h"
 
 namespace OpenXcom
@@ -27,10 +25,12 @@ namespace OpenXcom
 class Base;
 class SurfaceSet;
 class BaseFacility;
+class Craft;
 class RuleBaseFacility;
 class Font;
 class Language;
 class Timer;
+enum BasePlacementErrors : int;
 
 /**
  * Interactive view of a base.
@@ -46,6 +46,7 @@ private:
 	Base *_base;
 	SurfaceSet *_texture;
 	BaseFacility *_facilities[BASE_SIZE][BASE_SIZE], *_selFacility;
+	Craft *_selCraft;	
 	Font *_big, *_small;
 	Language *_lang;
 	int _gridX, _gridY, _selSize;
@@ -61,13 +62,15 @@ public:
 	/// Cleans up the base view.
 	~BaseView();
 	/// Initializes the base view's various resources.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the base to display.
 	void setBase(Base *base);
 	/// Sets the texture for this base view.
 	void setTexture(SurfaceSet *texture);
 	/// Gets the currently selected facility.
 	BaseFacility *getSelectedFacility() const;
+	/// Gets the currently selected craft
+	Craft *getSelectedCraft() const;		
 	/// Prevents any mouseover bugs on dismantling base facilities before setBase has had time to update the base.
 	void resetSelectedFacility();
 	/// Gets the X position of the currently selected square.
@@ -76,30 +79,28 @@ public:
 	int getGridY() const;
 	/// Sets whether the base view is selectable.
 	void setSelectable(int size);
-	/// Checks if a facility can be placed.
-	bool isPlaceable(RuleBaseFacility *rule) const;
+	/// Checks if a facility can be placed. Returns 0 if it can, otherwise an int for why not.
+	BasePlacementErrors getPlacementError(const RuleBaseFacility *rule, BaseFacility *facilityBeingMoved = nullptr, bool isStartFacility = false) const;
 	/// Checks if the placed facility is placed in queue or not.
-	bool isQueuedBuilding(RuleBaseFacility *rule) const;
+	bool isQueuedBuilding(const RuleBaseFacility *rule) const;
 	/// ReCalculates the remaining build-time of all queued buildings.
 	void reCalcQueuedBuildings();
 	/// Handles the timers.
-	void think();
+	void think() override;
 	/// Blinks the selector.
 	void blink();
 	/// Draws the base view.
-	void draw();
+	void draw() override;
 	/// Blits the base view onto another surface.
-	void blit(Surface *surface);
+	void blit(SDL_Surface *surface) override;
 	/// Special handling for mouse hovers.
-	void mouseOver(Action *action, State *state);
+	void mouseOver(Action *action, State *state) override;
 	/// Special handling for mouse hovering out.
-	void mouseOut(Action *action, State *state);
+	void mouseOut(Action *action, State *state) override;
 
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 
-	void setSecondaryColor(Uint8 color);
+	void setSecondaryColor(Uint8 color) override;
 };
 
 }
-
-#endif

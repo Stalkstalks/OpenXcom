@@ -4,12 +4,12 @@
 
 EAPI=5
 
-EGIT_REPO_URI="https://github.com/SupSuper/OpenXcom.git"
+EGIT_REPO_URI="https://github.com/OpenXcom/OpenXcom.git"
 
 inherit git-2 cmake-utils
 
 DESCRIPTION="OpenXcom is an open-source clone of the popular UFO: Enemy Unknown"
-HOMEPAGE="http://openxcom.org/"
+HOMEPAGE="https://openxcom.org/"
 SRC_URI=""
 
 LICENSE="GPL-3"

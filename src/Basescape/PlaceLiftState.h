@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PLACELIFTSTATE_H
-#define OPENXCOM_PLACELIFTSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -26,7 +24,10 @@ namespace OpenXcom
 
 class Base;
 class BaseView;
+class MiniBaseView;
 class Text;
+class TextList;
+class Window;
 class Globe;
 class RuleBaseFacility;
 
@@ -43,6 +44,11 @@ private:
 	Text *_txtTitle;
 	bool _first;
 	RuleBaseFacility *_lift;
+
+	std::vector<RuleBaseFacility*> _accessLifts;
+	Window *_window;
+	Text *_txtHeader;
+	TextList *_lstAccessLifts;
 public:
 	/// Creates the Place Lift state.
 	PlaceLiftState(Base *base, Globe *globe, bool first);
@@ -50,8 +56,8 @@ public:
 	~PlaceLiftState();
 	/// Handler for clicking the base view.
 	void viewClick(Action *action);
+	/// Handler for clicking the Access Lifts list.
+	void lstAccessLiftsClick(Action *action);
 };
 
 }
-
-#endif

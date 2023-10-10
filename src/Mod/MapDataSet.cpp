@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,11 +18,12 @@
  */
 #include "MapDataSet.h"
 #include "MapData.h"
-#include <fstream>
+#include <sstream>
 #include <SDL_endian.h>
 #include "../Engine/Exception.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Engine/FileMap.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -43,18 +44,6 @@ MapDataSet::MapDataSet(const std::string &name) : _name(name), _surfaceSet(0), _
 MapDataSet::~MapDataSet()
 {
 	unloadData();
-}
-
-/**
- * Loads the map data set from a YAML file.
- * @param node YAML node.
- */
-void MapDataSet::load(const YAML::Node &node)
-{
-	for (YAML::const_iterator i = node.begin(); i != node.end(); ++i)
-	{
-		_name = i->as<std::string>(_name);
-	}
 }
 
 /**
@@ -79,9 +68,25 @@ size_t MapDataSet::getSize() const
  * Gets the objects in this dataset.
  * @return Pointer to the objects.
  */
-std::vector<MapData*> *MapDataSet::getObjects()
+std::vector<MapData*> *MapDataSet::getObjectsRaw()
 {
 	return &_objects;
+}
+
+/**
+ * Gets an object in this dataset.
+ * @param i Object index.
+ * @return Pointer to the object.
+ */
+MapData *MapDataSet::getObject(size_t i)
+{
+	if (i >= _objects.size())
+	{
+		std::ostringstream ss;
+		ss << "MCD " << _name << " has no object " << i;
+		throw Exception(ss.str());
+	}
+	return _objects[i];
 }
 
 /**
@@ -97,7 +102,7 @@ SurfaceSet *MapDataSet::getSurfaceset() const
  * Loads terrain data in XCom format (MCD & PCK files).
  * @sa http://www.ufopaedia.org/index.php?title=MCD
  */
-void MapDataSet::loadData()
+void MapDataSet::loadData(MCDPatch *patch, bool validate)
 {
 	// prevents loading twice
 	if (_loaded) return;
@@ -159,24 +164,20 @@ void MapDataSet::loadData()
 
 	// Load Terrain Data from MCD file
 	std::string fname = "TERRAIN/" + _name + ".MCD";
-	std::ifstream mapFile(FileMap::getFilePath(fname).c_str(), std::ios::in | std::ios::binary);
-	if (!mapFile)
-	{
-		throw Exception(fname + " not found");
-	}
+	auto mapFile = FileMap::getIStream(fname);
 
-	while (mapFile.read((char*)&mcd, sizeof(MCD)))
+	while (mapFile->read((char*)&mcd, sizeof(MCD)))
 	{
 		MapData *to = new MapData(this);
 		_objects.push_back(to);
 
-		// set all the terrainobject properties:
+		// set all the terrain object properties:
 		for (int frame = 0; frame < 8; frame++)
 		{
 			to->setSprite(frame,(int)mcd.Frame[frame]);
 		}
 		to->setYOffset((int)mcd.P_Level);
-		to->setSpecialType((int)mcd.Target_Type, (int)mcd.Tile_Type);
+		to->setSpecialType((int)mcd.Target_Type, (TilePart)mcd.Tile_Type);
 		to->setTUCosts((int)mcd.TU_Walk, (int)mcd.TU_Fly, (int)mcd.TU_Slide);
 		to->setFlags(mcd.UFO_Door != 0, mcd.Stop_LOS != 0, mcd.No_Floor != 0, (int)mcd.Big_Wall, mcd.Gravlift != 0, mcd.Door != 0, mcd.Block_Fire != 0, mcd.Block_Smoke != 0, mcd.Xcom_Base != 0);
 		to->setTerrainLevel((int)mcd.T_Level);
@@ -210,18 +211,40 @@ void MapDataSet::loadData()
 		objNumber++;
 	}
 
-
-	if (!mapFile.eof())
+	if (!mapFile->eof())
 	{
-		throw Exception("Invalid MCD file");
+		throw Exception("Invalid MCD file " + fname);
 	}
 
-	mapFile.close();
+	// apply any ruleset patches before validation
+	if (patch)
+	{
+		patch->modifyData(this);
+	}
+
+	// Validate MCD references
+	if (validate)
+	{
+		for (size_t i = 0; i < _objects.size(); ++i)
+		{
+			if ((size_t)_objects[i]->getDieMCD() >= _objects.size())
+			{
+				Log(LOG_INFO) << "MCD " << _name << " object " << i << " has invalid DieMCD: " << _objects[i]->getDieMCD();
+			}
+			if ((size_t)_objects[i]->getAltMCD() >= _objects.size())
+			{
+				Log(LOG_INFO) << "MCD " << _name << " object " << i << " has invalid AltMCD: " << _objects[i]->getAltMCD();
+			}
+			if (_objects[i]->getArmor() == 0)
+			{
+				Log(LOG_INFO) << "MCD " << _name << " object " << i << " has 0 armor";
+			}
+		}
+	}
 
 	// Load terrain sprites/surfaces/PCK files into a surfaceset
 	_surfaceSet = new SurfaceSet(32, 40);
-	_surfaceSet->loadPck(FileMap::getFilePath("TERRAIN/" + _name + ".PCK"),
-			     FileMap::getFilePath("TERRAIN/" + _name + ".TAB"));
+	_surfaceSet->loadPck("TERRAIN/" + _name + ".PCK", "TERRAIN/" + _name + ".TAB");
 }
 
 /**
@@ -231,11 +254,11 @@ void MapDataSet::unloadData()
 {
 	if (_loaded)
 	{
-		for (std::vector<MapData*>::iterator i = _objects.begin(); i != _objects.end();)
+		for (auto* mapdata : _objects)
 		{
-			delete *i;
-			i = _objects.erase(i);
+			delete mapdata;
 		}
+		_objects.clear();
 		delete _surfaceSet;
 		_loaded = false;
 	}
@@ -248,27 +271,19 @@ void MapDataSet::unloadData()
  */
 void MapDataSet::loadLOFTEMPS(const std::string &filename, std::vector<Uint16> *voxelData)
 {
-	// Load file
-	std::ifstream mapFile (filename.c_str(), std::ios::in | std::ios::binary);
-	if (!mapFile)
-	{
-		throw Exception(filename + " not found");
-	}
-
+	auto mapFile = FileMap::getIStream(filename);
 	Uint16 value;
 
-	while (mapFile.read((char*)&value, sizeof(value)))
+	while (mapFile->read((char*)&value, sizeof(value)))
 	{
 		value = SDL_SwapLE16(value);
 		voxelData->push_back(value);
 	}
 
-	if (!mapFile.eof())
+	if (!mapFile->eof())
 	{
 		throw Exception("Invalid LOFTEMPS");
 	}
-
-	mapFile.close();
 }
 
 /**

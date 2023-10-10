@@ -26,6 +26,9 @@
     <ClCompile Include="Basescape\SoldierInfoState.cpp">
       <Filter>Basescape</Filter>
     </ClCompile>
+    <ClCompile Include="Basescape\SoldiersAIState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
     <ClCompile Include="Basescape\SoldiersState.cpp">
       <Filter>Basescape</Filter>
     </ClCompile>
@@ -275,13 +278,7 @@
     <ClCompile Include="Interface\FpsCounter.cpp">
       <Filter>Interface</Filter>
     </ClCompile>
-    <ClCompile Include="Battlescape\ItemSprite.cpp">
-      <Filter>Battlescape</Filter>
-    </ClCompile>
     <ClCompile Include="Battlescape\UnitSprite.cpp">
-      <Filter>Battlescape</Filter>
-    </ClCompile>
-    <ClCompile Include="Battlescape\Position.cpp">
       <Filter>Battlescape</Filter>
     </ClCompile>
     <ClCompile Include="Interface\NumberText.cpp">
@@ -304,9 +301,6 @@
     </ClCompile>
     <ClCompile Include="Battlescape\BattlescapeGenerator.cpp">
       <Filter>Battlescape</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Exception.cpp">
-      <Filter>Engine</Filter>
     </ClCompile>
     <ClCompile Include="Savegame\ItemContainer.cpp">
       <Filter>Savegame</Filter>
@@ -426,9 +420,6 @@
       <Filter>Battlescape</Filter>
     </ClCompile>
     <ClCompile Include="Battlescape\Inventory.cpp">
-      <Filter>Battlescape</Filter>
-    </ClCompile>
-    <ClCompile Include="Battlescape\BattleAIState.cpp">
       <Filter>Battlescape</Filter>
     </ClCompile>
     <ClCompile Include="Battlescape\WarningMessage.cpp">
@@ -570,9 +561,6 @@
     <ClCompile Include="Geoscape\PsiTrainingState.cpp">
       <Filter>Geoscape</Filter>
     </ClCompile>
-    <ClCompile Include="Battlescape\NoContainmentState.cpp">
-      <Filter>Battlescape</Filter>
-    </ClCompile>
     <ClCompile Include="Savegame\WeightedOptions.cpp">
       <Filter>Savegame</Filter>
     </ClCompile>
@@ -639,7 +627,6 @@
     <ClCompile Include="Interface\ToggleTextButton.cpp">
       <Filter>Interface</Filter>
     </ClCompile>
-    <ClCompile Include="pch.cpp" />
     <ClCompile Include="Savegame\SerializationHelper.cpp">
       <Filter>Savegame</Filter>
     </ClCompile>
@@ -651,12 +638,6 @@
     </ClCompile>
     <ClCompile Include="Engine\LanguagePlurality.cpp">
       <Filter>Engine</Filter>
-    </ClCompile>
-    <ClCompile Include="Battlescape\AlienBAIState.cpp">
-      <Filter>Battlescape</Filter>
-    </ClCompile>
-    <ClCompile Include="Battlescape\CivilianBAIState.cpp">
-      <Filter>Battlescape</Filter>
     </ClCompile>
     <ClCompile Include="Menu\PauseState.cpp">
       <Filter>Menu</Filter>
@@ -686,9 +667,6 @@
       <Filter>Basescape</Filter>
     </ClCompile>
     <ClCompile Include="Menu\OptionsVideoState.cpp">
-      <Filter>Menu</Filter>
-    </ClCompile>
-    <ClCompile Include="Menu\OptionsModsState.cpp">
       <Filter>Menu</Filter>
     </ClCompile>
     <ClCompile Include="Menu\OptionsAudioState.cpp">
@@ -942,6 +920,221 @@
     </ClCompile>
     <ClCompile Include="Geoscape\TrainingState.cpp">
       <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\ItemSprite.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleStartingCondition.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleItemCategory.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\CommendationLateState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\CommendationState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleCommendations.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Savegame\SoldierDiary.cpp">
+      <Filter>Savegame</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierDiaryMissionState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierDiaryOverviewState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierDiaryPerformanceState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleConverter.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierSortUtil.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierAvatarState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Savegame\SoldierAvatar.cpp">
+      <Filter>Savegame</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\ConfirmEndMissionState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\UfoTrackerState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\TechTreeViewerState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\TechTreeSelectState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\ManufactureDependenciesTreeState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\InventoryLoadState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\InventorySaveState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\CraftPilotsState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\CraftPilotSelectState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\CustomPalettes.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\StatisticsState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\AIModule.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\SetWindowedRootState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\AlienInventory.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\AlienInventoryState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\BriefingLightState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\CraftNotEnoughPilotsState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\NewPossiblePurchaseState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\NewPossibleCraftState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\NewPossibleFacilityState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\TrainingFinishedState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\CraftEquipmentLoadState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\CraftEquipmentSaveState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\TestPaletteState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\SelectMusicTrackState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Ufopaedia\StatsForNerdsState.cpp">
+      <Filter>Ufopaedia</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\GlobalResearchState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleSoldierTransformation.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierTransformationState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Unicode.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\ModListState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\ModConfirmExtendedState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\miniz\miniz.c" />
+    <ClCompile Include="Basescape\GlobalManufactureState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleArcScript.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="md5.cpp" />
+    <ClCompile Include="Mod\RuleEnviroEffects.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\GeoscapeEventState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleEvent.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleEventScript.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Savegame\GeoscapeEvent.cpp">
+      <Filter>Savegame</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleSoldierBonus.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierBonusState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\OptionsFoldersState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Savegame\HitLog.cpp">
+      <Filter>Savegame</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\TurnDiaryState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\SkillMenuState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleSkill.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod\RuleManufactureShortcut.cpp">
+      <Filter>Mod</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\InventoryPersonalState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\DogfightExperienceState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierTransformationListState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu\NotesState.cpp">
+      <Filter>Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="Geoscape\ExtendedGeoscapeLinksState.cpp">
+      <Filter>Geoscape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\ExtendedBattlescapeLinksState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Battlescape\ExtendedInventoryLinksState.cpp">
+      <Filter>Battlescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\GlobalAlienContainmentState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Basescape\SoldierRankState.cpp">
+      <Filter>Basescape</Filter>
+    </ClCompile>
+    <ClCompile Include="Savegame\RankCount.cpp">
+      <Filter>Savegame</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1228,9 +1421,6 @@
     <ClInclude Include="Interface\FpsCounter.h">
       <Filter>Interface</Filter>
     </ClInclude>
-    <ClInclude Include="Battlescape\ItemSprite.h">
-      <Filter>Battlescape</Filter>
-    </ClInclude>
     <ClInclude Include="Battlescape\UnitSprite.h">
       <Filter>Battlescape</Filter>
     </ClInclude>
@@ -1258,7 +1448,6 @@
     <ClInclude Include="Battlescape\BattlescapeGenerator.h">
       <Filter>Battlescape</Filter>
     </ClInclude>
-    <ClInclude Include="dirent.h" />
     <ClInclude Include="Engine\Exception.h">
       <Filter>Engine</Filter>
     </ClInclude>
@@ -1380,9 +1569,6 @@
       <Filter>Battlescape</Filter>
     </ClInclude>
     <ClInclude Include="Battlescape\Inventory.h">
-      <Filter>Battlescape</Filter>
-    </ClInclude>
-    <ClInclude Include="Battlescape\BattleAIState.h">
       <Filter>Battlescape</Filter>
     </ClInclude>
     <ClInclude Include="Battlescape\WarningMessage.h">
@@ -1521,9 +1707,6 @@
     <ClInclude Include="Geoscape\PsiTrainingState.h">
       <Filter>Geoscape</Filter>
     </ClInclude>
-    <ClInclude Include="Battlescape\NoContainmentState.h">
-      <Filter>Battlescape</Filter>
-    </ClInclude>
     <ClInclude Include="Savegame\WeightedOptions.h">
       <Filter>Savegame</Filter>
     </ClInclude>
@@ -1587,7 +1770,6 @@
     <ClInclude Include="Interface\ToggleTextButton.h">
       <Filter>Interface</Filter>
     </ClInclude>
-    <ClInclude Include="pch.h" />
     <ClInclude Include="Engine\ShaderDraw.h">
       <Filter>Engine</Filter>
     </ClInclude>
@@ -1612,12 +1794,6 @@
     </ClInclude>
     <ClInclude Include="Engine\LanguagePlurality.h">
       <Filter>Engine</Filter>
-    </ClInclude>
-    <ClInclude Include="Battlescape\AlienBAIState.h">
-      <Filter>Battlescape</Filter>
-    </ClInclude>
-    <ClInclude Include="Battlescape\CivilianBAIState.h">
-      <Filter>Battlescape</Filter>
     </ClInclude>
     <ClInclude Include="Menu\PauseState.h">
       <Filter>Menu</Filter>
@@ -1647,9 +1823,6 @@
       <Filter>Basescape</Filter>
     </ClInclude>
     <ClInclude Include="Menu\OptionsVideoState.h">
-      <Filter>Menu</Filter>
-    </ClInclude>
-    <ClInclude Include="Menu\OptionsModsState.h">
       <Filter>Menu</Filter>
     </ClInclude>
     <ClInclude Include="Menu\OptionsAudioState.h">
@@ -1760,9 +1933,6 @@
     </ClInclude>
     <ClInclude Include="Menu\ListLoadOriginalState.h">
       <Filter>Menu</Filter>
-    </ClInclude>
-    <ClInclude Include="Savegame\SaveConverterXcom1.h">
-      <Filter>Savegame</Filter>
     </ClInclude>
     <ClInclude Include="Engine\FlcPlayer.h">
       <Filter>Engine</Filter>
@@ -1917,6 +2087,253 @@
     <ClInclude Include="Geoscape\TrainingState.h">
       <Filter>Geoscape</Filter>
     </ClInclude>
+    <ClInclude Include="Battlescape\ItemSprite.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleStartingCondition.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleItemCategory.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\BattleUnitStatistics.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\CommendationLateState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\CommendationState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\Cord.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\MissionStatistics.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleCommendations.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\SoldierDiary.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierDiaryMissionState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierDiaryOverviewState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierDiaryPerformanceState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleConverter.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierSortUtil.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierAvatarState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\SoldierAvatar.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\ConfirmEndMissionState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\UfoTrackerState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\TechTreeViewerState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\TechTreeSelectState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\ManufactureDependenciesTreeState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\InventoryLoadState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\InventorySaveState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\CraftPilotsState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\CraftPilotSelectState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\CustomPalettes.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\StatisticsState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\AIModule.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\SetWindowedRootState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\AlienInventory.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\AlienInventoryState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\BriefingLightState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\CraftNotEnoughPilotsState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\NewPossiblePurchaseState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\NewPossibleCraftState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\NewPossibleFacilityState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\TrainingFinishedState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\CraftEquipmentLoadState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\CraftEquipmentSaveState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\TestPaletteState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\SelectMusicTrackState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Ufopaedia\StatsForNerdsState.h">
+      <Filter>Ufopaedia</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\GlobalResearchState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleSoldierTransformation.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierTransformationState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Unicode.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\ModListState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\ModConfirmExtendedState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\libs\miniz\miniz.h" />
+    <ClInclude Include="Basescape\GlobalManufactureState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleArcScript.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="md5.h" />
+    <ClInclude Include="Mod\RuleEnviroEffects.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collections.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\HelperMeta.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\SDL2Helpers.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\ModScript.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="fallthrough.h" />
+    <ClInclude Include="Geoscape\GeoscapeEventState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleEvent.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleEventScript.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\GeoscapeEvent.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleSoldierBonus.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierBonusState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\OptionsFoldersState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\HitLog.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\TurnDiaryState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\SkillMenuState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleSkill.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleManufactureShortcut.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\RuleBaseFacilityFunctions.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\InventoryPersonalState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\DogfightExperienceState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Functions.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierTransformationListState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu\NotesState.h">
+      <Filter>Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="Geoscape\ExtendedGeoscapeLinksState.h">
+      <Filter>Geoscape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\ExtendedBattlescapeLinksState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Battlescape\ExtendedInventoryLinksState.h">
+      <Filter>Battlescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\GlobalAlienContainmentState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldierRankState.h">
+      <Filter>Basescape</Filter>
+    </ClInclude>
+    <ClInclude Include="Savegame\RankCount.h">
+      <Filter>Savegame</Filter>
+    </ClInclude>
+    <ClInclude Include="Mod\LoadYaml.h">
+      <Filter>Mod</Filter>
+    </ClInclude>
+    <ClInclude Include="Basescape\SoldiersAIState.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Geoscape">
@@ -1958,5 +2375,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\res\windows\openxcom.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="yaml-cpp.natvis" />
   </ItemGroup>
 </Project>

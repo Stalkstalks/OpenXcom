@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_SHADERREPEAT_H
-#define	OPENXCOM_SHADERREPEAT_H
-
-#include <vector>
 #include "ShaderDraw.h"
 
 namespace OpenXcom
@@ -37,15 +33,16 @@ public:
 	typedef helper::ShaderBase<const Pixel> _base;
 	friend struct helper::controler<ShaderRepeat<Pixel> >;
 
-	inline ShaderRepeat(const Surface* s):
+	inline ShaderRepeat(SurfaceRaw<Pixel> s):
 		_base(s)
 	{
-        setOffset(0, 0);
+		setOffset(0, 0);
 	}
-	inline ShaderRepeat(const std::vector<Pixel>& f, int max_x, int max_y):
-		_base(f, max_x, max_y)
+
+	inline ShaderRepeat(SurfaceRaw<const Pixel> s):
+		_base(s)
 	{
-        setOffset(0, 0);
+		setOffset(0, 0);
 	}
 
 	inline void setOffset(int x, int y)
@@ -128,16 +125,16 @@ struct controler<ShaderRepeat<Pixel> >
 	inline void set_y(const int& begin, const int&)
 	{
 		_curr_y = (_curr_y + begin)%_size_y;
-		_ptr_curr_y += (_range_domain.beg_y+_curr_y)*_pitch;
+		_ptr_curr_y = pointerByteOffset(_ptr_curr_y, (_range_domain.beg_y + _curr_y) * _pitch);
 	}
 	inline void inc_y()
 	{
 		++_curr_y;
-		_ptr_curr_y += _pitch;
+		_ptr_curr_y = pointerByteOffset(_ptr_curr_y, _pitch);
 		if (_curr_y == _size_y)
 		{
 			_curr_y = 0;
-			_ptr_curr_y -= _size_y*_pitch;
+			_ptr_curr_y = pointerByteOffset(_ptr_curr_y, -_size_y*_pitch);
 		}
 	}
 
@@ -174,4 +171,3 @@ struct controler<ShaderRepeat<Pixel> >
 }//namespace helper
 }//namespace OpenXcom
 
-#endif	/* OPENXCOM_SHADERREPEAT_H */

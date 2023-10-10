@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,30 +19,54 @@
 #include "SerializationHelper.h"
 #include <assert.h>
 #include <sstream>
-#include <limits>
+#include <cfloat>
+
+#include "../Engine/Logger.h"
+#include "../Engine/CrossPlatform.h"
 
 namespace OpenXcom
 {
 
 int unserializeInt(Uint8 **buffer, Uint8 sizeKey)
 {
+	/* The C spec explicitly requires *(Type*) pointer accesses to be
+	 * sizeof(Type) aligned, which is not guaranteed by the UInt8** buffer
+	 * passed in here.
+	 * memcpy() is explicitly designed to cope with any address alignment, so
+	 * use that to avoid undefined behaviour */
 	int ret = 0;
 	switch(sizeKey)
 	{
 	case 1:
-		ret = **buffer;
+		Uint8 tmp;
+		memcpy(&tmp, *buffer, sizeof(tmp));
+		ret = tmp;
 		break;
 	case 2:
-		ret = *(Sint16*)*buffer;
+	{
+		Sint16 tmp;
+		memcpy(&tmp, *buffer, sizeof(tmp));
+		ret = tmp;
 		break;
-	case 3:
-		assert(false); // no.
-		break;
+	}
 	case 4:
-		ret = *(Uint32*)*buffer;
+	{
+		Uint32 tmp;
+		memcpy(&tmp, *buffer, sizeof(tmp));
+		ret = tmp;
 		break;
+	}
 	default:
-		assert(false); // get out.
+	{
+		// XXX: if this unreachable block gets hit, check to see
+		//   that sizeKey is being properly initialized
+		#ifdef NDEBUG
+			Log(LOG_WARNING) << "unserializeInt has invalid sizeKey of " << sizeKey
+				<< " .. this can mean deserialization data is ill-formed";
+		#else
+			CrossPlatform::unreachable();
+		#endif
+	}
 	}
 
 	*buffer += sizeKey;
@@ -52,24 +76,44 @@ int unserializeInt(Uint8 **buffer, Uint8 sizeKey)
 
 void serializeInt(Uint8 **buffer, Uint8 sizeKey, int value)
 {
+	/* The C spec explicitly requires *(Type*) pointer accesses to be
+	 * sizeof(Type) aligned, which is not guaranteed by the UInt8** buffer
+	 * passed in here.
+	 * memcpy() is explicitly designed to cope with any address alignment, so
+	 * use that to avoid undefined behaviour */
 	switch(sizeKey)
 	{
 	case 1:
+	{
+		Uint8 u8Value = value;
 		assert(value < 256);
-		**buffer = value;
+		memcpy(*buffer, &u8Value, sizeof(Uint8));
 		break;
+	}
 	case 2:
+	{
+		Sint16 s16Value = value;
 		assert(value < 65536);
-		*(Sint16*)*buffer = value;
+		memcpy(*buffer, &s16Value, sizeof(Sint16));
 		break;
-	case 3:
-		assert(false); // no.
-		break;
+	}
 	case 4:
-		*(Uint32*)*buffer = value;
+	{
+		Uint32 u32Value = value;
+		memcpy(*buffer, &u32Value, sizeof(Uint32));
 		break;
+	}
 	default:
-		assert(false); // get out.
+	{
+		// XXX: if this unreachable block gets hit, check to see
+		//   that sizeKey is being properly initialized
+		#ifdef NDEBUG
+			Log(LOG_WARNING) << "serializeInt has invalid sizeKey of " << sizeKey
+				<< " .. this can mean serialization data is ill-formed";
+		#else
+			CrossPlatform::unreachable();
+		#endif
+	}
 	}
 
 	*buffer += sizeKey;
@@ -78,7 +122,7 @@ void serializeInt(Uint8 **buffer, Uint8 sizeKey, int value)
 std::string serializeDouble(double value)
 {
 	std::ostringstream stream;
-	stream.precision(std::numeric_limits<double>::digits10 + 2);
+	stream.precision(DBL_DIG + 2);
 	stream << value;
 	return stream.str();
 }

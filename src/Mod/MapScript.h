@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MAPSCRIPT_H
-#define OPENXCOM_MAPSCRIPT_H
-
-
 #include <vector>
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include <SDL_video.h>
-#include "RuleTerrain.h"
 #include "MapBlock.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -36,7 +33,8 @@ struct TunnelData
  {
 	std::map<std::string, MCDReplacement> replacements;
 	int level;
-	MCDReplacement *getMCDReplacement(std::string type)
+	TunnelData() : level(0) { }
+	MCDReplacement *getMCDReplacement(const std::string& type)
 	{
 		if (replacements.find(type) == replacements.end())
 		{
@@ -51,17 +49,139 @@ enum MapScriptCommand {MSC_UNDEFINED = -1, MSC_ADDBLOCK, MSC_ADDLINE, MSC_ADDCRA
 class MapBlock;
 class RuleTerrain;
 
+// Structure for containing multiple levels of map blocks inside a command
+enum VerticalLevelType {VLT_GROUND, VLT_MIDDLE, VLT_CEILING, VLT_EMPTY, VLT_DECORATION, VLT_CRAFT, VLT_LINE};
+struct VerticalLevel
+{
+	VerticalLevelType levelType;
+	std::vector<int> levelGroups, levelBlocks;
+	int levelSizeX, levelSizeY, levelSizeZ;
+	int maxRepeats;
+	std::string levelTerrain;
+
+	// Default constructor
+	VerticalLevel() :
+		levelType(VLT_MIDDLE), levelSizeX(1), levelSizeY(1), levelSizeZ(-1), maxRepeats(-1), levelTerrain("")
+	{
+
+	}
+
+	// Load in the data for a VerticalLevel from a YAML file, has to load similar data to a full mapscript command
+	void load(const YAML::Node &node)
+	{
+		std::string type = node["type"].as<std::string>("");
+		if (type == "ground")
+		{
+			levelType = VLT_GROUND;
+		}
+		else if (type == "middle")
+		{
+			levelType = VLT_MIDDLE;
+		}
+		else if (type == "ceiling")
+		{
+			levelType = VLT_CEILING;
+		}
+		else if (type == "empty")
+		{
+			levelType = VLT_EMPTY;
+		}
+		else if (type == "decoration")
+		{
+			levelType = VLT_DECORATION;
+			levelSizeZ = 0;
+		}
+		else if (type == "craft")
+		{
+			levelType = VLT_CRAFT;
+		}
+		else if (type == "line")
+		{
+			levelType = VLT_LINE;
+		}
+		else
+		{
+			Log(LOG_WARNING) << "'" << type << "'" << " does not resolve into a valid verticalLevel type, loading as 'middle'.";
+			levelType = VLT_MIDDLE;
+		}
+
+		if (const YAML::Node &map = node["size"])
+		{
+			if (map.Type() == YAML::NodeType::Sequence)
+			{
+				int *sizes[3] = {&levelSizeX, &levelSizeY, &levelSizeZ};
+				int entry = 0;
+				for (YAML::const_iterator i = map.begin(); i != map.end(); ++i)
+				{
+					*sizes[entry] = (*i).as<int>(1);
+					entry++;
+					if (entry == 3)
+					{
+						break;
+					}
+				}
+			}
+			else
+			{
+				levelSizeX = map.as<int>(levelSizeX);
+				levelSizeY = levelSizeX;
+			}
+		}
+
+		maxRepeats = node["maxRepeats"].as<int>(maxRepeats);
+
+		if (const YAML::Node &map = node["groups"])
+		{
+			levelGroups.clear();
+			if (map.Type() == YAML::NodeType::Sequence)
+			{
+				for (YAML::const_iterator i = map.begin(); i != map.end(); ++i)
+				{
+					levelGroups.push_back((*i).as<int>(0));
+				}
+			}
+			else
+			{
+				levelGroups.push_back(map.as<int>(0));
+			}
+		}
+
+		if (const YAML::Node &map = node["blocks"])
+		{
+			levelGroups.clear();
+			if (map.Type() == YAML::NodeType::Sequence)
+			{
+				for (YAML::const_iterator i = map.begin(); i != map.end(); ++i)
+				{
+					levelBlocks.push_back((*i).as<int>(0));
+				}
+			}
+			else
+			{
+				levelBlocks.push_back(map.as<int>(0));
+			}
+
+		}
+
+		levelTerrain = node["terrain"].as<std::string>(levelTerrain);
+	}
+};
+
 class MapScript
 {
 private:
 	MapScriptCommand _type;
+	bool _canBeSkipped, _markAsReinforcementsBlock;
 	std::vector<SDL_Rect*> _rects;
 	std::vector<int> _groups, _blocks, _frequencies, _maxUses, _conditionals;
+	int _verticalGroup, _horizontalGroup, _crossingGroup;
 	std::vector<int> _groupsTemp, _blocksTemp, _frequenciesTemp, _maxUsesTemp;
 	int _sizeX, _sizeY, _sizeZ, _executionChances, _executions, _cumulativeFrequency, _label;
 	MapDirection _direction;
 	TunnelData *_tunnelData;
-	std::string _ufoName;
+	std::string _ufoName, _craftName;
+	std::vector<std::string> _randomTerrain;
+	std::vector<VerticalLevel> _verticalLevels;
 
 	/// Randomly generate a group from within the array.
 	int getGroupNumber();
@@ -74,8 +194,14 @@ public:
 	void load(const YAML::Node& node);
 	/// Initializes all the variables and junk for a mapscript command.
 	void init();
+	/// Initializes the variables for a mapscript command from a VerticalLevel
+	void initVerticalLevel(VerticalLevel level);
 	/// Gets what type of command this is.
-	MapScriptCommand getType() {return _type;};
+	MapScriptCommand getType() const {return _type;};
+	/// Can this command be skipped if unsuccessful?
+	bool canBeSkipped() const { return _canBeSkipped; };
+	/// Should blocks added by this command be used as reinforcements blocks?
+	bool markAsReinforcementsBlock() const { return _markAsReinforcementsBlock; }
 	/// Gets the rects, describing the areas this command applies to.
 	const std::vector<SDL_Rect*> *getRects() const {return &_rects;};
 	/// Gets the X size for this command.
@@ -96,14 +222,28 @@ public:
 	const std::vector<int> *getGroups() const {return &_groups;};
 	/// Gets the blocks vector for iteration.
 	const std::vector<int> *getBlocks() const {return &_blocks;};
+	/// Gets the verticalGroup for this command.
+	int getVerticalGroup() const { return _verticalGroup; };
+	/// Gets the horizontalGroup for this command.
+	int getHorizontalGroup() const { return _horizontalGroup; };
+	/// Gets the crossingGroup for this command.
+	int getCrossingGroup() const { return _crossingGroup; };
 	/// Gets the direction this command goes (for lines and tunnels).
-   	MapDirection getDirection() const {return _direction;};
+	MapDirection getDirection() const {return _direction;};
 	/// Gets the mcd replacement data for tunnel replacements.
 	TunnelData *getTunnelData() {return _tunnelData;};
 	/// Randomly generate a block from within either the array of groups or blocks.
 	MapBlock *getNextBlock(RuleTerrain *terrain);
 	/// Gets the UFO's name (for setUFO)
-	std::string getUFOName();
+	std::string getUFOName() const;
+	/// Gets the craft's name (for addCraft)
+	std::string getCraftName();
+	/// Gets the alternate terrain list for this command.
+	const std::vector<std::string> &getRandomAlternateTerrain() const;
+	/// Gets the vertical levels for a command
+	const std::vector<VerticalLevel> &getVerticalLevels() const;
+	/// Sets the vertical levels for a command from a base facility's vertical levels
+	void setVerticalLevels(const std::vector<VerticalLevel> &verticalLevels, int size);
 };
+
 }
-#endif

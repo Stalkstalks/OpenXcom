@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -23,52 +23,58 @@
 #include "ArticleStateTFTD.h"
 #include "ArticleStateTFTDFacility.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
 #include "../Engine/LocalizedText.h"
+#include "../Interface/TextButton.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/TextList.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateTFTDFacility::ArticleStateTFTDFacility(ArticleDefinitionTFTD *defs) : ArticleStateTFTD(defs)
+	ArticleStateTFTDFacility::ArticleStateTFTDFacility(ArticleDefinitionTFTD *defs, std::shared_ptr<ArticleCommonState> state) : ArticleStateTFTD(defs, std::move(state))
 	{
-		RuleBaseFacility *facility = _game->getMod()->getBaseFacility(defs->id);
+		_txtInfo->setHeight(112);
+
+		_btnInfo->setVisible(_game->getMod()->getShowPediaInfoButton());
+
+		RuleBaseFacility *facility = _game->getMod()->getBaseFacility(defs->id, true);
 
 		_lstInfo = new TextList(150, 50, 168, 150);
 		add(_lstInfo);
 
-		_lstInfo->setColor(Palette::blockOffset(0)+2);
+		_lstInfo->setColor(_listColor1);
 		_lstInfo->setColumns(2, 104, 46);
 		_lstInfo->setDot(true);
 
-		std::wostringstream ss;
+		std::ostringstream ss;
 		int row = 0;
 		if (facility->getDefenseValue() > 0)
 		{
 			_lstInfo->setY(_lstInfo->getY() - 16);
-			ss.str(L"");ss.clear();
+			_txtInfo->setHeight(_txtInfo->getHeight() - 16);
+			ss.str("");ss.clear();
 			ss << facility->getDefenseValue();
 			_lstInfo->addRow(2, tr("STR_DEFENSE_VALUE").c_str(), ss.str().c_str());
-			_lstInfo->setCellColor(row++, 1, Palette::blockOffset(15)+4);
+			_lstInfo->setCellColor(row++, 1, _listColor2);
 
-			ss.str(L"");ss.clear();
-			ss << Text::formatPercentage(facility->getHitRatio());
+			ss.str("");ss.clear();
+			ss << Unicode::formatPercentage(facility->getHitRatio());
 			_lstInfo->addRow(2, tr("STR_HIT_RATIO").c_str(), ss.str().c_str());
-			_lstInfo->setCellColor(row++, 1, Palette::blockOffset(15)+4);
+			_lstInfo->setCellColor(row++, 1, _listColor2);
 		}
-		
-		ss.str(L"");ss.clear();
+
+		ss.str("");ss.clear();
 		_lstInfo->addRow(2, tr("STR_CONSTRUCTION_TIME").c_str(), tr("STR_DAY", facility->getBuildTime()).c_str());
-		_lstInfo->setCellColor(row++, 1, Palette::blockOffset(15)+4);
+		_lstInfo->setCellColor(row++, 1, _listColor2);
 
-		ss << Text::formatFunding(facility->getBuildCost());
+		ss << Unicode::formatFunding(facility->getBuildCost());
 		_lstInfo->addRow(2, tr("STR_CONSTRUCTION_COST").c_str(), ss.str().c_str());
-		_lstInfo->setCellColor(row++, 1, Palette::blockOffset(15)+4);
+		_lstInfo->setCellColor(row++, 1, _listColor2);
 
-		ss.str(L"");ss.clear();
-		ss << Text::formatFunding(facility->getMonthlyCost());
+		ss.str("");ss.clear();
+		ss << Unicode::formatFunding(facility->getMonthlyCost());
 		_lstInfo->addRow(2, tr("STR_MAINTENANCE_COST").c_str(), ss.str().c_str());
-		_lstInfo->setCellColor(row++, 1, Palette::blockOffset(15)+4);
+		_lstInfo->setCellColor(row++, 1, _listColor2);
 
 		centerAllSurfaces();
 	}

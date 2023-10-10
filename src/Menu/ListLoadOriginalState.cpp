@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -41,8 +41,9 @@ namespace OpenXcom
 /**
  * Initializes all the elements in the Saved Game screen.
  * @param game Pointer to the core game.
+ * @param origin Game section that originated this state.
  */
-ListLoadOriginalState::ListLoadOriginalState()
+ListLoadOriginalState::ListLoadOriginalState(OptionsOrigin origin) : _origin(origin)
 {
 	_screen = false;
 
@@ -56,7 +57,7 @@ ListLoadOriginalState::ListLoadOriginalState()
 	_txtDate = new Text(90, 9, 225, 24);
 
 	// Set palette
-	setInterface("saveMenus");
+	setInterface("geoscape", true, _game->getSavedGame() ? _game->getSavedGame()->getSavedBattle() : 0);
 
 	add(_window, "window", "saveMenus");
 	add(_btnNew, "button", "saveMenus");
@@ -85,13 +86,13 @@ ListLoadOriginalState::ListLoadOriginalState()
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "saveMenus");
 
 	_btnNew->setText(tr("STR_OPENXCOM"));
 	_btnNew->onMouseClick((ActionHandler)&ListLoadOriginalState::btnNewClick);
 	_btnNew->onKeyboardPress((ActionHandler)&ListLoadOriginalState::btnNewClick, Options::keyCancel);
 
-	_btnCancel->setText(tr("STR_CANCEL_UC"));
+	_btnCancel->setText(tr("STR_CANCEL"));
 	_btnCancel->onMouseClick((ActionHandler)&ListLoadOriginalState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ListLoadOriginalState::btnCancelClick, Options::keyCancel);
 
@@ -105,11 +106,11 @@ ListLoadOriginalState::ListLoadOriginalState()
 
 	_txtDate->setText(tr("STR_DATE"));
 
-	std::wstring dots(80, '.');
+	std::string dots(80, '.');
 	SaveConverter::getList(_game->getLanguage(), _saves);
 	for (int i = 0; i < SaveConverter::NUM_SAVES; ++i)
 	{
-		std::wstringstream ss;
+		std::ostringstream ss;
 		ss << (i + 1);
 		_btnSlot[i]->setText(ss.str());
 		_btnSlot[i]->onMouseClick((ActionHandler)&ListLoadOriginalState::btnSlotClick);
@@ -126,6 +127,19 @@ ListLoadOriginalState::ListLoadOriginalState()
 ListLoadOriginalState::~ListLoadOriginalState()
 {
 
+}
+
+/**
+* Refreshes the saves list.
+*/
+void ListLoadOriginalState::init()
+{
+	State::init();
+
+	if (_origin == OPT_BATTLESCAPE)
+	{
+		applyBattlescapeTheme("saveMenus");
+	}
 }
 
 /**
@@ -167,13 +181,16 @@ void ListLoadOriginalState::btnSlotClick(Action *action)
 	{
 		if (_saves[n].tactical)
 		{
-			std::wostringstream error;
-			error << tr("STR_LOAD_UNSUCCESSFUL") << L'\x02' << L"Battlescape saves aren't supported yet.";
+			std::ostringstream error;
+			error << tr("STR_LOAD_UNSUCCESSFUL") << Unicode::TOK_NL_SMALL << "Battlescape saves aren't supported.";
 			_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getMod()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getMod()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
 
 		}
 		else
 		{
+			// Reset touch flags
+			_game->resetTouchButtonFlags();
+
 			SaveConverter converter(_saves[n].id, _game->getMod());
 			_game->setSavedGame(converter.loadOriginal());
 			Options::baseXResolution = Options::baseXGeoscape;

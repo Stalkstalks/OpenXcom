@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BATTLESCAPEMESSAGE_H
-#define OPENXCOM_BATTLESCAPEMESSAGE_H
-
 #include <string>
 #include "../Engine/Surface.h"
 
@@ -44,25 +42,23 @@ public:
 	/// Cleans up the Battlescape message.
 	~BattlescapeMessage();
 	/// Sets the X position of the surface.
-	void setX(int x);
+	void setX(int x) override;
 	/// Sets the Y position of the surface.
-	void setY(int y);
+	void setY(int y) override;
 	/// Sets the Battlescape message's background.
 	void setBackground(Surface *background);
 	/// Sets the Battlescape message's text.
-	void setText(const std::wstring &message);
+	void setText(const std::string &message);
 	/// Initializes the Battlescape message's resources.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the Battlescape message's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Blits the warning message.
-	void blit(Surface *surface);
+	void blit(SDL_Surface *surface) override;
 	/// Special handling for setting the height of the battlescape message.
-	void setHeight(int height);
+	void setHeight(int height) override;
 	/// Sets the text color of the battlescape message.
 	void setTextColor(Uint8 color);
 };
 
 }
-
-#endif

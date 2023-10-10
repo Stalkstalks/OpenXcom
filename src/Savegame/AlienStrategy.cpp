@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,11 +21,10 @@
 #include "WeightedOptions.h"
 #include "../Mod/Mod.h"
 #include "../Mod/RuleRegion.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
-
-typedef std::map<std::string, WeightedOptions*> MissionsByRegion;
 
 /**
  * Create an AlienStrategy with no values.
@@ -42,9 +41,9 @@ AlienStrategy::AlienStrategy()
 AlienStrategy::~AlienStrategy()
 {
 	// Free allocated memory.
-	for (MissionsByRegion::iterator ii = _regionMissions.begin(); ii != _regionMissions.end(); ++ii)
+	for (auto& pair : _regionMissions)
 	{
-		delete ii->second;
+		delete pair.second;
 	}
 }
 
@@ -54,13 +53,12 @@ AlienStrategy::~AlienStrategy()
  */
 void AlienStrategy::init(const Mod *mod)
 {
-	std::vector<std::string> regions = mod->getRegionsList();
-	for (std::vector<std::string>::const_iterator rr = regions.begin(); rr != regions.end(); ++rr)
+	for (const auto& regionName : mod->getRegionsList())
 	{
-		RuleRegion *region = mod->getRegion(*rr);
-		_regionChances.set(*rr, region->getWeight());
+		RuleRegion *region = mod->getRegion(regionName, true);
+		_regionChances.set(regionName, region->getWeight());
 		WeightedOptions *missions = new WeightedOptions(region->getAvailableMissions());
-		_regionMissions.insert(std::make_pair(*rr, missions));
+		_regionMissions.insert(std::make_pair(regionName, missions));
 	}
 }
 
@@ -68,12 +66,12 @@ void AlienStrategy::init(const Mod *mod)
  * Loads the data from a YAML file.
  * @param node YAML node.
  */
-void AlienStrategy::load(const YAML::Node &node)
+void AlienStrategy::load(const YAML::Node &node, const Mod* mod)
 {
 	// Free allocated memory.
-	for (MissionsByRegion::iterator ii = _regionMissions.begin(); ii != _regionMissions.end(); ++ii)
+	for (auto& pair : _regionMissions)
 	{
-		delete ii->second;
+		delete pair.second;
 	}
 	_regionMissions.clear();
 	_regionChances.clear();
@@ -82,13 +80,21 @@ void AlienStrategy::load(const YAML::Node &node)
 	for (YAML::const_iterator nn = strat.begin(); nn != strat.end(); ++nn)
 	{
 		std::string region = (*nn)["region"].as<std::string>();
-		const YAML::Node &missions = (*nn)["missions"];
-		std::auto_ptr<WeightedOptions> options(new WeightedOptions());
-		options->load(missions);
-		_regionMissions.insert(std::make_pair(region, options.release()));
+		RuleRegion* regionRule = mod->getRegion(region, false);
+		if (regionRule)
+		{
+			const YAML::Node& missions = (*nn)["missions"];
+			WeightedOptions* options = new WeightedOptions();
+			options->load(missions);
+			_regionMissions.insert(std::make_pair(region, options));
+		}
+		else
+		{
+			Log(LOG_WARNING) << "Corrupted save: Alien strategy contains an invalid region: " << region << ", skipping...";
+		}
 	}
-	_missionLocations = node["missionLocations"].as<std::map<std::string, std::vector<std::pair<std::string, int> > > >(_missionLocations);
-	_missionRuns = node["missionsRun"].as<std::map<std::string, int> >(_missionRuns);
+	_missionLocations = node["missionLocations"].as< std::map<std::string, std::vector<std::pair<std::string, int> > > >(_missionLocations);
+	_missionRuns = node["missionsRun"].as< std::map<std::string, int> >(_missionRuns);
 }
 
 /**
@@ -99,11 +105,11 @@ YAML::Node AlienStrategy::save() const
 {
 	YAML::Node node;
 	node["regions"] = _regionChances.save();
-	for (MissionsByRegion::const_iterator ii = _regionMissions.begin(); ii != _regionMissions.end(); ++ii)
+	for (auto& pair : _regionMissions)
 	{
 		YAML::Node subnode;
-		subnode["region"] = ii->first;
-		subnode["missions"] = ii->second->save();
+		subnode["region"] = pair.first;
+		subnode["missions"] = pair.second->save();
 		node["possibleMissions"].push_back(subnode);
 	}
 	node["missionLocations"] = _missionLocations;
@@ -123,9 +129,9 @@ std::string AlienStrategy::chooseRandomRegion(const Mod *mod)
 	{
 		// no more missions to choose from: refresh.
 		// First, free allocated memory.
-		for (MissionsByRegion::iterator ii = _regionMissions.begin(); ii != _regionMissions.end(); ++ii)
+		for (auto& pair : _regionMissions)
 		{
-			delete ii->second;
+			delete pair.second;
 		}
 		_regionMissions.clear();
 		// re-initialize the list
@@ -144,7 +150,7 @@ std::string AlienStrategy::chooseRandomRegion(const Mod *mod)
  */
 std::string AlienStrategy::chooseRandomMission(const std::string &region) const
 {
-	MissionsByRegion::const_iterator found = _regionMissions.find(region);
+	auto found = _regionMissions.find(region);
 	assert(found != _regionMissions.end());
 	return found->second->choose();
 }
@@ -157,7 +163,7 @@ std::string AlienStrategy::chooseRandomMission(const std::string &region) const
  */
 bool AlienStrategy::removeMission(const std::string &region, const std::string &mission)
 {
-	MissionsByRegion::iterator found = _regionMissions.find(region);
+	auto found = _regionMissions.find(region);
 	if (found != _regionMissions.end())
 	{
 		found->second->set(mission, 0);
@@ -185,12 +191,13 @@ int AlienStrategy::getMissionsRun(const std::string &varName)
 /**
  * Increments the number of missions run labelled as "varName".
  * @param varName the variable name that we want to use to keep track of this.
+ * @param increment the value to increment by.
  */
-void AlienStrategy::addMissionRun(const std::string &varName)
+void AlienStrategy::addMissionRun(const std::string &varName, int increment)
 {
-	if (varName == "")
+	if (varName.empty())
 		return;
-	_missionRuns[varName]++;
+	_missionRuns[varName] += increment;
 }
 
 /**
@@ -221,16 +228,15 @@ bool AlienStrategy::validMissionLocation(const std::string &varName, const std::
 {
 	if (_missionLocations.find(varName) != _missionLocations.end())
 	{
-		for (std::vector<std::pair<std::string, int> >::const_iterator i = _missionLocations[varName].begin();
-			i != _missionLocations[varName].end();
-			++i)
+		for (const auto& pair : _missionLocations[varName])
 		{
-			if ((*i).first == regionName && (*i).second == zoneNumber)
+			if (pair.first == regionName && pair.second == zoneNumber)
 				return false;
 		}
 	}
 	return true;
 }
+
 /**
  * Checks that a given region appears in our strategy table.
  * @param region the region we want to check for validity.
@@ -238,7 +244,8 @@ bool AlienStrategy::validMissionLocation(const std::string &varName, const std::
  */
 bool AlienStrategy::validMissionRegion(const std::string &region)
 {
-	std::map<std::string, WeightedOptions*>::iterator i = _regionMissions.find(region);
-	return (i != _regionMissions.end());
+	auto search = _regionMissions.find(region);
+	return (search != _regionMissions.end());
 }
+
 }

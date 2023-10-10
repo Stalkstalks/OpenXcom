@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "ErrorMessageState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Palette.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -32,29 +31,15 @@ namespace OpenXcom
 /**
  * Initializes all the elements in an error window.
  * @param game Pointer to the core game.
- * @param id Language ID for the message to display.
- * @param palette Parent state palette.
- * @param color Color of the UI controls.
- * @param bg Background image.
- * @param bgColor Background color (-1 for Battlescape).
- */
-ErrorMessageState::ErrorMessageState(const std::string &id, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor)
-{
-	create(id, L"", palette, color, bg, bgColor);
-}
-
-/**
- * Initializes all the elements in an error window.
- * @param game Pointer to the core game.
  * @param msg Text string for the message to display.
  * @param palette Parent state palette.
  * @param color Color of the UI controls.
  * @param bg Background image.
  * @param bgColor Background color (-1 for Battlescape).
  */
-ErrorMessageState::ErrorMessageState(const std::wstring &msg, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor)
+ErrorMessageState::ErrorMessageState(const std::string &msg, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor)
 {
-	create("", msg, palette, color, bg, bgColor);
+	create(msg, palette, color, bg, bgColor);
 }
 
 /**
@@ -67,14 +52,13 @@ ErrorMessageState::~ErrorMessageState()
 
 /**
  * Creates the elements in an error window.
- * @param msg Language ID for the message to display.
- * @param wmsg Text string for the message to display.
+ * @param str Text string for the message to display.
  * @param palette Parent state palette.
  * @param color Color of the UI controls.
  * @param bg Background image.
  * @param bgColor Background color (-1 for Battlescape).
  */
-void ErrorMessageState::create(const std::string &str, const std::wstring &wstr, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor)
+void ErrorMessageState::create(const std::string &str, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor)
 {
 	_screen = false;
 
@@ -84,9 +68,9 @@ void ErrorMessageState::create(const std::string &str, const std::wstring &wstr,
 	_txtMessage = new Text(246, 80, 37, 50);
 
 	// Set palette
-	setPalette(palette);
+	setStatePalette(palette);
 	if (bgColor != -1)
-		setPalette(_game->getMod()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(bgColor)), Palette::backPos, 16);
+		setStatePalette(_game->getMod()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(bgColor)), Palette::backPos, 16);
 
 	add(_window);
 	add(_btnOk);
@@ -109,10 +93,7 @@ void ErrorMessageState::create(const std::string &str, const std::wstring &wstr,
 	_txtMessage->setVerticalAlign(ALIGN_MIDDLE);
 	_txtMessage->setBig();
 	_txtMessage->setWordWrap(true);
-	if (str.empty())
-		_txtMessage->setText(wstr);
-	else
-		_txtMessage->setText(tr(str));
+	_txtMessage->setText(str);
 
 	if (bgColor == -1)
 	{

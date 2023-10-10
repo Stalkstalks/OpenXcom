@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -23,13 +23,13 @@
 #include "VideoState.h"
 #include "../Engine/CrossPlatform.h"
 #include "../Engine/Game.h"
-#include "../Engine/Language.h"
 #include "../Engine/Logger.h"
 #include "../Engine/Options.h"
 #include "../Engine/Screen.h"
-#include "../Savegame/SavedGame.h"
 #include "../Engine/FileMap.h"
 #include "../Mod/Mod.h"
+#include "../Savegame/SavedGame.h"
+#include "StatisticsState.h"
 
 namespace OpenXcom
 {
@@ -48,48 +48,37 @@ CutsceneState::~CutsceneState()
 void CutsceneState::init()
 {
 	State::init();
-	
+
 	// pop self off stack and replace with actual player state
 	_game->popState();
 
-	const std::map<std::string, RuleVideo*> *videoMods = _game->getMod()->getVideos();
-	std::map<std::string, RuleVideo*>::const_iterator videoRuleIt = videoMods->find(_cutsceneId);
-
-	if (videoRuleIt == videoMods->end())
+	const RuleVideo *videoRule = _game->getMod()->getVideo(_cutsceneId, true);
+	if (_game->getSavedGame() && _game->getSavedGame()->getEnding() != END_NONE)
 	{
-		Log(LOG_WARNING) << "cutscene definition not found: " << _cutsceneId;
-		return;
-	}
-
-	if (_cutsceneId == "winGame" || _cutsceneId == "loseGame")
-	{
-		if (_game->getSavedGame() && _game->getSavedGame()->isIronman()
-		    && !_game->getSavedGame()->getName().empty())
+		if (_game->getSavedGame()->getMonthsPassed() > -1)
 		{
-			std::string filename = CrossPlatform::sanitizeFilename(
-				Language::wstrToFs(_game->getSavedGame()->getName())) + ".sav";
-			CrossPlatform::deleteFile(Options::getMasterUserFolder() + filename);
+			_game->setState(new StatisticsState);
 		}
-		_game->setSavedGame(0);
-		_game->setState(new GoToMainMenuState);
+		else
+		{
+			_game->setSavedGame(0);
+			_game->setState(new GoToMainMenuState);
+		}
 	}
 
-	const RuleVideo *videoRule = videoRuleIt->second;
 	bool fmv = false, slide = false;
 	if (!videoRule->getVideos()->empty())
 	{
-		std::string file = FileMap::getFilePath(videoRule->getVideos()->front());
-		fmv = CrossPlatform::fileExists(file);
+		fmv = FileMap::fileExists(videoRule->getVideos()->front());
 	}
 	if (!videoRule->getSlides()->empty())
 	{
-		std::string file = FileMap::getFilePath(videoRule->getSlides()->front().imagePath);
-		slide = CrossPlatform::fileExists(file);
+		slide = FileMap::fileExists(videoRule->getSlides()->front().imagePath);
 	}
 
 	if (fmv && (!slide || Options::preferredVideo == VIDEO_FMV))
 	{
-		_game->pushState(new VideoState(videoRule->getVideos(), videoRule->useUfoAudioSequence()));
+		_game->pushState(new VideoState(videoRule->getVideos(), videoRule->getAudioTracks(), videoRule->useUfoAudioSequence()));
 	}
 	else if (slide && (!fmv || Options::preferredVideo == VIDEO_SLIDE))
 	{
@@ -114,7 +103,8 @@ bool CutsceneState::initDisplay()
 void CutsceneState::resetDisplay(bool wasLetterboxed)
 {
 	Options::keepAspectRatio = wasLetterboxed;
-	Screen::updateScale(Options::geoscapeScale, Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
+	Screen::updateScale(Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
 	_game->getScreen()->resetDisplay(false);
 }
+
 }

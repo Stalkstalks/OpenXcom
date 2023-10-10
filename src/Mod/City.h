@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CITY_H
-#define OPENXCOM_CITY_H
-
 #include <string>
 #include "../Savegame/Target.h"
 
@@ -34,18 +32,17 @@ class Language;
 class City : public Target
 {
 private:
-	std::string _name;
+	/// Gets the city's type (unused).
+	std::string getType() const  override { return ""; }
 public:
 	/// Creates a new city at a certain position.
 	City(const std::string &name, double lon, double lat);
 	/// Cleans up the city.
 	~City();
 	/// Gets the city's name.
-	std::wstring getName(Language *lang) const;
+	std::string getName(Language *lang) const override;
 	/// Gets the city's marker.
-	int getMarker() const;
+	int getMarker() const override;
 };
 
 }
-
-#endif

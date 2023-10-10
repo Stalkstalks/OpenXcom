@@ -1,9 +1,11 @@
+include(GNUInstallDirs)
+
 find_program ( DOXYGEN_EXECUTABLE
   NAMES doxygen
   DOC "Doxygen program" )
 
 if ( NOT ( DOXYGEN_EXECUTABLE MATCHES "NOTFOUND" ) )
-  message ( "Found doxygen:${DOXYGEN_EXECUTABLE}" )
+  message ( STATUS "doxygen: ${DOXYGEN_EXECUTABLE}" )
   set ( top_srcdir "${CMAKE_SOURCE_DIR}" )
   configure_file (
 	    "${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in"
@@ -33,5 +35,10 @@ if ( NOT ( DOXYGEN_EXECUTABLE MATCHES "NOTFOUND" ) )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating doxygen documentation" )
 else ()
-  message ( "No doxygen command found. Disable API documentation generation" )
+  message ( WARNING "Doxygen not found. API documentation generation disabled." )
+endif ()
+
+# Only useful for make install/package under *nix OSes, but not macOS.
+if ( UNIX AND NOT APPLE )
+    INSTALL(FILES openxcom.6 DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
 endif ()

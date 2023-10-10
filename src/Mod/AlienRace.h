@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ALIENRACE_H
-#define OPENXCOM_ALIENRACE_H
-
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
+#include "../Savegame/WeightedOptions.h"
 
 enum AlienRank{AR_HUMAN = -1, AR_COMMANDER, AR_LEADER, AR_ENGINEER, AR_MEDIC, AR_NAVIGATOR, AR_SOLDIER, AR_TERRORIST, AR_TERRORIST2};
 
@@ -38,9 +37,9 @@ private:
 	std::string _id;
 	std::string _baseCustomDeploy;
 	std::string _baseCustomMission;
-	std::string _retaliationMission;
+	std::vector<std::pair<size_t, WeightedOptions*> > _retaliationMissionDistribution;
 	std::vector<std::string> _members;
-	bool _retaliation;
+	std::vector< std::vector<std::string> > _membersRandom;
 	int _retaliationAggression;
 public:
 	/// Creates a blank alien race ruleset.
@@ -57,14 +56,12 @@ public:
 	const std::string &getBaseCustomMission() const;
 	/// Gets a certain member of this alien race family.
 	const std::string &getMember(int id) const;
-	/// Gets what mission is created after destroying ufo.
-	const std::string &getRetaliationMission() const;
+	/// Gets the total number of members of this alien race family.
+	int getMembers() const;
 	/// Gets how aggressive alien are to spawn retaliation mission after destroying ufo.
 	int getRetaliationAggression() const;
-	/// Gets if the race can retaliate.
-	bool canRetaliate() const;
+	/// Returns a list of retaliation missions based on the given month.
+	WeightedOptions* retaliationMissionWeights(const size_t monthsPassed) const;
 };
 
 }
-
-#endif

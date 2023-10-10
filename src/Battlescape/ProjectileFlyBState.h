@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PROJECTILEFLYBSTATE_H
-#define OPENXCOM_PROJECTILEFLYBSTATE_H
-
 #include "BattleState.h"
 #include "Position.h"
 
@@ -38,7 +36,6 @@ class ProjectileFlyBState : public BattleState
 private:
 	BattleUnit *_unit;
 	BattleItem *_ammo;
-	BattleItem *_projectileItem;
 	Position _origin, _targetVoxel, _originVoxel;
 	int _projectileImpact;
 	int _range;
@@ -52,22 +49,21 @@ public:
 	/// Cleans up the ProjectileFly.
 	~ProjectileFlyBState();
 	/// Initializes the state.
-	void init();
+	void init() override;
 	/// Handles a cancel request.
-	void cancel();
+	void cancel() override;
 	/// Runs state functionality every cycle.
-	void think();
+	void think() override;
 	/// Validates the throwing range.
-	static bool validThrowRange(BattleAction *action, Position origin, Tile *target);
+	static bool validThrowRange(BattleAction *action, Position origin, Tile *target, int depth);
 	/// Calculates the maximum throwing range.
 	static int getMaxThrowDistance(int weight, int strength, int level);
 	/// Set the origin voxel, used for the blaster launcher.
-	void setOriginVoxel(Position pos);
+	void setOriginVoxel(const Position& pos);
 	/// Set the boolean flag to angle a blaster bomb towards the floor.
 	void targetFloor();
+	void projectileHitUnit(Position pos);
 
 };
 
 }
-
-#endif

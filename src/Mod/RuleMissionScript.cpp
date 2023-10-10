@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,17 +18,21 @@
  */
 #include "RuleMissionScript.h"
 #include "../Engine/Exception.h"
+#include "../Engine/RNG.h"
+#include <climits>
 
 namespace OpenXcom
 {
 
 /**
  * RuleMissionScript: the rules for the alien mission progression.
- * Each script element is independant, and the saved game will probe the list of these each month to determine what's going to happen.
+ * Each script element is independent, and the saved game will probe the list of these each month to determine what's going to happen.
  */
-RuleMissionScript::RuleMissionScript(const std::string &type) : _type(type), _firstMonth(0), _lastMonth(-1), _label(0), _executionOdds(100),
-															_targetBaseOdds(0), _minDifficulty(0), _maxRuns(-1), _avoidRepeats(0), _delay(0),
-															_useTable(true), _siteType(false)
+RuleMissionScript::RuleMissionScript(const std::string &type) :
+	_type(type), _firstMonth(0), _lastMonth(-1), _label(0), _executionOdds(100),
+	_targetBaseOdds(0), _minDifficulty(0), _maxRuns(-1), _avoidRepeats(0), _delay(0), _randomDelay(0),
+	_minScore(INT_MIN), _maxScore(INT_MAX), _minFunds(INT64_MIN), _maxFunds(INT64_MAX),
+	_useTable(true), _siteType(false)
 {
 }
 
@@ -37,17 +41,17 @@ RuleMissionScript::RuleMissionScript(const std::string &type) : _type(type), _fi
  */
 RuleMissionScript::~RuleMissionScript()
 {
-	for (std::vector<std::pair<size_t, WeightedOptions*> >::iterator i = _missionWeights.begin(); i != _missionWeights.end(); ++i)
+	for (auto& pair : _missionWeights)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector<std::pair<size_t, WeightedOptions*> >::iterator i = _raceWeights.begin(); i != _raceWeights.end(); ++i)
+	for (auto& pair : _raceWeights)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector<std::pair<size_t, WeightedOptions*> >::iterator i = _regionWeights.begin(); i != _regionWeights.end(); ++i)
+	for (auto& pair : _regionWeights)
 	{
-		delete i->second;
+		delete pair.second;
 	}
 }
 
@@ -61,6 +65,7 @@ void RuleMissionScript::load(const YAML::Node& node)
 	{
 		load(parent);
 	}
+
 	_varName = node["varName"].as<std::string>(_varName);
 	_firstMonth = node["firstMonth"].as<int>(_firstMonth);
 	_lastMonth = node["lastMonth"].as<int>(_lastMonth);
@@ -71,6 +76,15 @@ void RuleMissionScript::load(const YAML::Node& node)
 	_maxRuns = node["maxRuns"].as<int>(_maxRuns);
 	_avoidRepeats = node["avoidRepeats"].as<int>(_avoidRepeats);
 	_delay = node["startDelay"].as<int>(_delay);
+	_randomDelay = node["randomDelay"].as<int>(_randomDelay);
+	_minScore = node["minScore"].as<int>(_minScore);
+	_maxScore = node["maxScore"].as<int>(_maxScore);
+	_minFunds = node["minFunds"].as<int64_t>(_minFunds);
+	_maxFunds = node["maxFunds"].as<int64_t>(_maxFunds);
+	_missionVarName = node["missionVarName"].as<std::string>(_missionVarName);
+	_missionMarkerName = node["missionMarkerName"].as<std::string>(_missionMarkerName);
+	_counterMin = node["counterMin"].as<int>(_counterMin);
+	_counterMax = node["counterMax"].as<int>(_counterMax);
 	_conditionals = node["conditionals"].as<std::vector<int> >(_conditionals);
 	if (const YAML::Node &weights = node["missionWeights"])
 	{
@@ -100,8 +114,12 @@ void RuleMissionScript::load(const YAML::Node& node)
 		}
 	}
 	_researchTriggers = node["researchTriggers"].as<std::map<std::string, bool> >(_researchTriggers);
+	_itemTriggers = node["itemTriggers"].as<std::map<std::string, bool> >(_itemTriggers);
+	_facilityTriggers = node["facilityTriggers"].as<std::map<std::string, bool> >(_facilityTriggers);
+	_xcomBaseInRegionTriggers = node["xcomBaseInRegionTriggers"].as<std::map<std::string, bool> >(_xcomBaseInRegionTriggers);
+	_xcomBaseInCountryTriggers = node["xcomBaseInCountryTriggers"].as<std::map<std::string, bool> >(_xcomBaseInCountryTriggers);
 	_useTable = node["useTable"].as<bool>(_useTable);
-	if (_varName == "" && (_maxRuns > 0 || _avoidRepeats > 0))
+	if (_varName.empty() && (_maxRuns > 0 || _avoidRepeats > 0))
 	{
 		throw Exception("Error in mission script: " + _type +": no varName provided for a script with maxRuns or repeatAvoidance.");
 	}
@@ -112,7 +130,7 @@ void RuleMissionScript::load(const YAML::Node& node)
  * Gets the name of this command.
  * @return the name of the command.
  */
-std::string RuleMissionScript::getType() const
+const std::string& RuleMissionScript::getType() const
 {
 	return _type;
 }
@@ -182,11 +200,14 @@ int RuleMissionScript::getRepeatAvoidance() const
 }
 
 /**
- * @return the fixed delay on spawning the first wave (if any) to override whatever's written in the mission definition.
+ * @return the fixed (or randomized) delay on spawning the first wave (if any) to override whatever's written in the mission definition.
  */
 int RuleMissionScript::getDelay() const
 {
-	return _delay;
+	if (_randomDelay == 0)
+		return _delay;
+	else
+		return _delay + RNG::generate(0, _randomDelay);
 }
 
 /**
@@ -230,6 +251,38 @@ const std::map<std::string, bool> &RuleMissionScript::getResearchTriggers() cons
 }
 
 /**
+ * @return a list of item triggers that govern execution of this script.
+ */
+const std::map<std::string, bool> &RuleMissionScript::getItemTriggers() const
+{
+	return _itemTriggers;
+}
+
+/**
+ * @return a list of facility triggers that govern execution of this script.
+ */
+const std::map<std::string, bool> &RuleMissionScript::getFacilityTriggers() const
+{
+	return _facilityTriggers;
+}
+
+/**
+ * @return a list of xcom base triggers that govern execution of this script.
+ */
+const std::map<std::string, bool> &RuleMissionScript::getXcomBaseInRegionTriggers() const
+{
+	return _xcomBaseInRegionTriggers;
+}
+
+/**
+ * @return a list of xcom base triggers that govern execution of this script.
+ */
+const std::map<std::string, bool> &RuleMissionScript::getXcomBaseInCountryTriggers() const
+{
+	return _xcomBaseInCountryTriggers;
+}
+
+/**
  * @return if this command should remove the mission it generates from the strategy table.
  */
 bool RuleMissionScript::getUseTable() const
@@ -251,12 +304,12 @@ std::string RuleMissionScript::getVarName() const
 std::set<std::string> RuleMissionScript::getAllMissionTypes() const
 {
 	std::set<std::string> types;
-	for (std::vector<std::pair<size_t, WeightedOptions*> >::const_iterator i = _missionWeights.begin(); i != _missionWeights.end(); ++i)
+	for (auto& pair : _missionWeights)
 	{
-		std::vector<std::string> names = (*i).second->getNames();
-		for (std::vector<std::string>::const_iterator j = names.begin(); j != names.end(); ++j)
+		std::vector<std::string> names = pair.second->getNames();
+		for (const auto& name : names)
 		{
-			types.insert(*j);
+			types.insert(name);
 		}
 	}
 	return types;
@@ -280,9 +333,9 @@ std::vector<std::string> RuleMissionScript::getMissionTypes(const int month) con
 		}
 	}
 	std::vector<std::string> names = rw->second->getNames();
-	for (std::vector<std::string>::const_iterator i = names.begin(); i != names.end(); ++i)
+	for (const auto& name : names)
 	{
-		missions.push_back(*i);
+		missions.push_back(name);
 	}
 	return missions;
 }
@@ -305,9 +358,9 @@ std::vector<std::string> RuleMissionScript::getRegions(const int month) const
 		}
 	}
 	std::vector<std::string> names = rw->second->getNames();
-	for (std::vector<std::string>::const_iterator i = names.begin(); i != names.end(); ++i)
+	for (const auto& name : names)
 	{
-		regions.push_back(*i);
+		regions.push_back(name);
 	}
 	return regions;
 }

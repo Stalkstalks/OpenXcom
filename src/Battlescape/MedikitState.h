@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MEDIKITSTATE_H
-#define OPENXCOM_MEDIKITSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -59,8 +57,6 @@ public:
 	/// Creates the MedikitState.
 	MedikitState(BattleUnit *targetUnit, BattleAction *action, TileEngine *tile);
 	/// Handler for right-clicking anything.
-	void handle(Action *action);
+	void handle(Action *action) override;
 };
 }
-
-#endif

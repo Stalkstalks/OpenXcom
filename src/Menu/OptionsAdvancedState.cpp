@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,6 +20,7 @@
 #include <sstream>
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
+#include "../Mod/RuleInterface.h"
 #include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -42,13 +43,28 @@ OptionsAdvancedState::OptionsAdvancedState(OptionsOrigin origin) : OptionsBaseSt
 
 	// Create objects
 	_lstOptions = new TextList(200, 136, 94, 8);
-	
+
+	_isTFTD = false;
+	for (const auto& pair : Options::mods)
+	{
+		if (pair.second)
+		{
+			if (pair.first == "xcom2")
+			{
+				_isTFTD = true;
+				break;
+			}
+		}
+	}
+
 	if (origin != OPT_BATTLESCAPE)
 	{
+		_greyedOutColor = _game->getMod()->getInterface("advancedMenu")->getElement("disabledUserOption")->color;
 		add(_lstOptions, "optionLists", "advancedMenu");
 	}
 	else
 	{
+		_greyedOutColor = _game->getMod()->getInterface("battlescape")->getElement("disabledUserOption")->color;
 		add(_lstOptions, "optionLists", "battlescape");
 	}
 	centerAllSurfaces();
@@ -76,22 +92,29 @@ OptionsAdvancedState::OptionsAdvancedState(OptionsOrigin origin) : OptionsBaseSt
 
 	_colorGroup = _lstOptions->getSecondaryColor();
 
-	const std::vector<OptionInfo> &options = Options::getOptionInfo();
-	for (std::vector<OptionInfo>::const_iterator i = options.begin(); i != options.end(); ++i)
+	for (const auto& optionInfo : Options::getOptionInfo())
 	{
-		if (i->type() != OPTION_KEY && !i->description().empty())
+		if (optionInfo.type() != OPTION_KEY && !optionInfo.description().empty())
 		{
-			if (i->category() == "STR_GENERAL")
+			if (optionInfo.category() == "STR_GENERAL")
 			{
-				_settingsGeneral.push_back(*i);
+				_settingsGeneral.push_back(optionInfo);
 			}
-			else if (i->category() == "STR_GEOSCAPE")
+			else if (optionInfo.category() == "STR_GEOSCAPE")
 			{
-				_settingsGeo.push_back(*i);
+				_settingsGeo.push_back(optionInfo);
 			}
-			else if (i->category() == "STR_BATTLESCAPE")
+			else if (optionInfo.category() == "STR_BATTLESCAPE")
 			{
-				_settingsBattle.push_back(*i);
+				_settingsBattle.push_back(optionInfo);
+			}
+			else if (optionInfo.category() == "STR_AI")
+			{
+				_settingsAI.push_back(optionInfo);
+			}
+			else if (optionInfo.category() == "STR_OXCE")
+			{
+				_settingsOxce.push_back(optionInfo);
 			}
 		}
 	}
@@ -102,7 +125,7 @@ OptionsAdvancedState::OptionsAdvancedState(OptionsOrigin origin) : OptionsBaseSt
  */
 OptionsAdvancedState::~OptionsAdvancedState()
 {
-	
+
 }
 
 /**
@@ -112,17 +135,25 @@ void OptionsAdvancedState::init()
 {
 	OptionsBaseState::init();
 	_lstOptions->clearList();
-	_lstOptions->addRow(2, tr("STR_GENERAL").c_str(), L"");
+	_lstOptions->addRow(2, tr("STR_GENERAL").c_str(), "");
 	_lstOptions->setCellColor(0, 0, _colorGroup);
 	addSettings(_settingsGeneral);
-	_lstOptions->addRow(2, L"", L"");
-	_lstOptions->addRow(2, tr("STR_GEOSCAPE").c_str(), L"");
+	_lstOptions->addRow(2, "", "");
+	_lstOptions->addRow(2, tr("STR_GEOSCAPE").c_str(), "");
 	_lstOptions->setCellColor(_settingsGeneral.size() + 2, 0, _colorGroup);
 	addSettings(_settingsGeo);
-	_lstOptions->addRow(2, L"", L"");
-	_lstOptions->addRow(2, tr("STR_BATTLESCAPE").c_str(), L"");
+	_lstOptions->addRow(2, "", "");
+	_lstOptions->addRow(2, tr("STR_BATTLESCAPE").c_str(), "");
 	_lstOptions->setCellColor(_settingsGeneral.size() + 2 + _settingsGeo.size() + 2, 0, _colorGroup);
 	addSettings(_settingsBattle);
+	_lstOptions->addRow(2, "", "");
+	_lstOptions->addRow(2, tr("STR_AI").c_str(), "");
+	_lstOptions->setCellColor(_settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2, 0, _colorGroup);
+	addSettings(_settingsAI);
+	_lstOptions->addRow(2, "", "");
+	_lstOptions->addRow(2, tr("STR_OXCE").c_str(), "");
+	_lstOptions->setCellColor(_settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2 + _settingsAI.size() + 2, 0, _colorGroup);
+	addSettings(_settingsOxce);
 }
 
 /**
@@ -131,21 +162,28 @@ void OptionsAdvancedState::init()
  */
 void OptionsAdvancedState::addSettings(const std::vector<OptionInfo> &settings)
 {
-	for (std::vector<OptionInfo>::const_iterator i = settings.begin(); i != settings.end(); ++i)
+	auto& fixeduserOptions = _game->getMod()->getFixedUserOptions();
+	for (const auto& optionInfo : settings)
 	{
-		std::wstring name = tr(i->description());
-		std::wstring value;
-		if (i->type() == OPTION_BOOL)
+		std::string name = tr(optionInfo.description());
+		std::string value;
+		if (optionInfo.type() == OPTION_BOOL)
 		{
-			value = *i->asBool() ? tr("STR_YES") : tr("STR_NO");
+			value = *optionInfo.asBool() ? tr("STR_YES") : tr("STR_NO");
 		}
-		else if (i->type() == OPTION_INT)
+		else if (optionInfo.type() == OPTION_INT)
 		{
-			std::wostringstream ss;
-			ss << *i->asInt();
+			std::ostringstream ss;
+			ss << *optionInfo.asInt();
 			value = ss.str();
 		}
 		_lstOptions->addRow(2, name.c_str(), value.c_str());
+		// grey out fixed options
+		auto search = fixeduserOptions.find(optionInfo.id());
+		if (search != fixeduserOptions.end())
+		{
+			_lstOptions->setRowColor(_lstOptions->getLastRowIndex(), _greyedOutColor);
+		}
 	}
 }
 
@@ -171,6 +209,16 @@ OptionInfo *OptionsAdvancedState::getSetting(size_t sel)
 	{
 		return &_settingsBattle[sel - 1 - _settingsGeneral.size() - 2 - _settingsGeo.size() - 2];
 	}
+	else if (sel > _settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2 &&
+			 sel <= _settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2 + _settingsAI.size())
+	{
+		return &_settingsAI[sel - 1 - _settingsGeneral.size() - 2 - _settingsGeo.size() - 2 - _settingsBattle.size() - 2];
+	}
+	else if (sel > _settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2 + _settingsAI.size() + 2 &&
+		sel <= _settingsGeneral.size() + 2 + _settingsGeo.size() + 2 + _settingsBattle.size() + 2 + _settingsAI.size() + 2 + _settingsOxce.size())
+	{
+		return &_settingsOxce[sel - 1 - _settingsGeneral.size() - 2 - _settingsGeo.size() - 2 - _settingsBattle.size() - 2 - _settingsAI.size() - 2];
+	}
 	else
 	{
 		return 0;
@@ -192,34 +240,66 @@ void OptionsAdvancedState::lstOptionsClick(Action *action)
 	OptionInfo *setting = getSetting(sel);
 	if (!setting) return;
 
-	std::wstring settingText;
+	// greyed out options are fixed, cannot be changed by the user
+	auto& fixeduserOptions = _game->getMod()->getFixedUserOptions();
+	auto it = fixeduserOptions.find(setting->id());
+	if (it != fixeduserOptions.end())
+	{
+		return;
+	}
+
+	std::string settingText;
 	if (setting->type() == OPTION_BOOL)
 	{
 		bool *b = setting->asBool();
 		*b = !*b;
 		settingText = *b ? tr("STR_YES") : tr("STR_NO");
+		if (b == &Options::lazyLoadResources && !*b)
+		{
+			Options::reload = true; // reload when turning lazy loading off
+		}
 	}
 	else if (setting->type() == OPTION_INT) // integer variables will need special handling
 	{
 		int *i = setting->asInt();
 
 		int increment = (button == SDL_BUTTON_LEFT) ? 1 : -1; // left-click increases, right-click decreases
-		if (i == &Options::changeValueByMouseWheel || i == &Options::FPS || i == &Options::FPSInactive)
+		if (i == &Options::changeValueByMouseWheel || i == &Options::FPS || i == &Options::FPSInactive || i == &Options::oxceWoundedDefendBaseIf)
 		{
 			increment *= 10;
 		}
 		*i += increment;
 
 		int min = 0, max = 0;
-		if (i == &Options::battleExplosionHeight)
+		if (i == &Options::aiAggression)
+		{
+			min = 0;
+			max = 4;
+		}
+		else if (i == &Options::autoAggression)
+		{
+			min = 0;
+			max = 4;
+		}
+		else if(i == &Options::aiTargetMode)
+		{
+			min = 1;
+			max = 4;
+		}
+		else if (i == &Options::battleExplosionHeight)
 		{
 			min = 0;
 			max = 3;
 		}
+		else if (i == &Options::battleTerrainSquishyness)
+		{
+			min = 0;
+			max = 5;
+		}
 		else if (i == &Options::changeValueByMouseWheel)
 		{
 			min = 0;
-			max = 50;
+			max = 100;
 		}
 		else if (i == &Options::FPS)
 		{
@@ -240,6 +320,44 @@ void OptionsAdvancedState::lstOptionsClick(Action *action)
 			min = 1;
 			max = 5;
 		}
+		else if (i == &Options::autosaveSlots)
+		{
+			min = 1;
+			max = 10;
+		}
+		else if (i == &Options::oxceWoundedDefendBaseIf) {
+			min = 0;
+			max = 100;
+		}
+		else if (i == &Options::oxceAutoNightVisionThreshold) {
+			min = 0;
+			max = 15;
+		}
+		else if (i == &Options::oxceNightVisionColor)
+		{
+			// UFO: 1-15, TFTD: 2-16 except 8 and 10
+			if (_isTFTD && ((*i) == 8 || (*i) == 10))
+			{
+				*i += increment;
+			}
+			min = _isTFTD ? 2 : 1;
+			max = _isTFTD ? 16 : 15;
+		}
+		else if (i == &Options::oxceFOW)
+		{
+			min = 0;
+			max = 2;
+		}
+		else if (i == &Options::oxceFOWColor)
+		{
+			// UFO: 1-15, TFTD: 2-16 except 8 and 10
+			if (_isTFTD && ((*i) == 8 || (*i) == 10))
+			{
+				*i += increment;
+			}
+			min = _isTFTD ? 2 : 1;
+			max = _isTFTD ? 16 : 15;
+		}
 
 		if (*i < min)
 		{
@@ -250,28 +368,28 @@ void OptionsAdvancedState::lstOptionsClick(Action *action)
 			*i = min;
 		}
 
-		std::wostringstream ss;
+		std::ostringstream ss;
 		ss << *i;
 		settingText = ss.str();
 	}
-	_lstOptions->setCellText(sel, 1, settingText.c_str());
+	_lstOptions->setCellText(sel, 1, settingText);
 }
 
 void OptionsAdvancedState::lstOptionsMouseOver(Action *)
 {
 	size_t sel = _lstOptions->getSelectedRow();
 	OptionInfo *setting = getSetting(sel);
-	std::wstring desc;
+	std::string desc;
 	if (setting)
 	{
 		desc = tr(setting->description() + "_DESC");
 	}
-	_txtTooltip->setText(desc.c_str());
+	_txtTooltip->setText(desc);
 }
 
 void OptionsAdvancedState::lstOptionsMouseOut(Action *)
 {
-	_txtTooltip->setText(L"");
+	_txtTooltip->setText("");
 }
 
 }

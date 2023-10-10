@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,7 @@
  */
 #include "ResearchState.h"
 #include <sstream>
+#include "../Engine/Action.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
 #include "../Engine/LocalizedText.h"
@@ -28,9 +29,12 @@
 #include "../Interface/TextList.h"
 #include "../Savegame/Base.h"
 #include "NewResearchListState.h"
+#include "GlobalResearchState.h"
 #include "../Savegame/ResearchProject.h"
 #include "../Mod/RuleResearch.h"
 #include "ResearchInfoState.h"
+#include "TechTreeViewerState.h"
+#include <algorithm>
 
 namespace OpenXcom
 {
@@ -73,10 +77,12 @@ ResearchState::ResearchState(Base *base) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK05.SCR"));
+	setWindowBackground(_window, "researchMenu");
 
 	_btnNew->setText(tr("STR_NEW_PROJECT"));
 	_btnNew->onMouseClick((ActionHandler)&ResearchState::btnNewClick);
+	_btnNew->onKeyboardPress((ActionHandler)&ResearchState::btnNewClick, Options::keyToggleQuickSearch);
+	_btnNew->onKeyboardPress((ActionHandler)&ResearchState::onCurrentGlobalResearchClick, Options::keyGeoGlobalResearch);
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ResearchState::btnOkClick);
@@ -99,8 +105,9 @@ ResearchState::ResearchState(Base *base) : _base(base)
 	_lstResearch->setBackground(_window);
 	_lstResearch->setMargin(2);
 	_lstResearch->setWordWrap(true);
-	_lstResearch->onMouseClick((ActionHandler)&ResearchState::onSelectProject);
-	fillProjectList();
+	_lstResearch->onMouseClick((ActionHandler)&ResearchState::onSelectProject, SDL_BUTTON_LEFT);
+	_lstResearch->onMouseClick((ActionHandler)&ResearchState::onOpenTechTreeViewer, SDL_BUTTON_MIDDLE);
+	_lstResearch->onMousePress((ActionHandler)&ResearchState::lstResearchMousePress);
 }
 
 /**
@@ -125,7 +132,8 @@ void ResearchState::btnOkClick(Action *)
  */
 void ResearchState::btnNewClick(Action *)
 {
-	_game->pushState(new NewResearchListState(_base));
+	bool sortByCost = _game->isCtrlPressed() && _game->isAltPressed();
+	_game->pushState(new NewResearchListState(_base, sortByCost));
 }
 
 /**
@@ -139,33 +147,105 @@ void ResearchState::onSelectProject(Action *)
 }
 
 /**
+* Opens the TechTreeViewer for the corresponding topic.
+* @param action Pointer to an action.
+*/
+void ResearchState::onOpenTechTreeViewer(Action *)
+{
+	const std::vector<ResearchProject *> & baseProjects(_base->getResearch());
+	const RuleResearch *selectedTopic = baseProjects[_lstResearch->getSelectedRow()]->getRules();
+	_game->pushState(new TechTreeViewerState(selectedTopic, 0));
+}
+
+/**
+ * Handles the mouse-wheels.
+ * @param action Pointer to an action.
+ */
+void ResearchState::lstResearchMousePress(Action *action)
+{
+	if (!_lstResearch->isInsideNoScrollArea(action->getAbsoluteXMouse()))
+	{
+		return;
+	}
+
+	int change = Options::oxceResearchScrollSpeed;
+	if (_game->isCtrlPressed())
+		change = Options::oxceResearchScrollSpeedWithCtrl;
+
+	if (action->getDetails()->button.button == SDL_BUTTON_WHEELUP)
+	{
+		change = std::min(change, _base->getAvailableScientists());
+		change = std::min(change, _base->getFreeLaboratories());
+		if (change > 0)
+		{
+			ResearchProject *selectedProject = _base->getResearch()[_lstResearch->getSelectedRow()];
+			selectedProject->setAssigned(selectedProject->getAssigned() + change);
+			_base->setScientists(_base->getScientists() - change);
+			fillProjectList(_lstResearch->getScroll());
+		}
+	}
+	else if (action->getDetails()->button.button == SDL_BUTTON_WHEELDOWN)
+	{
+		ResearchProject *selectedProject = _base->getResearch()[_lstResearch->getSelectedRow()];
+		change = std::min(change, selectedProject->getAssigned());
+		if (change > 0)
+		{
+			selectedProject->setAssigned(selectedProject->getAssigned() - change);
+			_base->setScientists(_base->getScientists() + change);
+			fillProjectList(_lstResearch->getScroll());
+		}
+	}
+}
+
+/**
+ * Opens the Current Global Research UI.
+ * @param action Pointer to an action.
+ */
+void ResearchState::onCurrentGlobalResearchClick(Action *)
+{
+	_game->pushState(new GlobalResearchState(true));
+}
+/**
  * Updates the research list
  * after going to other screens.
  */
 void ResearchState::init()
 {
 	State::init();
-	fillProjectList();
+	fillProjectList(0);
+
+	if (Options::oxceResearchScrollSpeed > 0 || Options::oxceResearchScrollSpeedWithCtrl > 0)
+	{
+		// 175 +/- 20
+		_lstResearch->setNoScrollArea(_txtAllocated->getX() - 5, _txtAllocated->getX() + 35);
+	}
+	else
+	{
+		_lstResearch->setNoScrollArea(0, 0);
+	}
 }
 
 /**
  * Fills the list with Base ResearchProjects. Also updates count of available lab space and available/allocated scientists.
  */
-void ResearchState::fillProjectList()
+void ResearchState::fillProjectList(size_t scrl)
 {
-	const std::vector<ResearchProject *> & baseProjects(_base->getResearch());
 	_lstResearch->clearList();
-	for (std::vector<ResearchProject *>::const_iterator iter = baseProjects.begin(); iter != baseProjects.end(); ++iter)
+	for (const auto* proj : _base->getResearch())
 	{
-		std::wostringstream sstr;
-		sstr << (*iter)->getAssigned();
-		const RuleResearch *r = (*iter)->getRules();
+		std::ostringstream sstr;
+		sstr << proj->getAssigned();
+		const RuleResearch *r = proj->getRules();
 
-		std::wstring wstr = tr(r->getName());
-		_lstResearch->addRow(3, wstr.c_str(), sstr.str().c_str(), tr((*iter)->getResearchProgress()).c_str());
+		std::string wstr = tr(r->getName());
+		_lstResearch->addRow(3, wstr.c_str(), sstr.str().c_str(), tr(proj->getResearchProgress()).c_str());
 	}
 	_txtAvailable->setText(tr("STR_SCIENTISTS_AVAILABLE").arg(_base->getAvailableScientists()));
 	_txtAllocated->setText(tr("STR_SCIENTISTS_ALLOCATED").arg(_base->getAllocatedScientists()));
 	_txtSpace->setText(tr("STR_LABORATORY_SPACE_AVAILABLE").arg(_base->getFreeLaboratories()));
+
+	if (scrl)
+		_lstResearch->scrollTo(scrl);
 }
+
 }

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ERRORMESSAGESTATE_H
-#define OPENXCOM_ERRORMESSAGESTATE_H
-
 #include <string>
 #include "../Engine/State.h"
 
@@ -39,12 +37,10 @@ private:
 	Window *_window;
 	Text *_txtMessage;
 
-	void create(const std::string &str, const std::wstring &wstr, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor);
+	void create(const std::string &str, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor);
 public:
 	/// Creates the Error state.
-	ErrorMessageState(const std::string &id, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor);
-	/// Creates the Error state.
-	ErrorMessageState(const std::wstring &msg, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor);
+	ErrorMessageState(const std::string &msg, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor);
 	/// Cleans up the Error state.
 	~ErrorMessageState();
 	/// Handler for clicking the OK button.
@@ -52,5 +48,3 @@ public:
 };
 
 }
-
-#endif

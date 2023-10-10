@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PATHFINDINGOPENSET_H
-#define OPENXCOM_PATHFINDINGOPENSET_H
-
 #include <queue>
+#include <SDL_stdinc.h>
 
 namespace OpenXcom
 {
@@ -28,8 +27,9 @@ class PathfindingNode;
 
 struct OpenSetEntry
 {
-	int _cost;
 	PathfindingNode *_node;
+	Sint16 _cost;
+	Uint8 _openentry;
 };
 
 /**
@@ -44,9 +44,9 @@ public:
 	 * @param b Pointer to second entry.
 	 * @return True if entry @a *b must come before @a *a.
 	 */
-	bool operator()(OpenSetEntry *a, OpenSetEntry *b) const
+	bool operator()(const OpenSetEntry& a, const OpenSetEntry& b) const
 	{
-		return b->_cost < a->_cost;
+		return b._cost < a._cost;
 	}
 };
 
@@ -66,12 +66,10 @@ public:
 	bool empty() const { return _queue.empty(); }
 
 private:
-	std::priority_queue<OpenSetEntry*, std::vector<OpenSetEntry*>, EntryCompare> _queue;
+	std::priority_queue<OpenSetEntry, std::vector<OpenSetEntry>, EntryCompare> _queue;
 
 	/// Removes reachable discarded entries.
 	void removeDiscarded();
 };
 
 }
-
-#endif

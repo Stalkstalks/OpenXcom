@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +16,15 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include "CraftWeapon.h"
 #include "../Mod/RuleCraftWeapon.h"
 #include "../Mod/Mod.h"
 #include "../Mod/RuleItem.h"
 #include "CraftWeaponProjectile.h"
+#include "../Engine/RNG.h"
 
 namespace OpenXcom
 {
@@ -31,7 +34,7 @@ namespace OpenXcom
  * @param rules Pointer to ruleset.
  * @param ammo Initial ammo.
  */
-CraftWeapon::CraftWeapon(RuleCraftWeapon *rules, int ammo) : _rules(rules), _ammo(ammo), _rearming(false)
+CraftWeapon::CraftWeapon(RuleCraftWeapon *rules, int ammo) : _rules(rules), _ammo(ammo), _rearming(false), _disabled(false)
 {
 }
 
@@ -50,6 +53,7 @@ void CraftWeapon::load(const YAML::Node &node)
 {
 	_ammo = node["ammo"].as<int>(_ammo);
 	_rearming = node["rearming"].as<bool>(_rearming);
+	_disabled = node["disabled"].as<bool>(_disabled);
 }
 
 /**
@@ -63,6 +67,8 @@ YAML::Node CraftWeapon::save() const
 	node["ammo"] = _ammo;
 	if (_rearming)
 		node["rearming"] = _rearming;
+	if (_disabled)
+		node["disabled"] = _disabled;
 	return node;
 }
 
@@ -110,6 +116,9 @@ bool CraftWeapon::setAmmo(int ammo)
  */
 bool CraftWeapon::isRearming() const
 {
+	if (_disabled)
+		return false;
+
 	return _rearming;
 }
 
@@ -124,6 +133,24 @@ void CraftWeapon::setRearming(bool rearming)
 }
 
 /**
+ * Returns whether this craft weapon is disabled.
+ * @return Disabled status.
+ */
+bool CraftWeapon::isDisabled() const
+{
+	return _disabled;
+}
+
+/**
+ * Sets whether this craft weapon is disabled or not.
+ * @param disabled Disabled status.
+ */
+void CraftWeapon::setDisabled(bool disabled)
+{
+	_disabled = disabled;
+}
+
+/**
  * Rearms this craft weapon's ammo.
  * @param available number of clips available.
  * @param clipSize number of rounds in said clips.
@@ -132,18 +159,32 @@ void CraftWeapon::setRearming(bool rearming)
 int CraftWeapon::rearm(const int available, const int clipSize)
 {
 	int ammoUsed = _rules->getRearmRate();
+	int clipsSaved = 0;
 
 	if (clipSize > 0)
 	{	// +(clipSize - 1) correction for rounding up
 		int needed = std::min(_rules->getRearmRate(), _rules->getAmmoMax() - _ammo + clipSize - 1) / clipSize;
 		ammoUsed = ((needed > available)? available : needed) * clipSize;
+
+		// statistical bullet saving
+		if (clipSize > 1 && _rules->useStatisticalBulletSaving())
+		{
+			int overusedAmmo = _ammo + ammoUsed - _rules->getAmmoMax();
+			if (overusedAmmo > 0)
+			{
+				if (RNG::generate(0, clipSize - 1) < overusedAmmo)
+				{
+					clipsSaved = 1;
+				}
+			}
+		}
 	}
 
 	setAmmo(_ammo + ammoUsed);
 
 	_rearming = _ammo < _rules->getAmmoMax();
 
-	return (clipSize <= 0)? 0 : ammoUsed / clipSize;
+	return (clipSize <= 0)? 0 : (ammoUsed / clipSize) - clipsSaved;
 }
 
 /*
@@ -158,18 +199,18 @@ CraftWeaponProjectile* CraftWeapon::fire() const
 	p->setAccuracy(this->getRules()->getAccuracy());
 	p->setDamage(this->getRules()->getDamage());
 	p->setRange(this->getRules()->getRange());
+	p->setShieldDamageModifier(this->getRules()->getShieldDamageModifier());
 	return p;
 }
 
 /*
  * get how many clips are loaded into this weapon.
- * @param mod a pointer to the core mod.
  * @return number of clips loaded.
  */
-int CraftWeapon::getClipsLoaded(Mod *mod)
+int CraftWeapon::getClipsLoaded() const
 {
 	int retVal = (int)floor((double)_ammo / _rules->getRearmRate());
-	RuleItem *clip = mod->getItem(_rules->getClipItem());
+	auto *clip = _rules->getClipItem();
 
 	if (clip && clip->getClipSize() > 0)
 	{

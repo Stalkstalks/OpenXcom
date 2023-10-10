@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,6 +21,7 @@
 #include "../Savegame/Soldier.h"
 #include "../Engine/RNG.h"
 #include "../Engine/Language.h"
+#include "../Engine/FileMap.h"
 
 namespace OpenXcom
 {
@@ -28,7 +29,7 @@ namespace OpenXcom
 /**
  * Initializes a new pool with blank lists of names.
  */
-SoldierNamePool::SoldierNamePool() : _totalWeight(0), _femaleFrequency(-1)
+SoldierNamePool::SoldierNamePool() : _totalWeight(0), _femaleFrequency(-1), _globalWeight(100)
 {
 }
 
@@ -45,27 +46,45 @@ SoldierNamePool::~SoldierNamePool()
  */
 void SoldierNamePool::load(const std::string &filename)
 {
-	YAML::Node doc = YAML::LoadFile(filename);
+	YAML::Node doc = FileMap::getYAML(filename);
 
 	for (YAML::const_iterator i = doc["maleFirst"].begin(); i != doc["maleFirst"].end(); ++i)
 	{
-		std::wstring name = Language::utf8ToWstr(i->as<std::string>());
+		std::string name = i->as<std::string>();
 		_maleFirst.push_back(name);
 	}
 	for (YAML::const_iterator i = doc["femaleFirst"].begin(); i != doc["femaleFirst"].end(); ++i)
 	{
-		std::wstring name = Language::utf8ToWstr(i->as<std::string>());
+		std::string name = i->as<std::string>();
 		_femaleFirst.push_back(name);
 	}
 	for (YAML::const_iterator i = doc["maleLast"].begin(); i != doc["maleLast"].end(); ++i)
 	{
-		std::wstring name = Language::utf8ToWstr(i->as<std::string>());
+		std::string name = i->as<std::string>();
 		_maleLast.push_back(name);
 	}
 	for (YAML::const_iterator i = doc["femaleLast"].begin(); i != doc["femaleLast"].end(); ++i)
 	{
-		std::wstring name = Language::utf8ToWstr(i->as<std::string>());
+		std::string name = i->as<std::string>();
 		_femaleLast.push_back(name);
+	}
+	for (YAML::const_iterator i = doc["maleCallsign"].begin(); i != doc["maleCallsign"].end(); ++i)
+	{
+		std::string name = i->as<std::string>();
+		_maleCallsign.push_back(name);
+	}
+	for (YAML::const_iterator i = doc["femaleCallsign"].begin(); i != doc["femaleCallsign"].end(); ++i)
+	{
+		std::string name = i->as<std::string>();
+		_femaleCallsign.push_back(name);
+	}
+	if (_femaleCallsign.empty())
+	{
+		_femaleCallsign = _maleCallsign;
+	}
+	if (_femaleFirst.empty())
+	{
+		_femaleFirst = _maleFirst;
 	}
 	if (_femaleLast.empty())
 	{
@@ -73,11 +92,20 @@ void SoldierNamePool::load(const std::string &filename)
 	}
 	_lookWeights = doc["lookWeights"].as< std::vector<int> >(_lookWeights);
 	_totalWeight = 0;
-	for (std::vector<int>::iterator i = _lookWeights.begin(); i != _lookWeights.end(); ++i)
+	for (int lw : _lookWeights)
 	{
-		_totalWeight += (*i);
+		_totalWeight += lw;
 	}
 	_femaleFrequency = doc["femaleFrequency"].as<int>(_femaleFrequency);
+
+	_globalWeight = doc["globalWeight"].as<int>(_globalWeight);
+	if (_globalWeight <= 0)
+	{
+		// can't let the modders break this completely
+		_globalWeight = 100;
+	}
+	_country = doc["country"].as<std::string>(_country);
+	_region = doc["region"].as<std::string>(_region);
 }
 
 /**
@@ -86,9 +114,9 @@ void SoldierNamePool::load(const std::string &filename)
  * @param gender Returned gender of the name.
  * @return The soldier's name.
  */
-std::wstring SoldierNamePool::genName(SoldierGender *gender, int femaleFrequency) const
+std::string SoldierNamePool::genName(SoldierGender *gender, int femaleFrequency) const
 {
-	std::wostringstream name;
+	std::ostringstream name;
 	bool female;
 	if (_femaleFrequency > -1)
 	{
@@ -125,6 +153,31 @@ std::wstring SoldierNamePool::genName(SoldierGender *gender, int femaleFrequency
 }
 
 /**
+ * Returns a new random callsign from the
+ * lists of names contained within.
+ * @param gender Gender of the callsign.
+ * @return The soldier's callsign.
+ */
+std::string SoldierNamePool::genCallsign(const SoldierGender gender) const
+{
+	std::string callsign;
+	if (!_femaleCallsign.empty())
+	{
+		if (gender == GENDER_MALE)
+		{
+			size_t first = RNG::generate(0, _maleCallsign.size() - 1);
+			callsign = _maleCallsign[first];
+		}
+		else
+		{
+			size_t first = RNG::generate(0, _femaleCallsign.size() - 1);
+			callsign = _femaleCallsign[first];
+		}
+	}
+	return callsign;
+}
+
+/**
  * Generates an int representing the index of the soldier's look, when passed the maximum index value.
  * @param numLooks The maximum index.
  * @return The index of the soldier's look.
@@ -146,13 +199,13 @@ size_t SoldierNamePool::genLook(size_t numLooks)
 	}
 
 	int random = RNG::generate(0, _totalWeight);
-	for (std::vector<int>::iterator i = _lookWeights.begin(); i != _lookWeights.end(); ++i)
+	for (int lw : _lookWeights)
 	{
-		if (random <= *i)
+		if (random <= lw)
 		{
 			return look;
 		}
-		random -= *i;
+		random -= lw;
 		++look;
 	}
 

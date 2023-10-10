@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -22,6 +22,7 @@
 #include "../Mod/Mod.h"
 #include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -31,6 +32,7 @@
 #include "../Savegame/Region.h"
 #include "../Mod/RuleRegion.h"
 #include "TransferItemsState.h"
+#include "../Battlescape/DebriefingState.h"
 
 namespace OpenXcom
 {
@@ -40,7 +42,7 @@ namespace OpenXcom
  * @param game Pointer to the core game.
  * @param base Pointer to the base to get info from.
  */
-TransferBaseState::TransferBaseState(Base *base) : _base(base)
+TransferBaseState::TransferBaseState(Base *base, DebriefingState *debriefingState) : _base(base), _debriefingState(debriefingState)
 {
 	// Create objects
 	_window = new Window(this, 280, 140, 20, 30);
@@ -65,7 +67,7 @@ TransferBaseState::TransferBaseState(Base *base) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK13.SCR"));
+	setWindowBackground(_window, "transferBaseSelect");
 
 	_btnCancel->setText(tr("STR_CANCEL"));
 	_btnCancel->onMouseClick((ActionHandler)&TransferBaseState::btnCancelClick);
@@ -75,7 +77,7 @@ TransferBaseState::TransferBaseState(Base *base) : _base(base)
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setText(tr("STR_SELECT_DESTINATION_BASE"));
 
-	_txtFunds->setText(tr("STR_CURRENT_FUNDS").arg(Text::formatFunding(_game->getSavedGame()->getFunds())));
+	_txtFunds->setText(tr("STR_CURRENT_FUNDS").arg(Unicode::formatFunding(_game->getSavedGame()->getFunds())));
 
 	_txtName->setText(tr("STR_NAME"));
 	_txtName->setBig();
@@ -90,24 +92,24 @@ TransferBaseState::TransferBaseState(Base *base) : _base(base)
 	_lstBases->onMouseClick((ActionHandler)&TransferBaseState::lstBasesClick);
 
 	int row = 0;
-	for (std::vector<Base*>::iterator i = _game->getSavedGame()->getBases()->begin(); i != _game->getSavedGame()->getBases()->end(); ++i)
+	for (auto* xbase : *_game->getSavedGame()->getBases())
 	{
-		if ((*i) != _base)
+		if (xbase != _base)
 		{
 			// Get area
-			std::wstring area;
-			for (std::vector<Region*>::iterator j = _game->getSavedGame()->getRegions()->begin(); j != _game->getSavedGame()->getRegions()->end(); ++j)
+			std::string area;
+			for (const auto* region : *_game->getSavedGame()->getRegions())
 			{
-				if ((*j)->getRules()->insideRegion((*i)->getLongitude(), (*i)->getLatitude()))
+				if (region->getRules()->insideRegion(xbase->getLongitude(), xbase->getLatitude()))
 				{
-					area = tr((*j)->getRules()->getType());
+					area = tr(region->getRules()->getType());
 					break;
 				}
 			}
-			std::wostringstream ss;
-			ss << L'\x01' << area;
-			_lstBases->addRow(2, (*i)->getName().c_str(), ss.str().c_str());
-			_bases.push_back(*i);
+			std::ostringstream ss;
+			ss << Unicode::TOK_COLOR_FLIP << area;
+			_lstBases->addRow(2, xbase->getName().c_str(), ss.str().c_str());
+			_bases.push_back(xbase);
 			row++;
 		}
 	}
@@ -135,7 +137,7 @@ void TransferBaseState::btnCancelClick(Action *)
  */
 void TransferBaseState::lstBasesClick(Action *)
 {
-	_game->pushState(new TransferItemsState(_base, _bases[_lstBases->getSelectedRow()]));
+	_game->pushState(new TransferItemsState(_base, _bases[_lstBases->getSelectedRow()], _debriefingState));
 }
 
 }

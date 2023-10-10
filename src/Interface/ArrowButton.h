@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ARROWBUTTON_H
-#define OPENXCOM_ARROWBUTTON_H
-
 #include "ImageButton.h"
 
 namespace OpenXcom
@@ -41,32 +39,30 @@ private:
 	TextList *_list;
 	Timer *_timer;
 protected:
-	bool isButtonHandled(Uint8 button = 0);
+	bool isButtonHandled(Uint8 button = 0) override;
 public:
 	/// Creates a new arrow button with the specified size and position.
 	ArrowButton(ArrowShape shape, int width, int height, int x = 0, int y = 0);
 	/// Cleans up the arrow button.
 	~ArrowButton();
 	/// Sets the arrow button's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Sets the arrow button's shape.
 	void setShape(ArrowShape shape);
 	/// Sets the arrow button's list.
 	void setTextList(TextList *list);
 	/// Handles the timers.
-	void think();
+	void think() override;
 	/// Scrolls the list.
 	void scroll();
 	/// Draws the arrow button.
-	void draw();
+	void draw() override;
 	/// Special handling for mouse presses.
-	void mousePress(Action *action, State *state);
+	void mousePress(Action *action, State *state) override;
 	/// Special handling for mouse releases.
-	void mouseRelease(Action *action, State *state);
+	void mouseRelease(Action *action, State *state) override;
 	/// Special handling for mouse clicks.
-	void mouseClick(Action *action, State *state);
+	void mouseClick(Action *action, State *state) override;
 };
 
 }
-
-#endif

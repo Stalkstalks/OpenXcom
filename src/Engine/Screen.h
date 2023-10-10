@@ -1,5 +1,6 @@
-	/*
- * Copyright 2010-2015 OpenXcom Developers.
+	#pragma once
+/*
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SCREEN_H
-#define OPENXCOM_SCREEN_H
-
 #include <SDL.h>
 #include <string>
 #include "OpenGL.h"
+#include "Surface.h"
 
 namespace OpenXcom
 {
@@ -49,9 +48,10 @@ private:
 	SDL_Color deferredPalette[256];
 	int _numColors, _firstColor;
 	bool _pushPalette;
+	bool _flickerFix;
 	OpenGL glOutput;
-	Surface *_surface;
-	SDL_Rect _clear;
+	Surface::UniqueBufferPtr _buffer;
+	Surface::UniqueSurfacePtr _surface;
 	/// Sets the _flags and _bpp variables based on game options; needed in more than one place now
 	void makeVideoFlags();
 public:
@@ -63,11 +63,11 @@ public:
 	/// Cleans up the display screen.
 	~Screen();
 	/// Get horizontal offset.
-	int getDX();
+	int getDX() const;
 	/// Get vertical offset.
-	int getDY();
+	int getDY() const;
 	/// Gets the internal buffer.
-	Surface *getSurface();
+	SDL_Surface *getSurface();
 	/// Handles keyboard events.
 	void handle(Action *action);
 	/// Renders the screen onto the game window.
@@ -75,7 +75,7 @@ public:
 	/// Clears the screen.
 	void clear();
 	/// Sets the screen's 8bpp palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256, bool immediately = false);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256, bool immediately = false);
 	/// Gets the screen's 8bpp palette.
 	SDL_Color *getPalette() const;
 	/// Gets the screen's width.
@@ -83,7 +83,7 @@ public:
 	/// Gets the screen's height.
 	int getHeight() const;
 	/// Resets the screen display.
-	void resetDisplay(bool resetVideo = true);
+	void resetDisplay(bool resetVideo = true, bool noShaders = false);
 	/// Gets the screen's X scale.
 	double getXScale() const;
 	/// Gets the screen's Y scale.
@@ -95,13 +95,11 @@ public:
 	/// Takes a screenshot.
 	void screenshot(const std::string &filename) const;
 	/// Checks whether a 32bit scaler is requested and works for the selected resolution
-	static bool is32bitEnabled();
+	static bool use32bitScaler();
 	/// Checks whether OpenGL output is requested
-	static bool isOpenGLEnabled();
+	static bool useOpenGL();
 	/// update the game scale as required.
-	static void updateScale(int &type, int selection, int &x, int &y, bool change);
+	static void updateScale(int type, int &width, int &height, bool change);
 };
 
 }
-
-#endif

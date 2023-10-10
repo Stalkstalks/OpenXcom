@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,8 @@
  */
 
 #include "ArticleDefinition.h"
+#include "../Engine/Exception.h"
+#include "../Mod/RuleItem.h"
 
 namespace YAML
 {
@@ -55,8 +57,10 @@ namespace OpenXcom
 	 * Constructor.
 	 * @param type_id Article type of this instance.
 	 */
-	ArticleDefinition::ArticleDefinition(UfopaediaTypeId type_id) : _type_id(type_id), _listOrder(0)
-	{}
+	ArticleDefinition::ArticleDefinition(UfopaediaTypeId type_id) : customPalette(false), hiddenCommendation(false), _type_id(type_id), _listOrder(0)
+	{
+		_pages.resize(1);
+	}
 
 	/**
 	 * Destructor.
@@ -80,15 +84,44 @@ namespace OpenXcom
 	 */
 	void ArticleDefinition::load(const YAML::Node &node, int listOrder)
 	{
-		id = title = node["id"].as<std::string>(id);
+		id = _pages[0].title = node["id"].as<std::string>(id);
 		section = node["section"].as<std::string>(section);
-		requires = node["requires"].as< std::vector<std::string> >(requires);
-		title = node["title"].as<std::string>(title);
+		_requires = node["requires"].as< std::vector<std::string> >(_requires);
+		hiddenCommendation = node["hiddenCommendation"].as<bool>(hiddenCommendation);
 		//_type_id = (UfopaediaTypeId)node["type_id"].as<int>(_type_id);
 		_listOrder = node["listOrder"].as<int>(_listOrder);
 		if (!_listOrder)
 		{
 			_listOrder = listOrder;
+		}
+
+		auto loadPage = [&](size_t offset, const YAML::Node &n)
+		{
+			if (n)
+			{
+				_pages[offset].title = n["title"].as<std::string>(_pages[offset].title);
+				_pages[offset].text = n["text"].as<std::string>(_pages[offset].text);
+				RuleItem::loadAmmoSlotChecked(_pages[offset].ammoSlot, n["ammoSlot"], id);
+			}
+		};
+
+		loadPage(0, node);
+		if (const YAML::Node& pagesNode = node["pages"])
+		{
+			if (pagesNode.IsSequence())
+			{
+				auto size = pagesNode.size();
+				auto firstCopy = _pages[0];
+				_pages.resize(std::max(size_t{ 1 }, size), firstCopy); //all new pages are copy of old first page
+				for (size_t i = 0; i < size; ++i)
+				{
+					loadPage(i, pagesNode[i]);
+				}
+			}
+			else
+			{
+				throw Exception("Unsupported type of node 'pages' for Article '" + id + "'");
+			}
 		}
 	}
 
@@ -136,9 +169,10 @@ namespace OpenXcom
 	{
 		ArticleDefinition::load(node, listOrder);
 		image_id = node["image_id"].as<std::string>(image_id);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 		rect_stats = node["rect_stats"].as<ArticleDefinitionRect>(rect_stats);
 		rect_text = node["rect_text"].as<ArticleDefinitionRect>(rect_text);
-		text = node["text"].as<std::string>(text);
 	}
 
 	/**
@@ -156,7 +190,8 @@ namespace OpenXcom
 	{
 		ArticleDefinition::load(node, listOrder);
 		image_id = node["image_id"].as<std::string>(image_id);
-		text = node["text"].as<std::string>(text);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 	}
 
 	/**
@@ -173,13 +208,12 @@ namespace OpenXcom
 	void ArticleDefinitionText::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
-		text = node["text"].as<std::string>(text);
 	}
 
 	/**
 	 * Constructor (only setting type of base class).
 	 */
-	ArticleDefinitionTextImage::ArticleDefinitionTextImage() : ArticleDefinition(UFOPAEDIA_TYPE_TEXTIMAGE), text_width(0)
+	ArticleDefinitionTextImage::ArticleDefinitionTextImage() : ArticleDefinition(UFOPAEDIA_TYPE_TEXTIMAGE), text_width(0), align_bottom(false)
 	{}
 
 	/**
@@ -191,8 +225,11 @@ namespace OpenXcom
 	{
 		ArticleDefinition::load(node, listOrder);
 		image_id = node["image_id"].as<std::string>(image_id);
-		text = node["text"].as<std::string>(text);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 		text_width = node["text_width"].as<int>(text_width);
+		align_bottom = node["align_bottom"].as<bool>(align_bottom);
+		rect_text = node["rect_text"].as<ArticleDefinitionRect>(rect_text);
 	}
 
 	/**
@@ -211,7 +248,8 @@ namespace OpenXcom
 		ArticleDefinition::load(node, listOrder);
 		_type_id = (UfopaediaTypeId)(node["type_id"].as<int>(_type_id));
 		image_id = node["image_id"].as<std::string>(image_id);
-		text = node["text"].as<std::string>(text);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 		text_width = node["text_width"].as<int>(157); // 95% of these won't need to be defined, so let's give it a default
 		weapon = node["weapon"].as<std::string>(weapon);
 	}
@@ -230,7 +268,6 @@ namespace OpenXcom
 	void ArticleDefinitionBaseFacility::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
-		text = node["text"].as<std::string>(text);
 	}
 
 	/**
@@ -247,7 +284,6 @@ namespace OpenXcom
 	void ArticleDefinitionItem::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
-		text = node["text"].as<std::string>(text);
 	}
 
 	/**
@@ -264,7 +300,6 @@ namespace OpenXcom
 	void ArticleDefinitionUfo::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
-		text = node["text"].as<std::string>(text);
 	}
 
 	/**
@@ -281,7 +316,9 @@ namespace OpenXcom
 	void ArticleDefinitionArmor::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
-		text = node["text"].as<std::string>(text);
+		image_id = node["image_id"].as<std::string>(image_id);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 	}
 
 	/**
@@ -298,7 +335,9 @@ namespace OpenXcom
 	void ArticleDefinitionVehicle::load(const YAML::Node &node, int listOrder)
 	{
 		ArticleDefinition::load(node, listOrder);
+		image_id = node["image_id"].as<std::string>(image_id);
+		if (image_id.find("_CPAL") != std::string::npos)
+			customPalette = true;
 		weapon = node["weapon"].as<std::string>(weapon);
-		text = node["text"].as<std::string>(text);
 	}
 }

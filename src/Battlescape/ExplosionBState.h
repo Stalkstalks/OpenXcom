@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_EXPLOSIONBSTATE_H
-#define OPENXCOM_EXPLOSIONBSTATE_H
-
 #include "BattleState.h"
 #include "Position.h"
-#include <string>
 
 namespace OpenXcom
 {
@@ -30,7 +27,7 @@ class BattlescapeGame;
 class BattleUnit;
 class BattleItem;
 class Tile;
-class RuleDamageType;
+struct RuleDamageType;
 
 /**
  * Explosion state not only handles explosions, but also bullet impacts!
@@ -39,15 +36,17 @@ class RuleDamageType;
 class ExplosionBState : public BattleState
 {
 private:
-	BattleUnit *_unit;
-	Position _center;
-	BattleItem *_item;
+	int _explosionCounter;
+	int _terrainMeleeTilePart;
+	BattleActionAttack _attack;
+	Position _center, _before;
 	const RuleDamageType *_damageType;
 	Tile *_tile;
+	BattleUnit *_targetPsiOrHit;
 	int _power;
 	int _radius;
 	int _range;
-	bool _areaOfEffect, _lowerWeapon, _pistolWhip, _hit;
+	bool _areaOfEffect, _lowerWeapon, _hit, _psi;
 
 	/// Calculates the effects of the explosion.
 	void explode();
@@ -55,18 +54,16 @@ private:
 	void optValue(int &oldValue, int newValue) const;
 public:
 	/// Creates a new ExplosionBState class.
-	ExplosionBState(BattlescapeGame *parent, Position center, BattleActionType type, BattleItem *item, BattleUnit *unit, Tile *tile = 0, bool lowerWeapon = false, int range = 0);
+	ExplosionBState(BattlescapeGame *parent, LastPositions center, BattleActionAttack attack, Tile *tile = 0, bool lowerWeapon = false, int range = 0, int explosionCounter = 0, int terrainMeleeTilePart = 0);
 	/// Cleans up the ExplosionBState.
 	~ExplosionBState();
 	/// Initializes the state.
-	void init();
+	void init() override;
 	/// Handles a cancel request.
-	void cancel();
+	void cancel() override;
 	/// Runs state functionality every cycle.
-	void think();
+	void think() override;
 
 };
 
 }
-
-#endif

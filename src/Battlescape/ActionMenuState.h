@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ACTIONMENUSTATE_H
-#define OPENXCOM_ACTIONMENUSTATE_H
-
 #include "../Engine/State.h"
 #include "BattlescapeGame.h"
 
 namespace OpenXcom
 {
 
-class Game;
 class ActionMenuItem;
 
 /**
@@ -34,24 +31,28 @@ class ActionMenuItem;
  */
 class ActionMenuState : public State
 {
-private:
+protected:
 	BattleAction *_action;
 	ActionMenuItem *_actionMenu[6];
 	/// Adds a new menu item for an action.
-	void addItem(BattleActionType ba, const std::string &name, int *id);
+	void addItem(BattleActionType ba, const std::string &name, int *id, SDLKey key);
+	/// Acts on the action instance that has been chosen and set.
+	void handleAction();
 public:
+	/// Default constructor, used by SkillMenuState.
+	ActionMenuState(BattleAction *action);
 	/// Creates the Action Menu state.
 	ActionMenuState(BattleAction *action, int x, int y);
 	/// Cleans up the Action Menu state.
 	~ActionMenuState();
+	/// Init function.
+	void init() override;
 	/// Handler for right-clicking anything.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Handler for clicking a action menu item.
-	void btnActionMenuItemClick(Action *action);
+	virtual void btnActionMenuItemClick(Action *action);
 	/// Update the resolution settings, we just resized the window.
-	void resize(int &dX, int &dY);
+	void resize(int &dX, int &dY) override;
 };
 
 }
-
-#endif

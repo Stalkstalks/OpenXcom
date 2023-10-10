@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,7 @@
  */
 
 #include "RuleInterface.h"
+#include "Mod.h"
 #include <climits>
 
 namespace OpenXcom
@@ -28,7 +29,7 @@ namespace OpenXcom
  * type of interface, containing an index of elements that make it up.
  * @param type String defining the type.
  */
-RuleInterface::RuleInterface(const std::string & type) : _type(type)
+RuleInterface::RuleInterface(const std::string & type) : _type(type), _sound(-1)
 {
 }
 
@@ -40,15 +41,19 @@ RuleInterface::~RuleInterface()
  * Loads the elements from a YAML file.
  * @param node YAML node.
  */
-void RuleInterface::load(const YAML::Node& node)
+void RuleInterface::load(const YAML::Node& node, Mod *mod)
 {
 	if (const YAML::Node &parent = node["refNode"])
 	{
-		load(parent);
+		load(parent, mod);
 	}
+
 	_palette = node["palette"].as<std::string>(_palette);
 	_parent = node["parent"].as<std::string>(_parent);
+	_backgroundImage = node["backgroundImage"].as<std::string>(_backgroundImage);
+	_altBackgroundImage = node["altBackgroundImage"].as<std::string>(_altBackgroundImage);
 	_music = node["music"].as<std::string>(_music);
+	mod->loadSoundOffset(_type, _sound, node["sound"], "GEO.CAT");
 	for (YAML::const_iterator i = node["elements"].begin(); i != node["elements"].end(); ++i)
 	{
 		Element element;
@@ -75,6 +80,7 @@ void RuleInterface::load(const YAML::Node& node)
 		element.color = (*i)["color"].as<int>(INT_MAX);
 		element.color2 = (*i)["color2"].as<int>(INT_MAX);
 		element.border = (*i)["border"].as<int>(INT_MAX);
+		element.custom = (*i)["custom"].as<int>(0);
 		element.TFTDMode = (*i)["TFTDMode"].as<bool>(false);
 
 		std::string id = (*i)["id"].as<std::string>("");
@@ -88,7 +94,7 @@ void RuleInterface::load(const YAML::Node& node)
  */
 Element *RuleInterface::getElement(const std::string &id)
 {
-	std::map<std::string, Element>::iterator i = _elements.find(id);
+	auto i = _elements.find(id);
 	if (_elements.end() != i) return &i->second; else return 0;
 }
 
@@ -102,9 +108,24 @@ const std::string &RuleInterface::getParent() const
 	return _parent;
 }
 
+const std::string &RuleInterface::getBackgroundImage() const
+{
+	return _backgroundImage;
+}
+
+const std::string &RuleInterface::getAltBackgroundImage() const
+{
+	return _altBackgroundImage;
+}
+
 const std::string &RuleInterface::getMusic() const
 {
 	return _music;
+}
+
+int RuleInterface::getSound() const
+{
+	return _sound;
 }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -60,7 +60,7 @@ DeleteGameState::DeleteGameState(OptionsOrigin origin, const std::string &save) 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "saveMenus");
 
 	_btnYes->setText(tr("STR_YES"));
 	_btnYes->onMouseClick((ActionHandler)&DeleteGameState::btnYesClick);
@@ -77,7 +77,7 @@ DeleteGameState::DeleteGameState(OptionsOrigin origin, const std::string &save) 
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("saveMenus");
 	}
 }
 
@@ -99,7 +99,7 @@ void DeleteGameState::btnYesClick(Action *)
 	_game->popState();
 	if (!CrossPlatform::deleteFile(_filename))
 	{
-		std::wstring error = tr("STR_DELETE_UNSUCCESSFUL");
+		std::string error = tr("STR_DELETE_UNSUCCESSFUL");
 		if (_origin != OPT_BATTLESCAPE)
 			_game->pushState(new ErrorMessageState(error, _palette, _game->getMod()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getMod()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
 		else

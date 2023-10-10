@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEGLOBE_H
-#define OPENXCOM_RULEGLOBE_H
-
 #include <list>
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -58,8 +56,9 @@ public:
 	Texture *getTexture(int id) const;
 	/// Gets all the terrains for a specific deployment.
 	std::vector<std::string> getTerrains(const std::string &deployment) const;
+
+	/// Raw data.
+	const std::map<int, Texture*> &getTexturesRaw() const { return _textures; }
 };
 
 }
-
-#endif

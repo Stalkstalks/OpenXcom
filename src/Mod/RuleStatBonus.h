@@ -1,3 +1,4 @@
+#pragma once
 /*
  * Copyright 2010-2015 OpenXcom Developers.
  *
@@ -16,34 +17,44 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULESTATBONUS_H
-#define	OPENXCOM_RULESTATBONUS_H
-
-#include<vector>
-#include<string>
+#include <vector>
+#include <string>
+#include "ModScript.h"
 
 namespace OpenXcom
 {
 
+namespace helper { struct BattleActionAttackReadOnlyImpl; }
+
 class BattleUnit;
+class BattleItem;
 typedef std::pair<float (*)(const BattleUnit*), float> RuleStatBonusData;
+typedef std::pair<std::string, std::vector<float> > RuleStatBonusDataOrig;
 /**
  * Helper class used for storing unit stat bonuses.
  */
 class RuleStatBonus
 {
-	std::vector<RuleStatBonusData> _bonus;
+	ModScript::BonusStatsCommon::Container _container;
+	std::vector<RuleStatBonusDataOrig> _bonusOrig;
+	bool _modded = false;
+	bool _refresh = true;
+
+	void setValues(std::vector<RuleStatBonusDataOrig>&& bonuses);
+
 public:
 	/// Default constructor.
 	RuleStatBonus();
 	/// Loads item data from YAML.
-	void load(const YAML::Node& node);
+	void load(const std::string& parentName, const YAML::Node& node, const ModScript::BonusStatsCommon& parser);
 	/// Set default firing bonus.
 	void setFiring();
 	/// Set default melee bonus.
 	void setMelee();
 	/// Set default throwing bonus.
 	void setThrowing();
+	/// Set default close quarters combat bonus.
+	void setCloseQuarters();
 	/// Set default psi attack bonus.
 	void setPsiAttack();
 	/// Set default psi defense bonus.
@@ -58,11 +69,14 @@ public:
 	void setEnergyRecovery();
 	/// Set default for Stun recovery.
 	void setStunRecovery();
+	/// Get bonus based on attack unit and weapons.
+	int getBonus(helper::BattleActionAttackReadOnlyImpl unit, int externalBonuses = 0) const;
 	/// Get bonus based on unit stats.
-	int getBonus(const BattleUnit* unit) const;
+	int getBonus(const BattleUnit* unit, int externalBonuses = 0) const;
+	/// Used for "Stats for Nerds".
+	const std::vector<RuleStatBonusDataOrig> *getBonusRaw() const { return &_bonusOrig; }
+	bool isModded() const { return _modded; }
+	void setModded(bool modded) { _modded = modded; }
 };
 
 }
-
-#endif	/* OPENXCOM_RULESTATBONUS_H */
-

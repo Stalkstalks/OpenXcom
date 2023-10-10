@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -31,9 +31,9 @@ namespace OpenXcom
  * @param id The unique identifier of the menu item.
  * @param game Pointer to the game.
  * @param x Position on the x-axis.
- * @param y Position on the y-asis.
+ * @param y Position on the y-axis.
  */
-ActionMenuItem::ActionMenuItem(int id, Game *game, int x, int y) : InteractiveSurface(272, 40, x + 24, y - (id*40)), _highlighted(false), _action(BA_NONE), _tu(0)
+ActionMenuItem::ActionMenuItem(int id, Game *game, int x, int y) : InteractiveSurface(272, 40, x + 24, y - (id*40)), _highlighted(false), _action(BA_NONE), _skill(nullptr), _tu(0)
 {
 	Font *big = game->getMod()->getFont("FONT_BIG"), *small = game->getMod()->getFont("FONT_SMALL");
 	Language *lang = game->getLanguage();
@@ -87,7 +87,7 @@ ActionMenuItem::~ActionMenuItem()
  * @param timeunits The timeunits string, including the TUs> prefix.
  * @param tu The timeunits value.
  */
-void ActionMenuItem::setAction(BattleActionType action, const std::wstring &description, const std::wstring &accuracy, const std::wstring &timeunits, int tu)
+void ActionMenuItem::setAction(BattleActionType action, const std::string &description, const std::string &accuracy, const std::string &timeunits, int tu)
 {
 	_action = action;
 	_txtDescription->setText(description);
@@ -98,12 +98,30 @@ void ActionMenuItem::setAction(BattleActionType action, const std::wstring &desc
 }
 
 /**
+ * Links with a skill.
+ * @param skill The linked skill.
+ */
+void ActionMenuItem::setSkill(const RuleSkill *skill)
+{
+	_skill = skill;
+}
+
+/**
  * Gets the action that was linked to this menu item.
  * @return Action that was linked to this menu item.
  */
 BattleActionType ActionMenuItem::getAction() const
 {
 	return _action;
+}
+
+/**
+ * Gets the skill that was linked to this menu item.
+ * @return Skill that was linked to this menu item.
+ */
+const RuleSkill* ActionMenuItem::getSkill() const
+{
+	return _skill;
 }
 
 /**
@@ -121,7 +139,7 @@ int ActionMenuItem::getTUs() const
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void ActionMenuItem::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void ActionMenuItem::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_frame->setPalette(colors, firstcolor, ncolors);
@@ -135,10 +153,10 @@ void ActionMenuItem::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
  */
 void ActionMenuItem::draw()
 {
-	_frame->blit(this);
-	_txtDescription->blit(this);
-	_txtAcc->blit(this);
-	_txtTU->blit(this);
+	_frame->blit(this->getSurface());
+	_txtDescription->blit(this->getSurface());
+	_txtAcc->blit(this->getSurface());
+	_txtTU->blit(this->getSurface());
 }
 
 /**

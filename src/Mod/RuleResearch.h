@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,15 +17,17 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULERESEARCH_H
-#define OPENXCOM_RULERESEARCH_H
-
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
+#include "RuleBaseFacilityFunctions.h"
+#include "ModScript.h"
 
 namespace OpenXcom
 {
+
+class Mod;
+
 /**
  * Represents one research project.
  * Dependency is the list of RuleResearchs which must be discovered before a RuleResearch became available.
@@ -40,40 +43,85 @@ namespace OpenXcom
 class RuleResearch
 {
  private:
-	std::string _name, _lookup, _cutscene;
+	std::string _name, _lookup, _cutscene, _spawnedItem, _spawnedEvent;
+	int _spawnedItemCount;
+	std::vector<std::string> _spawnedItemList;
+	std::vector<std::string> _decreaseCounter, _increaseCounter;
 	int _cost, _points;
-	std::vector<std::string> _dependencies, _unlocks, _getOneFree, _requires, _requiresBaseFunc;
-	bool _needItem;
+	std::vector<std::string> _dependenciesName, _unlocksName, _disablesName, _reenablesName, _getOneFreeName, _requiresName;
+	RuleBaseFacilityFunctions _requiresBaseFunc;
+	std::vector<const RuleResearch*> _dependencies, _unlocks, _disables, _reenables, _getOneFree, _requires;
+	bool _sequentialGetOneFree;
+	std::vector<std::pair<std::string, std::vector<std::string> > > _getOneFreeProtectedName;
+	std::vector<std::pair<const RuleResearch*, std::vector<const RuleResearch*> > > _getOneFreeProtected;
+	bool _needItem, _destroyItem, _unlockFinalMission;
 	int _listOrder;
+
+	ScriptValues<RuleResearch> _scriptValues;
 public:
-	RuleResearch(const std::string &name);
+	/// Name of class used in script.
+	static constexpr const char* ScriptName = "RuleResearch";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+
+	static const int RESEARCH_STATUS_NEW = 0;
+	static const int RESEARCH_STATUS_NORMAL = 1;
+	static const int RESEARCH_STATUS_DISABLED = 2;
+	RuleResearch(const std::string &name, int listOrder);
+
 	/// Loads the research from YAML.
-	void load(const YAML::Node& node, int listOrder);
+	void load(const YAML::Node& node, Mod* mod, const ModScript& parsers);
+	/// Cross link with other rules.
+	void afterLoad(const Mod* mod);
+
 	/// Gets time needed to discover this ResearchProject.
 	int getCost() const;
 	/// Gets the research name.
 	const std::string &getName() const;
 	/// Gets the research dependencies.
-	const std::vector<std::string> &getDependencies() const;
+	const std::vector<const RuleResearch*> &getDependencies() const;
+	/// Checks if this ResearchProject gives free topics in sequential order (or random order).
+	bool sequentialGetOneFree() const;
 	/// Checks if this ResearchProject needs a corresponding Item to be researched.
 	bool needItem() const;
+	/// Checks if this ResearchProject consumes the corresponding Item when research completes.
+	bool destroyItem() const;
+	/// Check if this ResearchProject is unlocking final mission, it can be only one!
+	bool unlockFinalMission() const { return _unlockFinalMission; }
 	/// Gets the list of ResearchProjects unlocked by this research.
-	const std::vector<std::string> &getUnlocked() const;
+	const std::vector<const RuleResearch*> &getUnlocked() const;
+	/// Gets the list of ResearchProjects disabled by this research.
+	const std::vector<const RuleResearch*> &getDisabled() const;
+	/// Gets the list of ResearchProjects reenabled by this research.
+	const std::vector<const RuleResearch*> &getReenabled() const;
 	/// Gets the points earned for discovering this ResearchProject.
 	int getPoints() const;
 	/// Gets the list of ResearchProjects granted at random for free by this research.
-	const std::vector<std::string> &getGetOneFree() const;
+	const std::vector<const RuleResearch*> &getGetOneFree() const;
+	/// Gets the list(s) of ResearchProjects granted at random for free by this research (if a defined prerequisite is met).
+	const std::vector<std::pair<const RuleResearch*, std::vector<const RuleResearch*> > > &getGetOneFreeProtected() const;
 	/// Gets what to look up in the ufopedia.
-	std::string getLookup() const;
+	const std::string &getLookup() const;
 	/// Gets the requirements for this ResearchProject.
-	const std::vector<std::string> &getRequirements() const;
+	const std::vector<const RuleResearch*> &getRequirements() const;
 	/// Gets the base requirements for this ResearchProject.
-	const std::vector<std::string> &getRequireBaseFunc() const;
+	RuleBaseFacilityFunctions getRequireBaseFunc() const { return _requiresBaseFunc; }
 	/// Gets the list weight for this research item.
 	int getListOrder() const;
 	/// Gets the cutscene to play when this item is researched
 	const std::string & getCutscene() const;
+	/// Gets the item to spawn in the base stores when this topic is researched.
+	const std::string & getSpawnedItem() const;
+	/// Gets the number of items to spawn in the base stores when this topic is researched.
+	int getSpawnedItemCount() const { return _spawnedItemCount; }
+	/// Gets the list of items to spawn in the base stores when this topic is researched.
+	const std::vector<std::string>& getSpawnedItemList() const { return _spawnedItemList; }
+	/// Gets the geoscape event to spawn when this topic is researched.
+	const std::string& getSpawnedEvent() const { return _spawnedEvent; }
+	/// Gets the name of custom counter variables to decrease when this topic is researched.
+	const std::vector<std::string>& getDecreaseCounter() const { return _decreaseCounter; }
+	/// Gets the name of custom counter variables to increase when this topic is researched.
+	const std::vector<std::string>& getIncreaseCounter() const { return _increaseCounter; }
 };
-}
 
-#endif
+}

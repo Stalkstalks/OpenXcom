@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -29,18 +29,22 @@ namespace OpenXcom
 /**
  * RuleTerrain construction.
  */
-RuleTerrain::RuleTerrain(const std::string &name) : _name(name), _script("DEFAULT"), _minDepth(0), _maxDepth(0), _ambience(-1), _ambientVolume(0.5)
+RuleTerrain::RuleTerrain(const std::string &name) : _name(name), _mapScript("DEFAULT"), _minDepth(0), _maxDepth(0),
+	_ambience(-1), _ambientVolume(0.5), _minAmbienceRandomDelay(20), _maxAmbienceRandomDelay(60),
+	_lastCraftSkinIndex(0)
 {
+	_civilianTypes.push_back("MALE_CIVILIAN");
+	_civilianTypes.push_back("FEMALE_CIVILIAN");
 }
 
 /**
- * Ruleterrain only holds mapblocks. Map datafiles are referenced.
+ * RuleTerrain only holds mapblocks. Map datafiles are referenced.
  */
 RuleTerrain::~RuleTerrain()
 {
-	for (std::vector<MapBlock*>::iterator i = _mapBlocks.begin(); i != _mapBlocks.end(); ++i)
+	for (auto* mapblock : _mapBlocks)
 	{
-		delete *i;
+		delete mapblock;
 	}
 }
 
@@ -55,6 +59,7 @@ void RuleTerrain::load(const YAML::Node &node, Mod *mod)
 	{
 		load(parent, mod);
 	}
+
 	bool adding = node["addOnly"].as<bool>(false);
 	if (const YAML::Node &map = node["mapDataSets"])
 	{
@@ -68,7 +73,7 @@ void RuleTerrain::load(const YAML::Node &node, Mod *mod)
 	{
 		if (!adding)
 		{
-			_mapBlocks.clear();
+			Collections::deleteAll(_mapBlocks);
 		}
 		for (YAML::const_iterator i = map.begin(); i != map.end(); ++i)
 		{
@@ -77,31 +82,25 @@ void RuleTerrain::load(const YAML::Node &node, Mod *mod)
 			_mapBlocks.push_back(mapBlock);
 		}
 	}
-	_name = node["name"].as<std::string>(_name);
-	if (const YAML::Node &civs = node["civilianTypes"])
-	{
-		_civilianTypes = civs.as<std::vector<std::string> >(_civilianTypes);
-	}
-	else
-	{
-		_civilianTypes.push_back("MALE_CIVILIAN");
-		_civilianTypes.push_back("FEMALE_CIVILIAN");
-	}
-	for (YAML::const_iterator i = node["music"].begin(); i != node["music"].end(); ++i)
-	{
-		_music.push_back((*i).as<std::string>(""));
-	}
+
+	_enviroEffects = node["enviroEffects"].as<std::string>(_enviroEffects);
+	mod->loadUnorderedNames(_name, _civilianTypes, node["civilianTypes"]);
+	mod->loadUnorderedNames(_name, _music, node["music"]);
 	if (node["depth"])
 	{
 		_minDepth = node["depth"][0].as<int>(_minDepth);
 		_maxDepth = node["depth"][1].as<int>(_maxDepth);
 	}
-	if (node["ambience"])
-	{
-		_ambience = mod->getSoundOffset(node["ambience"].as<int>(_ambience), "BATTLE.CAT");
-	}
+	mod->loadSoundOffset(_name, _ambience, node["ambience"], "BATTLE.CAT");
 	_ambientVolume = node["ambientVolume"].as<double>(_ambientVolume);
-	_script = node["script"].as<std::string>(_script);
+	mod->loadSoundOffset(_name, _ambienceRandom, node["ambienceRandom"], "BATTLE.CAT");
+	if (node["ambienceRandomDelay"])
+	{
+		_minAmbienceRandomDelay = node["ambienceRandomDelay"][0].as<int>(_minAmbienceRandomDelay);
+		_maxAmbienceRandomDelay = node["ambienceRandomDelay"][1].as<int>(_maxAmbienceRandomDelay);
+	}
+	_mapScript = node["script"].as<std::string>(_mapScript);
+	_mapScripts = node["mapScripts"].as<std::vector<std::string> >(_mapScripts);
 }
 
 /**
@@ -123,12 +122,65 @@ std::vector<MapDataSet*> *RuleTerrain::getMapDataSets()
 }
 
 /**
+ * Refreshes the terrain's mapdatafiles. Use for craft skins ONLY!
+ */
+void RuleTerrain::refreshMapDataSets(int craftSkinIndex, Mod *mod)
+{
+	if (_lastCraftSkinIndex == craftSkinIndex)
+	{
+		return;
+	}
+
+	std::vector<std::string> newNames;
+	for (auto item : _mapDataSets)
+	{
+		if (item->getName() == "BLANKS")
+		{
+			newNames.push_back(item->getName());
+		}
+		else if (_lastCraftSkinIndex == 0)
+		{
+			newNames.push_back(item->getName() + "_" + std::to_string(craftSkinIndex));
+		}
+		else
+		{
+			size_t lastPos = item->getName().find_last_of("_");
+			std::string stripped = item->getName().substr(0, lastPos);
+			if (craftSkinIndex > 0)
+			{
+				newNames.push_back(stripped + "_" + std::to_string(craftSkinIndex));
+			}
+			else
+			{
+				newNames.push_back(stripped);
+			}
+		}
+	}
+	_mapDataSets.clear();
+	for (const auto& newName : newNames)
+	{
+		_mapDataSets.push_back(mod->getMapDataSet(newName));
+	}
+	newNames.clear();
+	_lastCraftSkinIndex = craftSkinIndex;
+}
+
+/**
  * Gets the terrain name.
  * @return The terrain name.
  */
 std::string RuleTerrain::getName() const
 {
 	return _name;
+}
+
+/**
+ * Returns the enviro effects name for this terrain.
+ * @return String ID for the enviro effects.
+ */
+const std::string& RuleTerrain::getEnviroEffects() const
+{
+	return _enviroEffects;
 }
 
 /**
@@ -142,15 +194,15 @@ MapBlock* RuleTerrain::getRandomMapBlock(int maxSizeX, int maxSizeY, int group, 
 {
 	std::vector<MapBlock*> compliantMapBlocks;
 
-	for (std::vector<MapBlock*>::const_iterator i = _mapBlocks.begin(); i != _mapBlocks.end(); ++i)
+	for (auto* mapblock : _mapBlocks)
 	{
-		if (((*i)->getSizeX() == maxSizeX ||
-			(!force && (*i)->getSizeX() < maxSizeX)) &&
-			((*i)->getSizeY() == maxSizeY ||
-			(!force && (*i)->getSizeY() < maxSizeY)) &&
-			(*i)->isInGroup(group))
+		if ((mapblock->getSizeX() == maxSizeX ||
+			(!force && mapblock->getSizeX() < maxSizeX)) &&
+			(mapblock->getSizeY() == maxSizeY ||
+			(!force && mapblock->getSizeY() < maxSizeY)) &&
+			mapblock->isInGroup(group))
 		{
-			compliantMapBlocks.push_back((*i));
+			compliantMapBlocks.push_back(mapblock);
 		}
 	}
 
@@ -168,10 +220,10 @@ MapBlock* RuleTerrain::getRandomMapBlock(int maxSizeX, int maxSizeY, int group, 
  */
 MapBlock* RuleTerrain::getMapBlock(const std::string &name)
 {
-	for (std::vector<MapBlock*>::const_iterator i = _mapBlocks.begin(); i != _mapBlocks.end(); ++i)
+	for (auto* mapblock : _mapBlocks)
 	{
-		if ((*i)->getName() == name)
-			return (*i);
+		if (mapblock->getName() == name)
+			return mapblock;
 	}
 	return 0;
 }
@@ -185,10 +237,10 @@ MapBlock* RuleTerrain::getMapBlock(const std::string &name)
 MapData *RuleTerrain::getMapData(unsigned int *id, int *mapDataSetID) const
 {
 	MapDataSet* mdf = 0;
-	std::vector<MapDataSet*>::const_iterator i = _mapDataSets.begin();
-	for (; i != _mapDataSets.end(); ++i)
+	auto iter = _mapDataSets.begin();
+	for (; iter != _mapDataSets.end(); ++iter)
 	{
-		mdf = *i;
+		mdf = *iter;
 		if (*id < mdf->getSize())
 		{
 			break;
@@ -196,7 +248,7 @@ MapData *RuleTerrain::getMapData(unsigned int *id, int *mapDataSetID) const
 		*id -= mdf->getSize();
 		(*mapDataSetID)++;
 	}
-	if (i == _mapDataSets.end())
+	if (iter == _mapDataSets.end())
 	{
 		// oops! someone at microprose made an error in the map!
 		// set this broken tile reference to BLANKS 0.
@@ -204,7 +256,7 @@ MapData *RuleTerrain::getMapData(unsigned int *id, int *mapDataSetID) const
 		*id = 0;
 		*mapDataSetID = 0;
 	}
-	return mdf->getObjects()->at(*id);
+	return mdf->getObject(*id);
 }
 
 /**
@@ -247,16 +299,21 @@ int RuleTerrain::getAmbience() const
  * Gets The generation script name.
  * @return The name of the script to use.
  */
-std::string RuleTerrain::getScript()
+const std::string& RuleTerrain::getRandomMapScript() const
 {
-	return _script;
+	if (!_mapScripts.empty())
+	{
+		size_t pick = RNG::generate(0, _mapScripts.size() - 1);
+		return _mapScripts[pick];
+	}
+	return _mapScript;
 }
 
 /**
  * Gets The list of musics this terrain has to choose from.
  * @return The list of track names.
  */
-const std::vector<std::string> &RuleTerrain::getMusic()
+const std::vector<std::string> &RuleTerrain::getMusic() const
 {
 	return _music;
 }

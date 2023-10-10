@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -27,7 +27,7 @@ namespace OpenXcom
  * Initializes a globe texture.
  * @param id Texture identifier.
  */
-Texture::Texture(int id) : _id(id)
+Texture::Texture(int id) : _id(id), _fakeUnderwater(false)
 {
 }
 
@@ -45,8 +45,11 @@ Texture::~Texture()
 void Texture::load(const YAML::Node &node)
 {
 	_id = node["id"].as<int>(_id);
-	_deployments = node["deployments"].as<std::map<std::string, int> >(_deployments);
+	_fakeUnderwater = node["fakeUnderwater"].as<bool>(_fakeUnderwater);
+	_startingCondition = node["startingCondition"].as<std::string>(_startingCondition);
+	_deployments = node["deployments"].as< std::map<std::string, int> >(_deployments);
 	_terrain = node["terrain"].as< std::vector<TerrainCriteria> >(_terrain);
+	_baseTerrain = node["baseTerrain"].as< std::vector<TerrainCriteria> >(_baseTerrain);
 }
 
 /**
@@ -69,22 +72,66 @@ std::string Texture::getRandomTerrain(Target *target) const
 {
 	int totalWeight = 0;
 	std::map<int, std::string> possibilities;
-	for (std::vector<TerrainCriteria>::const_iterator i = _terrain.begin(); i != _terrain.end(); ++i)
+	for (const auto& terrainCrit : _terrain)
 	{
-		if (i->weight > 0 &&
-			target->getLongitude() >= i->lonMin && target->getLongitude() < i->lonMax &&
-			target->getLatitude() >= i->latMin && target->getLatitude() < i->latMax)
+		if (terrainCrit.weight > 0 &&
+			target->getLongitude() >= terrainCrit.lonMin && target->getLongitude() < terrainCrit.lonMax &&
+			target->getLatitude() >= terrainCrit.latMin && target->getLatitude() < terrainCrit.latMax)
 		{
-			totalWeight += i->weight;
-			possibilities[totalWeight] = i->name;
+			totalWeight += terrainCrit.weight;
+			possibilities[totalWeight] = terrainCrit.name;
+		}
+	}
+	if (totalWeight > 0)
+	{
+		int pick = RNG::generate(1, totalWeight);
+		for (const auto& pair : possibilities)
+		{
+			if (pick <= pair.first)
+			{
+				return pair.second;
+			}
+		}
+	}
+	return "";
+}
+
+/**
+ * Returns the list of terrain criteria associated
+ * with this texture for base defense missions.
+ * @return List of terrain.
+ */
+std::vector<TerrainCriteria> *Texture::getBaseTerrain()
+{
+	return &_baseTerrain;
+}
+
+/**
+ * Calculates a random terrain for a base defense mission target based
+ * on the texture's available terrain criteria.
+ * @param target Pointer to the mission target.
+ * @return the name of the picked terrain.
+ */
+std::string Texture::getRandomBaseTerrain(Target *target) const
+{
+	int totalWeight = 0;
+	std::map<int, std::string> possibilities;
+	for (const auto& terrainCrit : _baseTerrain)
+	{
+		if (terrainCrit.weight > 0 &&
+			target->getLongitude() >= terrainCrit.lonMin && target->getLongitude() < terrainCrit.lonMax &&
+			target->getLatitude() >= terrainCrit.latMin && target->getLatitude() < terrainCrit.latMax)
+		{
+			totalWeight += terrainCrit.weight;
+			possibilities[totalWeight] = terrainCrit.name;
 		}
 	}
 	int pick = RNG::generate(1, totalWeight);
-	for (std::map<int, std::string>::const_iterator i = possibilities.begin(); i != possibilities.end(); ++i)
+	for (const auto& pair : possibilities)
 	{
-		if (pick <= i->first)
+		if (pick <= pair.first)
 		{
-			return i->second;
+			return pair.second;
 		}
 	}
 	return "";
@@ -95,7 +142,7 @@ std::string Texture::getRandomTerrain(Target *target) const
  * with this texture.
  * @return List of deployments.
  */
-const std::map<std::string, int> &Texture::getDeployments()
+const std::map<std::string, int> &Texture::getDeployments() const
 {
 	return _deployments;
 }
@@ -111,36 +158,34 @@ std::string Texture::getRandomDeployment() const
 	{
 		return "";
 	}
-
-	std::map<std::string, int>::const_iterator i = _deployments.begin();
-
 	if (_deployments.size() == 1)
 	{
-		return i->first;
+		return _deployments.begin()->first;
 	}
-	int totalWeight = 0;
 
-	for (; i != _deployments.end(); ++i)
+	int totalWeight = 0;
+	for (const auto& pair : _deployments)
 	{
-		totalWeight += i->second;
+		totalWeight += pair.second;
 	}
 
 	if (totalWeight >= 1)
 	{
 		int pick = RNG::generate(1, totalWeight);
-		for (i = _deployments.begin(); i != _deployments.end(); ++i)
+		for (const auto& pair : _deployments)
 		{
-			if (pick <= i->second)
+			if (pick <= pair.second)
 			{
-				return i->first;
+				return pair.first;
 			}
 			else
 			{
-				pick -= i->second;
+				pick -= pair.second;
 			}
 		}
 	}
 
 	return "";
 }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -22,19 +22,16 @@
 #include "BattlescapeState.h"
 #include "TileEngine.h"
 #include "Map.h"
-#include "InfoboxState.h"
 #include "Camera.h"
-#include "AlienBAIState.h"
+#include "AIModule.h"
 #include "../Savegame/Tile.h"
-#include "../Engine/RNG.h"
-#include "../Engine/Game.h"
-#include "../Engine/Language.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
-#include "../Engine/Sound.h"
+#include "../Engine/Exception.h"
 #include "../Mod/Mod.h"
 #include "../Mod/RuleItem.h"
+#include "../fmath.h"
 
 namespace OpenXcom
 {
@@ -42,7 +39,7 @@ namespace OpenXcom
 /**
  * Sets up a MeleeAttackBState.
  */
-MeleeAttackBState::MeleeAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _target(0), _weapon(0), _ammo(0), _hitNumber(0), _initialized(false)
+MeleeAttackBState::MeleeAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _target(0), _weapon(0), _ammo(0), _hitNumber(0), _initialized(false), _reaction(false)
 {
 }
 
@@ -62,17 +59,11 @@ void MeleeAttackBState::init()
 	if (_initialized) return;
 	_initialized = true;
 
+	int terrainMeleeTilePart = _action.terrainMeleeTilePart;
+	_action.terrainMeleeTilePart = 0; // reset!
+
 	_weapon = _action.weapon;
-
-	if (!_weapon) // can't shoot without weapon
-	{
-		_parent->popState();
-		return;
-	}
-
-	_ammo = _weapon->getAmmoItem();
-
-	if (!_parent->getSave()->getTile(_action.target)) // invalid target position
+	if (!_weapon) // can't hit without weapon
 	{
 		_parent->popState();
 		return;
@@ -80,7 +71,21 @@ void MeleeAttackBState::init()
 
 	_unit = _action.actor;
 
-	if (_unit->isOut() || _unit->getHealth() <= 0 || _unit->getHealth() < _unit->getStunlevel())
+	bool reactionShoot = _unit->getFaction() != _parent->getSave()->getSide();
+	_ammo = _action.weapon->getAmmoForAction(BA_HIT, reactionShoot ? nullptr : &_action.result);
+	if (!_ammo)
+	{
+		_parent->popState();
+		return;
+	}
+
+	if (!_parent->getSave()->getTile(_action.target)) // invalid target position
+	{
+		_parent->popState();
+		return;
+	}
+
+	if (_unit->isOut() || _unit->isOutThresholdExceed())
 	{
 		// something went wrong - we can't shoot when dead or unconscious, or if we're about to fall over.
 		_parent->popState();
@@ -88,13 +93,11 @@ void MeleeAttackBState::init()
 	}
 
 	// reaction fire
-	if (_unit->getFaction() != _parent->getSave()->getSide())
+	if (reactionShoot)
 	{
 		// no ammo or target is dead: give the time units back and cancel the shot.
-		if (_ammo == 0
-			|| !_parent->getSave()->getTile(_action.target)->getUnit()
-			|| _parent->getSave()->getTile(_action.target)->getUnit()->isOut()
-			|| _parent->getSave()->getTile(_action.target)->getUnit() != _parent->getSave()->getSelectedUnit())
+		auto target = _parent->getSave()->getTile(_action.target)->getUnit();
+		if (!target || target->isOut() || target->isOutThresholdExceed() || target != _parent->getSave()->getSelectedUnit())
 		{
 			_parent->popState();
 			return;
@@ -102,7 +105,7 @@ void MeleeAttackBState::init()
 		_unit->lookAt(_action.target, _unit->getTurretType() != -1);
 		while (_unit->getStatus() == STATUS_TURNING)
 		{
-			_unit->turn();
+			_unit->turn(_unit->getTurretType() != -1);
 		}
 	}
 
@@ -113,8 +116,15 @@ void MeleeAttackBState::init()
 		return;
 	}
 
+	// terrain melee
+	if (terrainMeleeTilePart > 0)
+	{
+		_voxel = _action.target.toVoxel() + Position(8, 8, 12);
+		performMeleeAttack(terrainMeleeTilePart);
+		return;
+	}
 
-	AlienBAIState *ai = dynamic_cast<AlienBAIState*>(_unit->getCurrentAIState());
+	AIModule *ai = _unit->getAIModule();
 
 	if (_unit->getFaction() == _parent->getSave()->getSide() &&
 		_unit->getFaction() != FACTION_PLAYER &&
@@ -128,23 +138,43 @@ void MeleeAttackBState::init()
 		_target = _parent->getSave()->getTile(_action.target)->getUnit();
 	}
 
+	if (!_target)
+	{
+		throw Exception("This is a known (but tricky) bug... still fixing it, sorry. In the meantime, try save scumming option or kill all aliens in debug mode to finish the mission.");
+	}
+
 	int height = _target->getFloatHeight() + (_target->getHeight() / 2) - _parent->getSave()->getTile(_action.target)->getTerrainLevel();
-	_voxel = _action.target.toVexel() + Position(8, 8, height);
+	_voxel = _action.target.toVoxel() + Position(8, 8, height);
+
+	if (!_parent->getSave()->getTile(_voxel.toTile()))
+	{
+		throw Exception("Melee attack animation overflow: target voxel is outside of the map boundaries.");
+	}
 
 	if (_unit->getFaction() == FACTION_HOSTILE)
 	{
 		_hitNumber = _weapon->getRules()->getAIMeleeHitCount() - 1;
 	}
+
 	performMeleeAttack();
 }
+
 /**
  * Performs all the overall functions of the state, this code runs AFTER the explosion state pops.
  */
 void MeleeAttackBState::think()
 {
 	_parent->getSave()->getBattleState()->clearMouseScrollingState();
+	if (_reaction && !_parent->getSave()->getUnitsFalling())
+	{
+		_reaction = false;
+		if (_parent->getTileEngine()->checkReactionFire(_unit, _action))
+		{
+			return;
+		}
+	}
 
-	// if the unit burns floortiles, burn floortiles
+	// if the unit burns floor tiles, burn floor tiles
 	if (_unit->getSpecialAbility() == SPECAB_BURNFLOOR || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE)
 	{
 		_parent->getSave()->getTile(_action.target)->ignite(15);
@@ -153,10 +183,9 @@ void MeleeAttackBState::think()
 		// not performing a reaction attack
 		_unit->getFaction() == _parent->getSave()->getSide() &&
 		// whose target is still alive or at least conscious
-		_target && _target->getHealth() > 0 &&
-		_target->getHealth() > _target->getStunlevel() &&
+		_target && !_target->isOutThresholdExceed() &&
 		// and we still have ammo to make the attack
-		_weapon->getAmmoItem() &&
+		_weapon->getAmmoForAction(BA_HIT) &&
 		// spend the TUs immediately
 		_action.spendTU())
 	{
@@ -170,11 +199,11 @@ void MeleeAttackBState::think()
 			_parent->getMap()->getCamera()->setMapOffset(_action.cameraPosition);
 			_parent->getMap()->invalidate();
 		}
-//		melee doesn't trigger a reaction, remove comments to enable.
-//		if (!_parent->getSave()->getUnitsFalling())
-//		{
-//			_parent->getTileEngine()->checkReactionFire(_unit);
-//		}
+
+		if (_unit->getFaction() == _parent->getSave()->getSide()) // not a reaction attack
+		{
+			_parent->getCurrentAction()->type = BA_NONE; // do this to restore cursor
+		}
 
 		if (_parent->getSave()->getSide() == FACTION_PLAYER || _parent->getSave()->getDebugMode())
 		{
@@ -188,30 +217,29 @@ void MeleeAttackBState::think()
 /**
  * Sets up a melee attack, inserts an explosion into the map and make noises.
  */
-void MeleeAttackBState::performMeleeAttack()
+void MeleeAttackBState::performMeleeAttack(int terrainMeleeTilePart)
 {
 	// set the soldier in an aiming position
 	_unit->aim(true);
 
 	// use up ammo if applicable
-	if (!_parent->getSave()->getDebugMode() && _weapon->getRules()->getBattleType() == BT_MELEE && _ammo && _ammo->spendBullet() == false)
-	{
-		_parent->getSave()->removeItem(_ammo);
-		_action.weapon->setAmmoItem(0);
-	}
+	_action.weapon->spendAmmoForAction(BA_HIT, _parent->getSave());
 	_parent->getMap()->setCursorType(CT_NONE);
 
 	// offset the damage voxel ever so slightly so that the target knows which side the attack came from
 	Position difference = _unit->getPosition() - _action.target;
 	// large units may cause it to offset too much, so we'll clamp the values.
-	difference.x = std::max(-1, std::min(1, difference.x));
-	difference.y = std::max(-1, std::min(1, difference.y));
+	difference.x = Clamp<Sint16>(difference.x, -1, 1);
+	difference.y = Clamp<Sint16>(difference.y, -1, 1);
 
 	Position damagePosition = _voxel + difference;
 
-	// make an explosion action
-	_parent->statePushFront(new ExplosionBState(_parent, damagePosition, BA_HIT, _action.weapon, _action.actor, 0, true));
 
+	// make an explosion action
+	_parent->statePushFront(new ExplosionBState(_parent, damagePosition, BattleActionAttack::GetAferShoot(_action, _ammo), 0, true, 0, 0, terrainMeleeTilePart));
+
+
+	_reaction = true;
 }
 
 }

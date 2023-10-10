@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,15 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_COUNTRY_H
-#define OPENXCOM_COUNTRY_H
-
 #include <vector>
 #include <yaml-cpp/yaml.h>
+#include "../Engine/Script.h"
 
 namespace OpenXcom
 {
 
 class RuleCountry;
+class SavedGame;
 
 /**
  * Represents a country that funds the player.
@@ -34,28 +34,39 @@ class RuleCountry;
  */
 class Country
 {
+public:
+	enum class Satisfaction : int { ALIEN_PACT, UNHAPPY, SATISFIED, HAPPY };
+
+	/// Name of class used in script.
+	static constexpr const char* ScriptName = "Country";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+
 private:
 	RuleCountry *_rules;
-	bool _pact, _newPact;
+	bool _pact, _newPact, _cancelPact;
 	std::vector<int> _funding, _activityXcom, _activityAlien;
-	int _satisfaction;
+	Satisfaction _satisfaction;
+	ScriptValues<Country> _scriptValues;
+
 public:
 	/// Creates a new country of the specified type.
 	Country(RuleCountry *rules, bool gen = true);
 	/// Cleans up the country.
 	~Country();
 	/// Loads the country from YAML.
-	void load(const YAML::Node& node);
+	void load(const YAML::Node& node, const ScriptGlobal* shared);
 	/// Saves the country to YAML.
-	YAML::Node save() const;
+	YAML::Node save(const ScriptGlobal* shared) const;
 	/// Gets the country's ruleset.
-	RuleCountry *getRules() const;
+	const RuleCountry *getRules() const;
 	/// Gets the country's funding.
 	std::vector<int> &getFunding();
 	/// Sets the country's funding.
 	void setFunding(int funding);
+
 	/// get the country's satisfaction level
-	int getSatisfaction();
+	Satisfaction getSatisfaction() const;
 	/// add xcom activity in this country
 	void addActivityXcom(int activity);
 	/// add alien activity in this country
@@ -65,17 +76,26 @@ public:
 	/// get xcom activity to this country
 	std::vector<int> &getActivityAlien();
 	/// store last month's counters, start new counters, set this month's change.
-	void newMonth(int xcomTotal, int alienTotal);
+	void newMonth(int xcomTotal, int alienTotal, int pactScore, int averageFunding, const SavedGame* save);
 	/// are we signing a new pact?
 	bool getNewPact() const;
 	/// sign a pact at the end of this month.
 	void setNewPact();
+	/// are we cancelling an existing pact?
+	bool getCancelPact() const;
+	/// cancel or prevent a pact.
+	void setCancelPact();
 	/// have we signed a pact?
 	bool getPact() const;
 	/// sign a pact immediately
 	void setPact();
+	/// can be (re)infiltrated?
+	bool canBeInfiltrated();
+
+private:
+	int getCurrentFunding() const { return _funding.back(); }
+	int getCurrentActivityAlien()  const { return _activityAlien.back(); }
+	int getCurrentActivityXcom() const { return _activityXcom.back(); }
 };
 
 }
-
-#endif

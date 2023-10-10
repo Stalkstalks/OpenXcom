@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,7 +21,6 @@
 #include "../Engine/FileMap.h"
 #include "../Engine/Game.h"
 #include "../Engine/InteractiveSurface.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Screen.h"
 #include "../Engine/Timer.h"
 #include "../Interface/Text.h"
@@ -32,32 +31,32 @@
 namespace OpenXcom
 {
 
-SlideshowState::SlideshowState(const SlideshowHeader &slideshowHeader,
-			       const std::vector<SlideshowSlide> *slideshowSlides)
+SlideshowState::SlideshowState(const SlideshowHeader &slideshowHeader, const std::vector<SlideshowSlide> *slideshowSlides)
 		: _slideshowHeader(slideshowHeader), _slideshowSlides(slideshowSlides), _curScreen(-1)
 {
 	_wasLetterboxed = CutsceneState::initDisplay();
 
 	// pre-render and queue up all the frames
-	for (std::vector<SlideshowSlide>::const_iterator it = _slideshowSlides->begin(); it != _slideshowSlides->end(); ++it)
+	for (const auto& def : *_slideshowSlides)
 	{
 		InteractiveSurface *slide =
 			new InteractiveSurface(Screen::ORIGINAL_WIDTH, Screen::ORIGINAL_HEIGHT, 0, 0);
-		slide->loadImage(FileMap::getFilePath(it->imagePath));
+		slide->loadImage(def.imagePath);
 		slide->onMouseClick((ActionHandler)&SlideshowState::screenClick);
 		slide->onKeyboardPress((ActionHandler)&SlideshowState::screenClick, Options::keyOk);
 		slide->onKeyboardPress((ActionHandler)&SlideshowState::screenSkip, Options::keyCancel);
 		slide->setVisible(false);
 		_slides.push_back(slide);
-		setPalette(slide->getPalette());
+		setStatePalette(slide->getPalette());
 		add(slide);
 
 		// initialize with default rect; may get overridden by
 		// category/id definition
-		Text *caption = new Text(it->w, it->h, it->x, it->y);
-		caption->setColor(it->color);
-		caption->setText(tr(it->caption));
-		caption->setAlign(it->align);
+		Text *caption = new Text(def.w, def.h, def.x, def.y);
+		caption->setColor(def.color);
+		caption->setText(tr(def.caption));
+		caption->setAlign(def.align);
+		caption->setVerticalAlign(def.valign);
 		caption->setWordWrap(true);
 		caption->setVisible(false);
 		_captions.push_back(caption);
@@ -119,7 +118,7 @@ void SlideshowState::screenClick(Action *action)
 			transitionSeconds = _slideshowSlides->at(_curScreen).transitionSeconds;
 		_transitionTimer->setInterval(transitionSeconds * 1000);
 		_transitionTimer->start();
-		setPalette(_slides[_curScreen]->getPalette());
+		setStatePalette(_slides[_curScreen]->getPalette());
 		_slides[_curScreen]->setVisible(true);
 		_captions[_curScreen]->setVisible(true);
 		init();

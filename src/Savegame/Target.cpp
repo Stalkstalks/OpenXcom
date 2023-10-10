@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include "Target.h"
-#include <cmath>
 #include "Craft.h"
+#include "Ufo.h"
 #include "SerializationHelper.h"
+#include "../fmath.h"
+#include "../Engine/Language.h"
 
 namespace OpenXcom
 {
@@ -28,7 +29,7 @@ namespace OpenXcom
 /**
  * Initializes a target with blank coordinates.
  */
-Target::Target() : _lon(0.0), _lat(0.0), _depth(0)
+Target::Target() : _lon(0.0), _lat(0.0), _id(0)
 {
 }
 
@@ -37,13 +38,13 @@ Target::Target() : _lon(0.0), _lat(0.0), _depth(0)
  */
 Target::~Target()
 {
-	for (size_t i = 0; i < _followers.size(); ++i)
+	for (auto* follower : getCraftFollowers())
 	{
-		Craft *craft = dynamic_cast<Craft*>(_followers[i]);
-		if (craft)
-		{
-			craft->returnToBase();
-		}
+		follower->returnToBase();
+	}
+	for (auto* ufoFollower : getUfoFollowers())
+	{
+		ufoFollower->resetOriginalDestination(false);
 	}
 }
 
@@ -55,7 +56,11 @@ void Target::load(const YAML::Node &node)
 {
 	_lon = node["lon"].as<double>(_lon);
 	_lat = node["lat"].as<double>(_lat);
-	_depth = node["depth"].as<int>(_depth);
+	_id = node["id"].as<int>(_id);
+	if (const YAML::Node &name = node["name"])
+	{
+		_name = name.as<std::string>();
+	}
 }
 
 /**
@@ -67,8 +72,10 @@ YAML::Node Target::save() const
 	YAML::Node node;
 	node["lon"] = serializeDouble(_lon);
 	node["lat"] = serializeDouble(_lat);
-	if (_depth)
-		node["depth"] = _depth;
+	if (_id)
+		node["id"] = _id;
+	if (!_name.empty())
+		node["name"] = _name;
 	return node;
 }
 
@@ -81,6 +88,8 @@ YAML::Node Target::saveId() const
 	YAML::Node node;
 	node["lon"] = serializeDouble(_lon);
 	node["lat"] = serializeDouble(_lat);
+	node["type"] = getType();
+	node["id"] = _id;
 	return node;
 }
 
@@ -138,41 +147,133 @@ void Target::setLatitude(double lat)
 }
 
 /**
- * Returns the list of crafts currently
- * following this target.
- * @return Pointer to list of crafts.
+ * Returns the target's unique ID.
+ * @return Unique ID, 0 if none.
  */
-std::vector<Target*> *Target::getFollowers()
+int Target::getId() const
+{
+	return _id;
+}
+
+/**
+ * Changes the target's unique ID.
+ * @param id Unique ID.
+ */
+void Target::setId(int id)
+{
+	_id = id;
+}
+
+/**
+ * Returns the target's user-readable name.
+ * If there's no custom name, the language default is used.
+ * @param lang Language to get strings from.
+ * @return Full name.
+ */
+std::string Target::getName(Language *lang) const
+{
+	if (_name.empty())
+		return getDefaultName(lang);
+	return _name;
+}
+
+/**
+ * Changes the target's custom name.
+ * @param newName New custom name. If set to blank, the language default is used.
+ */
+void Target::setName(const std::string &newName)
+{
+	_name = newName;
+}
+
+/**
+ * Returns the target's unique default name.
+ * @param lang Language to get strings from.
+ * @return Full name.
+ */
+std::string Target::getDefaultName(Language *lang) const
+{
+	return lang->getString(getMarkerName()).arg(_id);
+}
+
+/**
+ * Returns the name on the globe for the target.
+ * @return String ID.
+ */
+std::string Target::getMarkerName() const
+{
+	return getType() + "_";
+}
+
+/**
+ * Returns the marker ID on the globe for the target.
+ * @return Marker ID.
+ */
+int Target::getMarkerId() const
+{
+	return _id;
+}
+
+/**
+ * Returns the list of targets currently
+ * following this target.
+ * @return Pointer to list of targets.
+ */
+std::vector<MovingTarget*> *Target::getFollowers()
 {
 	return &_followers;
 }
 
 /**
+ * Returns the list of crafts currently
+ * following this target.
+ * @return List of crafts.
+ */
+std::vector<Craft*> Target::getCraftFollowers() const
+{
+	std::vector<Craft*> crafts;
+	for (auto* mt : _followers)
+	{
+		Craft *craft = dynamic_cast<Craft*>(mt);
+		if (craft)
+		{
+			crafts.push_back(craft);
+		}
+	}
+	return crafts;
+}
+
+/**
+ * Returns the list of UFOs currently
+ * following this target.
+ * @return List of UFOs.
+ */
+std::vector<Ufo*> Target::getUfoFollowers() const
+{
+	std::vector<Ufo*> ufos;
+	for (auto* mt : _followers)
+	{
+		Ufo *ufo = dynamic_cast<Ufo*>(mt);
+		if (ufo)
+		{
+			ufos.push_back(ufo);
+		}
+	}
+	return ufos;
+}
+
+/**
  * Returns the great circle distance to another
  * target on the globe.
- * @param target Pointer to other target.
+ * @param lon Longitude.
+ * @param lat Latitude.
  * @returns Distance in radian.
  */
-double Target::getDistance(const Target *target) const
+double Target::getDistance(double lon, double lat) const
 {
-	return acos(cos(_lat) * cos(target->getLatitude()) * cos(target->getLongitude() - _lon) + sin(_lat) * sin(target->getLatitude()));
+	if (AreSame(lon, _lon) && AreSame(lat, _lat))
+		return 0.0;
+	return acos(cos(_lat) * cos(lat) * cos(lon - _lon) + sin(_lat) * sin(lat));
 }
 
-/**
- * Gets the mission site's depth.
- * @return the depth of the site.
- */
-int Target::getSiteDepth()
-{
-	return _depth;
-}
-
-/**
- * Sets the mission site's depth.
- * @param depth the depth we want.
- */
-void Target::setSiteDepth(int depth)
-{
-	_depth = depth;
-}
 }

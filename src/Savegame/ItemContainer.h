@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ITEMCONTAINER_H
-#define OPENXCOM_ITEMCONTAINER_H
-
 #include <string>
 #include <map>
 #include <yaml-cpp/yaml.h>
@@ -27,6 +25,7 @@ namespace OpenXcom
 {
 
 class Mod;
+class RuleItem;
 
 /**
  * Represents the items contained by a certain entity,
@@ -48,10 +47,16 @@ public:
 	YAML::Node save() const;
 	/// Adds an item to the container.
 	void addItem(const std::string &id, int qty = 1);
+	/// Adds an item to the container.
+	void addItem(const RuleItem* item, int qty = 1);
 	/// Removes an item from the container.
 	void removeItem(const std::string &id, int qty = 1);
+	/// Removes an item from the container.
+	void removeItem(const RuleItem* item, int qty = 1);
 	/// Gets an item in the container.
 	int getItem(const std::string &id) const;
+	/// Gets an item in the container.
+	int getItem(const RuleItem* item) const;
 	/// Gets the total quantity of items in the container.
 	int getTotalQuantity() const;
 	/// Gets the total size of items in the container.
@@ -61,5 +66,3 @@ public:
 };
 
 }
-
-#endif

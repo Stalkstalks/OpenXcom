@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +16,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include "PrimeGrenadeState.h"
 #include <sstream>
-#include <cmath>
+#include "PrimeGrenadeState.h"
+#include "BattlescapeGame.h"
 #include "../Engine/Game.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Action.h"
 #include "../Interface/Text.h"
 #include "../Interface/Frame.h"
@@ -30,6 +29,7 @@
 #include "../Savegame/SavedBattleGame.h"
 #include "../Mod/Mod.h"
 #include "../Mod/RuleInterface.h"
+#include "../Engine/Sound.h"
 
 namespace OpenXcom
 {
@@ -61,7 +61,7 @@ PrimeGrenadeState::PrimeGrenadeState(BattleAction *action, bool inInventoryView,
 	// Set palette
 	if (inInventoryView)
 	{
-		setPalette("PAL_BATTLESCAPE");
+		setStandardPalette("PAL_BATTLESCAPE");
 	}
 	else
 	{
@@ -100,7 +100,7 @@ PrimeGrenadeState::PrimeGrenadeState(BattleAction *action, bool inInventoryView,
 		square.h -= 2;
 		_button[i]->drawRect(&square, grenadeBackground->color2);
 
-		std::wostringstream ss;
+		std::ostringstream ss;
 		ss << i;
 		add(_number[i], "grenadeMenu", "battlescape");
 		_number[i]->setBig();
@@ -129,7 +129,7 @@ PrimeGrenadeState::~PrimeGrenadeState()
 void PrimeGrenadeState::handle(Action *action)
 {
 	State::handle(action);
-	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && _game->isRightClick(action))
 	{
 		if (!_inInventoryView) _action->value = -1;
 		_game->popState();
@@ -145,7 +145,7 @@ void PrimeGrenadeState::btnClick(Action *action)
 {
 	int btnID = -1;
 
-	if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	if (_game->isRightClick(action))
 	{
 		if (!_inInventoryView) _action->value = btnID;
 		_game->popState();
@@ -163,8 +163,20 @@ void PrimeGrenadeState::btnClick(Action *action)
 
 	if (btnID != -1)
 	{
-		if (_inInventoryView) _grenadeInInventory->setFuseTimer(0 + btnID);
-		else _action->value = btnID;
+		if (_inInventoryView)
+		{
+			_grenadeInInventory->setFuseTimer(0 + btnID);
+			// prime sound
+			int sound = _grenadeInInventory->getRules()->getPrimeSound();
+			if (sound != Mod::NO_SOUND)
+			{
+				_game->getMod()->getSoundByDepth(_game->getSavedGame()->getSavedBattle()->getDepth(), sound)->play();
+			}
+		}
+		else
+		{
+			_action->value = btnID;
+		}
 		_game->popState();
 		if (!_inInventoryView) _game->popState();
 	}

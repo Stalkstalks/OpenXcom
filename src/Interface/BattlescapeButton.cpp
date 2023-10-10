@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -102,7 +102,7 @@ void BattlescapeButton::mousePress(Action *action, State *state)
  */
 void BattlescapeButton::mouseRelease(Action *action, State *state)
 {
-	if (_inverted && isButtonHandled(action->getDetails()->button.button))
+	if (_inverted && (_tftdMode || _toggleMode == INVERT_CLICK) && isButtonHandled(action->getDetails()->button.button))
 	{
 		_inverted = false;
 	}
@@ -143,11 +143,17 @@ void BattlescapeButton::allowClickInversion()
  * we use two separate surfaces because it's far easier to keep track of
  * whether or not this surface is inverted.
  */
-void BattlescapeButton::initSurfaces()
+void BattlescapeButton::initSurfaces(Surface* custom)
 {
 	delete _altSurface;
 	_altSurface = new Surface(_surface->w, _surface->h, _x, _y);
 	_altSurface->setPalette(getPalette());
+
+	if (custom)
+	{
+		custom->blitNShade(_altSurface, 0, 0);
+		return;
+	}
 
 	// Lock the surface
 	_altSurface->lock();
@@ -162,7 +168,7 @@ void BattlescapeButton::initSurfaces()
 		for (int x = 0, y = 0; x < getWidth() && y < getHeight();)
 		{
 			Uint8 pixel = getPixel(x, y);
-			for (int i = 0; i != sizeof(colorFrom)/sizeof(colorFrom[0]); ++i)
+			for (size_t i = 0; i != std::size(colorFrom); ++i)
 			{
 				if (pixel == colorFrom[i])
 				{
@@ -198,7 +204,7 @@ void BattlescapeButton::initSurfaces()
  * depending on whether the button is "pressed" or not.
  * @param surface Pointer to surface to blit onto.
  */
-void BattlescapeButton::blit(Surface *surface)
+void BattlescapeButton::blit(SDL_Surface *surface)
 {
 	if (_inverted)
 	{
@@ -235,4 +241,5 @@ void BattlescapeButton::setY(int y)
 		_altSurface->setY(y);
 	}
 }
+
 }

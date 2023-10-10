@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,6 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "MapData.h"
+#include "../Engine/Options.h"
 
 namespace OpenXcom
 {
@@ -27,7 +28,7 @@ namespace OpenXcom
  */
 MapData::MapData(MapDataSet *dataset) : _dataset(dataset), _specialType(TILE), 
 				_isUfoDoor(false), _stopLOS(false), _isNoFloor(false), _isGravLift(false), _isDoor(false), _blockFire(false), _blockSmoke(false), _baseModule(false),
-				_yOffset(0), _TUWalk(0), _TUFly(0), _TUSlide(0), _terrainLevel(0), _footstepSound(0), _dieMCD(0), _altMCD(0), _objectType(0), _lightSource(0),
+				_yOffset(0), _TUWalk(0), _TUFly(0), _TUSlide(0), _terrainLevel(0), _footstepSound(0), _dieMCD(0), _altMCD(0), _objectType(O_FLOOR), _lightSource(0),
 				_armor(0), _flammable(0), _fuel(0), _explosive(0), _explosiveType(0), _bigWall(0), _miniMapIndex(0)
 {
 	std::fill_n(_sprite, 8, 0);
@@ -130,6 +131,14 @@ bool MapData::isGravLift() const
 }
 
 /**
+ * Gets whether this should be drawn behind a unit or in front of a unit (i.e. if it works as a S or E wall).
+ */
+bool MapData::isBackTileObject() const
+{
+	return getBigWall() < 6 || getBigWall() == 9;
+}
+
+/**
  * Sets all kinds of flags.
  * @param isUfoDoor True if this is a ufo door.
  * @param stopLOS True if this stops line of sight.
@@ -161,23 +170,28 @@ void MapData::setFlags(bool isUfoDoor, bool stopLOS, bool isNoFloor, int bigWall
  */
 int MapData::getBlock(ItemDamageType type) const
 {
-	switch (type)
-	{
-	case DT_NONE:
+	if (type == DT_NONE)
 		return _block[1];
-	case DT_SMOKE:
+	else if (type == DT_SMOKE)
 		return _block[3];
-	case DT_ACID:
-	case DT_AP:
-	case DT_LASER:
-	case DT_PLASMA:
-	case DT_MELEE:
-	case DT_HE:
-	case DT_IN:
-	case DT_STUN:
+	else if (type > DT_NONE && type < DAMAGE_TYPES)
+	{
+		switch (Options::battleTerrainSquishyness)
+		{
+		case 0:
+			return 255;
+		case 1:
+			return _block[2];
+		case 2:
+			return std::min(_block[2], 100);
+		case 3:
+			return std::min(_block[2], 25);
+		case 4:
+			return std::min(_block[2], 12);
+		case 5:
+			return std::min(_block[2], 4);
+		}
 		return _block[2];
-	default:
-		break;
 	}
 
 	return 0;
@@ -240,18 +254,18 @@ SpecialTileType MapData::getSpecialType() const
 
 /**
  * Sets the type of object.
- * @param type The object type (0-3).
+ * @param type New type of the object.
  */
-void MapData::setObjectType(int type)
+void MapData::setObjectType(TilePart type)
 {
 	_objectType = type;
 }
 
 /**
  * Gets the type of object.
- * @return The object type (0-3).
+ * @return Type of the part of the tile.
  */
-int MapData::getObjectType() const
+TilePart MapData::getObjectType() const
 {
 	return _objectType;
 }
@@ -261,7 +275,7 @@ int MapData::getObjectType() const
  * @param value Special tile type.
  * @param otype Object type.
  */
-void MapData::setSpecialType(int value, int otype)
+void MapData::setSpecialType(int value, TilePart otype)
 {
 	_specialType = (SpecialTileType)value;
 	_objectType = otype;
@@ -401,6 +415,21 @@ void MapData::setLightSource(int value)
  */
 int MapData::getArmor() const
 {
+	switch (Options::battleTerrainSquishyness)
+	{
+	case 0:
+		return 255;
+	case 1:
+		return _armor;
+	case 2:
+		return std::min(_armor, 100);
+	case 3:
+		return std::min(_armor, 25);
+	case 4:
+		return std::min(_armor, 12);
+	case 5:
+		return std::min(_armor, 4);
+	}
 	return _armor;
 }
 
@@ -563,7 +592,7 @@ void MapData::setTUSlide(const int TUSlide)
  * check if this is an xcom base object.
  * @return if it is a base object.
  */
-bool MapData::isBaseModule()
+bool MapData::isBaseModule() const
 {
 	return _baseModule;
 }

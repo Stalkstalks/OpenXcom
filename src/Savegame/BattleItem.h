@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BATTLEITEM_H
-#define OPENXCOM_BATTLEITEM_H
-
 #include <yaml-cpp/yaml.h>
+#include "../Mod/RuleItem.h"
+#include "../Engine/Script.h"
 
 namespace OpenXcom
 {
@@ -28,9 +28,15 @@ class RuleItem;
 class RuleInventory;
 class BattleUnit;
 class Tile;
+class Mod;
 class SurfaceSet;
 class Surface;
-class ScriptWorker;
+class ScriptWorkerBlit;
+class ScriptParserBase;
+class SavedBattleGame;
+struct RuleItemAction;
+
+enum BattleActionType : Uint8;
 
 /**
  * Represents a single item in the battlescape.
@@ -42,55 +48,93 @@ class BattleItem
 {
 private:
 	int _id;
-	RuleItem *_rules;
+	const RuleItem *_rules;
 	BattleUnit *_owner, *_previousOwner;
 	BattleUnit *_unit;
 	Tile *_tile;
-	RuleInventory *_inventorySlot;
+	int _inventoryMoveCostPercent = 0;
+	const RuleInventory *_inventorySlot;
 	int _inventoryX, _inventoryY;
-	BattleItem *_ammoItem;
+	BattleItem *_ammoItem[RuleItem::AmmoSlotMax] = { };
+	bool _ammoVisibility[RuleItem::AmmoSlotMax] = { };
 	int _fuseTimer, _ammoQuantity;
 	int _painKiller, _heal, _stimulant;
-	bool _XCOMProperty, _droppedOnAlienTurn, _isAmmo;
+	bool _XCOMProperty, _droppedOnAlienTurn, _isAmmo, _isWeaponWithAmmo, _fuseEnabled;
+	const RuleItemAction *_confAimedOrLaunch = nullptr;
+	const RuleItemAction *_confSnap = nullptr;
+	const RuleItemAction *_confAuto = nullptr;
+	const RuleItemAction *_confMelee = nullptr;
+	ScriptValues<BattleItem> _scriptValues;
+
 public:
 
-	/// Init all required data in script using object data
-	static void ScriptFill(ScriptWorker* w, BattleItem* item, bool inventory, int anim_frame, int shade);
+	/// Name of class used in script.
+	static constexpr const char *ScriptName = "BattleItem";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+	/// Init all required data in script using object data.
+	static void ScriptFill(ScriptWorkerBlit* w, const BattleItem* item, const SavedBattleGame* save, int part, int anim_frame, int shade);
 
 	/// Creates a item of the specified type.
-	BattleItem(RuleItem *rules, int *id);
+	BattleItem(const RuleItem *rules, int *id);
 	/// Cleans up the item.
 	~BattleItem();
 	/// Loads the item from YAML.
-	void load(const YAML::Node& node);
+	void load(const YAML::Node& node, Mod *mod, const ScriptGlobal *shared);
 	/// Saves the item to YAML.
-	YAML::Node save() const;
+	YAML::Node save(const ScriptGlobal *shared) const;
 	/// Gets the item's ruleset.
-	RuleItem *getRules() const;
+	const RuleItem *getRules() const;
 	/// Gets the item's ammo quantity
 	int getAmmoQuantity() const;
 	/// Sets the item's ammo quantity.
 	void setAmmoQuantity(int qty);
+
 	/// Gets the turn until explosion
 	int getFuseTimer() const;
 	/// Sets the turns until explosion.
 	void setFuseTimer(int turns);
-	/// Spend one bullet.
-	bool spendBullet();
+	/// Gets if fuse was triggered.
+	bool isFuseEnabled() const;
+	/// Set fuse trigger.
+	void setFuseEnabled(bool enable);
+	/// Called on end of turn is triggered.
+	void fuseEndTurnUpdate();
+	/// Get if item can trigger end of turn effect.
+	bool fuseTimeEvent();
+	/// Called when item fuse is triggered on throw.
+	bool fuseThrowEvent();
+	/// Called when item fuse is triggered on throw.
+	bool fuseProximityEvent();
+
+	/// Spend one bullet. (Or spend a given amount of energy from a battery.)
+	bool spendBullet(int spendPerShot);
+
+	/// Check if owner is removed from game.
+	bool isOwnerIgnored() const;
 	/// Gets the item's owner.
-	BattleUnit *getOwner() const;
+	BattleUnit *getOwner();
+	/// Gets the item's owner.
+	const BattleUnit *getOwner() const;
 	/// Gets the item's previous owner.
-	BattleUnit *getPreviousOwner() const;
+	BattleUnit *getPreviousOwner();
+	/// Gets the item's previous owner.
+	const BattleUnit *getPreviousOwner() const;
 	/// Sets the owner.
 	void setOwner(BattleUnit *owner);
 	/// Sets the item's previous owner.
 	void setPreviousOwner(BattleUnit *owner);
 	/// Removes the item from previous owner and moves to new owner.
 	void moveToOwner(BattleUnit *owner);
+
+	/// Checks if the item is a special built-in weapon (outside of the inventory).
+	bool isSpecialWeapon() const { return getOwner() && !getSlot(); }
 	/// Gets the item's inventory slot.
-	RuleInventory *getSlot() const;
+	const RuleInventory *getSlot() const;
+	/// Gets the cost of moving item to given slot.
+	int getMoveToCost(const RuleInventory *slot) const;
 	/// Sets the item's inventory slot.
-	void setSlot(RuleInventory *slot);
+	void setSlot(const RuleInventory *slot);
 	/// Gets the item's inventory X position.
 	int getSlotX() const;
 	/// Sets the item's inventory X position.
@@ -101,18 +145,50 @@ public:
 	void setSlotY(int y);
 	/// Checks if the item is occupying a slot.
 	bool occupiesSlot(int x, int y, BattleItem *item = 0) const;
-	/// Is item using alternative graphic.
-	bool isSpriteAlt() const;
 	/// Gets the item's floor sprite.
-	int getFloorSprite() const;
+	const Surface *getFloorSprite(const SurfaceSet *set, const SavedBattleGame *save, int animFrame, int shade) const;
 	/// Gets the item's inventory sprite.
-	int getBigSprite() const;
-	/// Gets the item's ammo item.
-	BattleItem *getAmmoItem();
+	const Surface *getBigSprite(const SurfaceSet *set, const SavedBattleGame *save, int animFrame) const;
+
+	/// Check if item can use any ammo.
+	bool isWeaponWithAmmo() const;
+	/// Check if weapon is armed.
+	bool haveAnyAmmo() const;
+	/// Check if weapon have all ammo slot filled.
+	bool haveAllAmmo() const;
+	/// Sets the item's ammo item based on it type.
+	bool setAmmoPreMission(BattleItem *item);
+	/// Get ammo slot for action.
+	const RuleItemAction *getActionConf(BattleActionType action) const;
+	/// Check if attack shoot in arc.
+	bool getArcingShot(BattleActionType action) const;
 	/// Determines if this item uses ammo.
-	bool needsAmmo() const;
-	/// Sets the item's ammo item.
-	int setAmmoItem(BattleItem *item);
+	bool needsAmmoForAction(BattleActionType action) const;
+	/// Get ammo for action.
+	const BattleItem *getAmmoForAction(BattleActionType action) const;
+	/// Get ammo for action.
+	BattleItem *getAmmoForAction(BattleActionType action, std::string* message = nullptr, int* spendPerShot = nullptr);
+	/// Spend weapon ammo.
+	void spendAmmoForAction(BattleActionType action, SavedBattleGame *save);
+	/// Spend one quantity of a healing item use
+	void spendHealingItemUse(BattleMediKitAction mediKitAction);
+	/// How many auto shots does this weapon fire.
+	bool haveNextShotsForAction(BattleActionType action, int shotCount) const;
+	/// Determines if this item uses ammo.
+	bool needsAmmoForSlot(int slot) const;
+	/// Set the item's ammo slot.
+	BattleItem *setAmmoForSlot(int slot, BattleItem *item);
+	/// Gets the item's ammo item.
+	BattleItem *getAmmoForSlot(int slot);
+	/// Gets the item's ammo item.
+	const BattleItem *getAmmoForSlot(int slot) const;
+	/// Get ammo count visibility for slot.
+	bool isAmmoVisibleForSlot(int slot) const;
+	/// Get total weight (with ammo).
+	int getTotalWeight() const;
+	/// Get waypoints count.
+	int getCurrentWaypoints() const;
+
 	/// Gets the item's tile.
 	Tile *getTile() const;
 	/// Sets the tile.
@@ -120,7 +196,9 @@ public:
 	/// Gets it's unique id.
 	int getId() const;
 	/// Gets the corpse's unit.
-	BattleUnit *getUnit() const;
+	BattleUnit *getUnit();
+	/// Gets the corpse's unit.
+	const BattleUnit *getUnit() const;
 	/// Sets the corpse's unit.
 	void setUnit(BattleUnit *unit);
 	/// Set medikit Heal quantity
@@ -144,15 +222,19 @@ public:
 	/// set the flag representing "not dropped on player turn"
 	void setTurnFlag(bool flag);
 	/// Sets the item's ruleset.
-	void convertToCorpse(RuleItem *rules);
+	void convertToCorpse(const RuleItem *rules);
 	/// Get if item can glow.
 	bool getGlow() const;
+	/// Gets range of glow in tiles.
+	int getGlowRange() const;
+	/// Calculate range need to be updated by changing this weapon.
+	int getVisibilityUpdateRange() const;
 	/// Sets a flag on the item indicating if this is a clip in a weapon or not.
 	void setIsAmmo(bool ammo);
 	/// Checks a flag on the item to see if it's a clip in a weapon or not.
-	bool isAmmo();
+	bool isAmmo() const;
+	/// Checks whether the weapon can be used in the current environment
+	bool canBeUsedInCurrentEnvironment(int depth) const;
 };
 
 }
-
-#endif

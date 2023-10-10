@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,15 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include "ExtraSprites.h"
+#include "../Engine/Surface.h"
+#include "../Engine/SurfaceSet.h"
+#include "../Engine/FileMap.h"
+#include "../Engine/Logger.h"
+#include "../Engine/Exception.h"
+#include "../Engine/Unicode.h"
+#include "Mod.h"
 
 namespace OpenXcom
 {
@@ -25,7 +33,7 @@ namespace OpenXcom
 /**
  * Creates a blank set of extra sprite data.
  */
-ExtraSprites::ExtraSprites() : _width(320), _height(200), _singleImage(false), _modIndex(0), _subX(0), _subY(0)
+ExtraSprites::ExtraSprites() : _current(0), _width(320), _height(200), _singleImage(false), _subX(0), _subY(0), _loaded(false)
 {
 }
 
@@ -41,15 +49,43 @@ ExtraSprites::~ExtraSprites()
  * @param node YAML node.
  * @param modIndex the internal index of the associated mod.
  */
-void ExtraSprites::load(const YAML::Node &node, int modIndex)
+void ExtraSprites::load(const YAML::Node &node, const ModData* current)
 {
+	_type = node["type"].as<std::string>(_type);
+
+	if (_type.empty())
+	{
+		std::string typeSingle;
+		typeSingle = node["typeSingle"].as<std::string>(typeSingle);
+		if (!typeSingle.empty())
+		{
+			_type = typeSingle;
+			_singleImage = true;
+		}
+		std::string fileSingle;
+		fileSingle = node["fileSingle"].as<std::string>(fileSingle);
+		if (!fileSingle.empty())
+		{
+			_sprites[0] = fileSingle;
+		}
+	}
+
 	_sprites = node["files"].as< std::map<int, std::string> >(_sprites);
 	_width = node["width"].as<int>(_width);
 	_height = node["height"].as<int>(_height);
 	_singleImage = node["singleImage"].as<bool>(_singleImage);
 	_subX = node["subX"].as<int>(_subX);
 	_subY = node["subY"].as<int>(_subY);
-	_modIndex = modIndex;
+	_current = current;
+}
+
+/**
+ * Gets the filename that this sprite represents.
+ * @return The sprite name.
+ */
+const std::string& ExtraSprites::getType() const
+{
+	return _type;
 }
 
 /**
@@ -89,15 +125,6 @@ bool ExtraSprites::getSingleImage() const
 }
 
 /**
- * Gets the mod index for this external sprite set.
- * @return The mod index.
- */
-int ExtraSprites::getModIndex() const
-{
-	return _modIndex;
-}
-
-/**
  * Gets the x subdivision.
  * @return The x subdivision.
  */
@@ -113,6 +140,180 @@ int ExtraSprites::getSubX() const
 int ExtraSprites::getSubY() const
 {
 	return _subY;
+}
+
+/**
+ * Returns if the sprite is loaded.
+ * @return True/false
+ */
+bool ExtraSprites::isLoaded() const
+{
+	return _loaded;
+}
+
+/**
+ * Determines if an image file is an acceptable format for the game.
+ * @param filename Image filename.
+ * @return True/false
+ */
+bool ExtraSprites::isImageFile(const std::string &filename)
+{
+	static const std::string exts[] = { "PNG", "GIF", "BMP", "LBM", "IFF", "PCX", "TGA", "TIF", "TIFF" };
+
+	for (size_t i = 0; i < std::size(exts); ++i)
+	{
+		if (CrossPlatform::compareExt(filename, exts[i]))
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Loads the external sprite into a new or existing surface.
+ * @param surface Existing surface.
+ * @return New surface.
+ */
+Surface *ExtraSprites::loadSurface(Surface *surface)
+{
+	if (!_singleImage)
+		return surface;
+	_loaded = true;
+
+	if (surface == 0)
+	{
+		Log(LOG_VERBOSE) << "Creating new single image: " << _type;
+	}
+	else
+	{
+		Log(LOG_VERBOSE) << "Adding/Replacing single image: " << _type;
+		delete surface;
+	}
+	surface = new Surface(_width, _height);
+	surface->loadImage(_sprites.begin()->second);
+	return surface;
+}
+
+/**
+ * Loads the external sprite into a new or existing surface set.
+ * @param set Existing surface set.
+ * @return New surface set.
+ */
+SurfaceSet *ExtraSprites::loadSurfaceSet(SurfaceSet *set)
+{
+	if (_singleImage)
+		return set;
+	_loaded = true;
+
+	bool subdivision = (_subX != 0 && _subY != 0);
+	auto surfaceSetX = subdivision ? _subX : _width;
+	auto surfaceSetY = subdivision ? _subY : _height;
+	if (set == 0)
+	{
+		Log(LOG_VERBOSE) << "Creating new surface set: " << _type;
+		set = new SurfaceSet(surfaceSetX, surfaceSetY);
+	}
+	else
+	{
+		Log(LOG_VERBOSE) << "Adding/Replacing items in surface set: " << _type;
+		if (set->getTotalFrames() == 0 && (set->getWidth() != surfaceSetX || set->getHeight() != surfaceSetY))
+		{
+			Log(LOG_VERBOSE) << "Resize empty set to: " << surfaceSetX << " x " << surfaceSetY;
+			auto shared = set->getMaxSharedFrames();
+			*set = SurfaceSet(surfaceSetX, surfaceSetY);
+			set->setMaxSharedFrames(shared);
+		}
+	}
+
+	for (const auto& pair : _sprites)
+	{
+		int startFrame = pair.first;
+		const auto& fileName = pair.second;
+		if (fileName[fileName.length() - 1] == '/')
+		{
+			Log(LOG_VERBOSE) << "Loading surface set from folder: " << fileName << " starting at frame: " << startFrame;
+			int offset = startFrame;
+			std::vector<std::string> contents;
+			for (const auto& f: FileMap::getVFolderContents(fileName)) { contents.push_back(f); }
+			std::sort(contents.begin(), contents.end(), Unicode::naturalCompare);
+			for (const auto& name : contents)
+			{
+				if (!isImageFile(name))
+					continue;
+				try
+				{
+					getFrame(set, offset)->loadImage(fileName + name);
+					offset++;
+				}
+				catch (Exception &e)
+				{
+					Log(LOG_WARNING) << e.what();
+				}
+			}
+		}
+		else
+		{
+			if (!subdivision)
+			{
+				getFrame(set, startFrame)->loadImage(fileName);
+			}
+			else
+			{
+				Surface temp = Surface(_width, _height);
+				temp.loadImage(fileName);
+				int xDivision = _width / _subX;
+				int yDivision = _height / _subY;
+				int frames = xDivision * yDivision;
+				Log(LOG_VERBOSE) << "Subdividing into " << frames << " frames.";
+				int offset = startFrame;
+
+				for (int y = 0; y != yDivision; ++y)
+				{
+					for (int x = 0; x != xDivision; ++x)
+					{
+						Surface* frame = getFrame(set, offset);
+						// for some reason regular blit() doesn't work here how i want it, so i use this function instead.
+						temp.blitNShade(frame, 0 - (x * _subX), 0 - (y * _subY), 0);
+						++offset;
+					}
+				}
+			}
+		}
+	}
+	return set;
+}
+
+Surface *ExtraSprites::getFrame(SurfaceSet *set, int index) const
+{
+	int indexWithOffset = index;
+	if (indexWithOffset >= set->getMaxSharedFrames())
+	{
+		if ((size_t)indexWithOffset >= _current->size)
+		{
+			std::ostringstream err;
+			err << "ExtraSprites '" << _type << "' frame '" << indexWithOffset << "' exceeds mod '"<< _current->name <<"' size limit " << _current->size;
+			throw Exception(err.str());
+		}
+		indexWithOffset += _current->offset;
+	}
+	else if (indexWithOffset < 0)
+	{
+		std::ostringstream err;
+		err << "ExtraSprites '" << _type << "' frame '" << indexWithOffset << "' in mod '" << _current->name << "' is not allowed.";
+		throw Exception(err.str());
+	}
+
+	Surface *frame = set->getFrame(indexWithOffset);
+	if (frame)
+	{
+		Log(LOG_VERBOSE) << "Replacing frame: " << index << ", using index: " << indexWithOffset;
+		frame->clear();
+	}
+	else
+	{
+		Log(LOG_VERBOSE) << "Adding frame: " << index << ", using index: " << indexWithOffset;
+		frame = set->addFrame(indexWithOffset);
+	}
+	return frame;
 }
 
 }

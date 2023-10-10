@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -154,7 +154,7 @@ void TextButton::setHighContrast(bool contrast)
  * Changes the text of the button label.
  * @param text Text string.
  */
-void TextButton::setText(const std::wstring &text)
+void TextButton::setText(const std::string &text)
 {
 	_text->setText(text);
 	_redraw = true;
@@ -164,7 +164,7 @@ void TextButton::setText(const std::wstring &text)
  * Returns the text of the button label.
  * @return Text string.
  */
-std::wstring TextButton::getText() const
+std::string TextButton::getText() const
 {
 	return _text->getText();
 }
@@ -186,7 +186,7 @@ void TextButton::setGroup(TextButton **group)
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void TextButton::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void TextButton::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_text->setPalette(colors, firstcolor, ncolors);
@@ -271,7 +271,7 @@ void TextButton::draw()
 	}
 	_text->setInvert(press);
 
-	_text->blit(this);
+	_text->blit(this->getSurface());
 }
 
 /**
@@ -291,7 +291,7 @@ void TextButton::mousePress(Action *action, State *state)
 	}
 
 	if (isButtonHandled(action->getDetails()->button.button))
-	{		
+	{
 		if (soundPress != 0 && _group == 0 &&
 			action->getDetails()->button.button != SDL_BUTTON_WHEELUP && action->getDetails()->button.button != SDL_BUTTON_WHEELDOWN)
 		{
@@ -300,7 +300,7 @@ void TextButton::mousePress(Action *action, State *state)
 
 		if (_comboBox)
 		{
-			_comboBox->toggle();
+			_comboBox->toggle(false, false);
 		}
 
 		draw();
@@ -317,7 +317,7 @@ void TextButton::mousePress(Action *action, State *state)
 void TextButton::mouseRelease(Action *action, State *state)
 {
 	if (isButtonHandled(action->getDetails()->button.button))
-	{	
+	{
 		draw();
 		//_redraw = true;
 	}
@@ -354,13 +354,9 @@ void TextButton::setHeight(int height)
 	_text->setHeight(height);
 }
 
-void TextButton::setSecondaryColor(Uint8 color)
-{
-	_text->setColor(color);
-	_redraw = true;
-}
 void TextButton::setGeoscapeButton(bool geo)
 {
 	_geoscapeButton = geo;
 }
+
 }

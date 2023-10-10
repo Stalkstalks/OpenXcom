@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "MissionDetectedState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -42,6 +41,12 @@ namespace OpenXcom
 MissionDetectedState::MissionDetectedState(MissionSite *mission, GeoscapeState *state) : _mission(mission), _state(state)
 {
 	_screen = false;
+
+	int soundId = mission->getDeployment()->getAlertSound();
+	if (soundId != Mod::NO_SOUND)
+	{
+		_customSound = _game->getMod()->getSound("GEO.CAT", soundId);
+	}
 
 	// Create objects
 	_window = new Window(this, 256, 200, 0, 0, POPUP_BOTH);
@@ -102,7 +107,7 @@ void MissionDetectedState::btnInterceptClick(Action *)
 {
 	_state->timerReset();
 	_state->getGlobe()->center(_mission->getLongitude(), _mission->getLatitude());
-	_game->pushState(new InterceptState(_state->getGlobe(), 0, _mission));
+	_game->pushState(new InterceptState(_state->getGlobe(), false, 0, _mission));
 }
 
 /**

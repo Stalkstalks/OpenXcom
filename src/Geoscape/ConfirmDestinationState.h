@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CONFIRMDESTINATIONSTATE_H
-#define OPENXCOM_CONFIRMDESTINATIONSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -37,22 +35,24 @@ class Target;
 class ConfirmDestinationState : public State
 {
 private:
-	Craft *_craft;
+	std::vector<Craft*> _crafts;
 	Target *_target;
 	Window *_window;
 	Text *_txtTarget;
-	TextButton *_btnOk, *_btnCancel;
+	TextButton *_btnOk, *_btnTransfer, *_btnCancel;
+	// Checks the starting condition
+	std::string checkStartingCondition();
 public:
 	/// Creates the Confirm Destination state.
-	ConfirmDestinationState(Craft *craft, Target *target);
+	ConfirmDestinationState(std::vector<Craft*> crafts, Target *target);
 	/// Cleans up the Confirm Destination state.
 	~ConfirmDestinationState();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handler for clicking the Transfer button.
+	void btnTransferClick(Action *action);
 	/// Handler for clicking the Cancel button.
 	void btnCancelClick(Action *action);
 };
 
 }
-
-#endif

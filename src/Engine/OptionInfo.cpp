@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -95,6 +95,11 @@ void OptionInfo::load(const YAML::Node &node) const
 		break;
 	case OPTION_KEY:
 		*(_ref.k) = (SDLKey)node[_id].as<int>(_def.k);
+		if (*(_ref.k) == SDLK_LSHIFT || *(_ref.k) == SDLK_LALT || *(_ref.k) == SDLK_LCTRL ||
+			*(_ref.k) == SDLK_RSHIFT || *(_ref.k) == SDLK_RALT || *(_ref.k) == SDLK_RCTRL)
+		{
+			*(_ref.k) = SDLK_UNKNOWN;
+		}
 		break;
 	case OPTION_STRING:
 		*(_ref.s) = node[_id].as<std::string>(_def.s);
@@ -107,11 +112,14 @@ void OptionInfo::load(const YAML::Node &node) const
  * (eg. for command-line options).
  * @param map Options map.
  */
-void OptionInfo::load(const std::map<std::string, std::string> &map) const
+void OptionInfo::load(const std::map<std::string, std::string> &map, bool makeLowercase) const
 {
 	std::string id = _id;
-	std::transform(id.begin(), id.end(), id.begin(), ::tolower);
-	std::map<std::string, std::string>::const_iterator it = map.find(id);
+	if (makeLowercase)
+	{
+		std::transform(id.begin(), id.end(), id.begin(), ::tolower);
+	}
+	auto it = map.find(id);
 	if (it != map.end())
 	{
 		std::string value = it->second;
@@ -185,6 +193,15 @@ void OptionInfo::reset() const
 		*(_ref.s) = _def.s;
 		break;
 	}
+}
+
+/**
+ * Returns the ID of the option.
+ * @return String ID.
+ */
+std::string OptionInfo::id() const
+{
+	return _id;
 }
 
 /**

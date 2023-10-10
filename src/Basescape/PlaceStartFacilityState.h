@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PLACESTARTFACILITYSTATE_H
-#define OPENXCOM_PLACESTARTFACILITYSTATE_H
-
 #include "PlaceFacilityState.h"
 
 namespace OpenXcom
@@ -37,7 +35,7 @@ private:
 
 public:
 	/// Creates the Place Facility state.
-	PlaceStartFacilityState(Base *base, SelectStartFacilityState *select, RuleBaseFacility *rule);
+	PlaceStartFacilityState(Base *base, SelectStartFacilityState *select, const RuleBaseFacility *rule);
 	/// Cleans up the Place Facility state.
 	~PlaceStartFacilityState();
 	/// Handler for clicking the base view.
@@ -45,5 +43,3 @@ public:
 };
 
 }
-
-#endif

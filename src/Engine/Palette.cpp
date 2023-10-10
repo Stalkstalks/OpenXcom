@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,8 +17,10 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Palette.h"
-#include <fstream>
+#include <sstream>
+#include "CrossPlatform.h"
 #include "Exception.h"
+#include "FileMap.h"
 
 namespace OpenXcom
 {
@@ -49,25 +51,19 @@ Palette::~Palette()
  */
 void Palette::loadDat(const std::string &filename, int ncolors, int offset)
 {
+	auto palFile = FileMap::getIStream(filename);
 	if (_colors != 0)
 		throw Exception("loadDat can be run only once");
 	_count = ncolors;
 	_colors = new SDL_Color[_count];
 	memset(_colors, 0, sizeof(SDL_Color) * _count);
 
-	// Load file and put colors in palette
-	std::ifstream palFile (filename.c_str(), std::ios::in | std::ios::binary);
-	if (!palFile)
-	{
-		throw Exception(filename + " not found");
-	}
-
 	// Move pointer to proper palette
-	palFile.seekg(offset, std::ios::beg);
+	palFile->seekg(offset, std::ios::beg);
 
 	Uint8 value[3];
 
-	for (int i = 0; i < _count && palFile.read((char*)value, 3); ++i)
+	for (int i = 0; i < _count && palFile->read((char*)value, 3); ++i)
 	{
 		// Correct X-Com colors to RGB colors
 		_colors[i].r = value[0] * 4;
@@ -76,8 +72,38 @@ void Palette::loadDat(const std::string &filename, int ncolors, int offset)
 		_colors[i].unused = 255;
 	}
 	_colors[0].unused = 0;
+}
 
-	palFile.close();
+/**
+ * Initializes an all-black palette.
+ */
+void Palette::initBlack()
+{
+	if (_colors != 0)
+		throw Exception("initBlack can be run only once");
+	_count = 256;
+	_colors = new SDL_Color[_count];
+	memset(_colors, 0, sizeof(SDL_Color) * _count);
+
+	for (int i = 0; i < _count; ++i)
+	{
+		_colors[i].r = 0;
+		_colors[i].g = 0;
+		_colors[i].b = 0;
+		_colors[i].unused = 255;
+	}
+	_colors[0].unused = 0;
+}
+
+/**
+ * Loads the colors from an existing palette.
+ */
+void Palette::copyFrom(Palette *srcPal)
+{
+	for (int i = 0; i < srcPal->getColorCount(); i++)
+	{
+		setColor(i, srcPal->getColors(i)->r, srcPal->getColors(i)->g, srcPal->getColors(i)->b);
+	}
 }
 
 /**
@@ -104,7 +130,7 @@ Uint32 Palette::getRGBA(SDL_Color* pal, Uint8 color)
 
 void Palette::savePal(const std::string &file) const
 {
-	std::ofstream out(file.c_str(), std::ios::out | std::ios::binary);
+	std::stringstream out;
 	short count = _count;
 
 	// RIFF header
@@ -132,7 +158,57 @@ void Palette::savePal(const std::string &file) const
 		out.write(&c, 1);
 		color++;
 	}
-	out.close();
+	CrossPlatform::writeFile(file, out.str());
+}
+
+void Palette::savePalMod(const std::string &file, const std::string &type, const std::string &target) const
+{
+	std::stringstream out;
+	short count = _count;
+
+	// header
+	out << "customPalettes:\n";
+	out << "  - type: " << type << "\n";
+	out << "    target: " << target << "\n";
+	out << "    palette:\n";
+
+	// Colors
+	for (int i = 0; i < count; ++i)
+	{
+		out << "      ";
+		out << std::to_string(i);
+		out << ": [";
+		out << std::to_string(_colors[i].r);
+		out << ",";
+		out << std::to_string(_colors[i].g);
+		out << ",";
+		out << std::to_string(_colors[i].b);
+		out << "]\n";
+	}
+	CrossPlatform::writeFile(file, out.str());
+}
+
+void Palette::savePalJasc(const std::string &file) const
+{
+	std::stringstream out;
+	short count = _count;
+
+	// header
+	out << "JASC-PAL\n";
+	out << "0100\n";
+	out << "256\n";
+
+	// Colors
+	for (int i = 0; i < count; ++i)
+	{
+		out << std::to_string(_colors[i].r);
+		out << " ";
+		out << std::to_string(_colors[i].g);
+		out << " ";
+		out << std::to_string(_colors[i].b);
+		out << "\n";
+	}
+	CrossPlatform::writeFile(file, out.str());
 }
 
 void Palette::setColors(SDL_Color* pal, int ncolors)
@@ -164,6 +240,32 @@ void Palette::setColors(SDL_Color* pal, int ncolors)
 		}
 	}
 	_colors[0].unused = 0;
-	
 }
+
+void Palette::setColor(int index, int r, int g, int b)
+{
+	_colors[index].r = r;
+	_colors[index].g = g;
+	_colors[index].b = b;
+	if (index > 15 && _colors[index].r == _colors[0].r &&
+		_colors[index].g == _colors[0].g &&
+		_colors[index].b == _colors[0].b)
+	{
+		// SDL "optimizes" surfaces by using RGB colour matching to reassign pixels to an "earlier" matching colour in the palette,
+		// meaning any pixels in a surface that are meant to be black will be reassigned as colour 0, rendering them transparent.
+		// avoid this eventuality by altering the "later" colours just enough to disambiguate them without causing them to look significantly different.
+		// SDL 2.0 has some functionality that should render this hack unnecessary.
+		_colors[index].r++;
+		_colors[index].g++;
+		_colors[index].b++;
+	}
+}
+
+void Palette::copyColor(int index, int r, int g, int b)
+{
+	_colors[index].r = r;
+	_colors[index].g = g;
+	_colors[index].b = b;
+}
+
 }

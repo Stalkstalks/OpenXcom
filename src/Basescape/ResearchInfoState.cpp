@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -29,10 +29,11 @@
 #include "../Mod/RuleResearch.h"
 #include "../Savegame/ItemContainer.h"
 #include "../Savegame/ResearchProject.h"
+#include "../Savegame/SavedGame.h"
 #include "../Interface/ArrowButton.h"
 #include "../Engine/Timer.h"
 #include "../Engine/RNG.h"
-#include <limits>
+#include <climits>
 
 namespace OpenXcom
 {
@@ -43,8 +44,16 @@ namespace OpenXcom
  * @param base Pointer to the base to get info from.
  * @param rule A RuleResearch which will be used to create a new ResearchProject
  */
-ResearchInfoState::ResearchInfoState(Base *base, RuleResearch * rule) : _base(base), _project(new ResearchProject(rule, int(rule->getCost() * OpenXcom::RNG::generate(50, 150)/100))), _rule(rule)
+ResearchInfoState::ResearchInfoState(Base *base, RuleResearch *rule) : _base(base), _project(nullptr), _rule(rule)
 {
+	int rng = RNG::generate(50, 150);
+	int randomizedCost = rule->getCost() * rng / 100;
+	if (rule->getCost() > 0)
+	{
+		randomizedCost = std::max(1, randomizedCost);
+	}
+	_project = new ResearchProject(rule, randomizedCost);
+
 	buildUi();
 }
 
@@ -54,7 +63,7 @@ ResearchInfoState::ResearchInfoState(Base *base, RuleResearch * rule) : _base(ba
  * @param base Pointer to the base to get info from.
  * @param project A ResearchProject to modify
  */
-ResearchInfoState::ResearchInfoState(Base *base, ResearchProject * project) : _base(base), _project(project), _rule(0)
+ResearchInfoState::ResearchInfoState(Base *base, ResearchProject *project) : _base(base), _project(project), _rule(0)
 {
 	buildUi();
 }
@@ -102,7 +111,7 @@ void ResearchInfoState::buildUi()
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK05.SCR"));
+	setWindowBackground(_window, "allocateResearch");
 
 	_txtTitle->setBig();
 
@@ -119,9 +128,7 @@ void ResearchInfoState::buildUi()
 	if (_rule)
 	{
 		_base->addResearch(_project);
-		if (_rule->needItem() &&
-				(_game->getMod()->getUnit(_rule->getName()) ||
-				 Options::spendResearchedItems))
+		if (_rule->needItem() && _rule->destroyItem())
 		{
 			_base->getStorageItems()->removeItem(_rule->getName(), 1);
 		}
@@ -154,6 +161,15 @@ void ResearchInfoState::buildUi()
 		_btnOk->onKeyboardPress((ActionHandler)&ResearchInfoState::btnOkClick, Options::keyCancel);
 	}
 	_btnCancel->onMouseClick((ActionHandler)&ResearchInfoState::btnCancelClick);
+
+	if (_rule)
+	{
+		// mark new as normal
+		if (_game->getSavedGame()->isResearchRuleStatusNew(_rule->getName()))
+		{
+			_game->getSavedGame()->setResearchRuleStatus(_rule->getName(), RuleResearch::RESEARCH_STATUS_NORMAL);
+		}
+	}
 }
 
 /**
@@ -181,13 +197,6 @@ void ResearchInfoState::btnOkClick(Action *)
  */
 void ResearchInfoState::btnCancelClick(Action *)
 {
-	const RuleResearch *ruleResearch = _rule ? _rule : _project->getRules();
-	if (ruleResearch->needItem() &&
-			(_game->getMod()->getUnit(ruleResearch->getName()) ||
-			 Options::spendResearchedItems))
-	{
-		_base->getStorageItems()->addItem(ruleResearch->getName(), 1);
-	}
 	_base->removeResearch(_project);
 	_game->popState();
 }
@@ -242,7 +251,7 @@ void ResearchInfoState::moreRelease(Action *action)
 void ResearchInfoState::moreClick(Action *action)
 {
 	if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
-		moreByValue(std::numeric_limits<int>::max());
+		moreByValue(INT_MAX);
 	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
 		moreByValue(1);
 }
@@ -277,7 +286,7 @@ void ResearchInfoState::lessRelease(Action *action)
 void ResearchInfoState::lessClick(Action *action)
 {
 	if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
-		lessByValue(std::numeric_limits<int>::max());
+		lessByValue(INT_MAX);
 	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
 		lessByValue(1);
 }
@@ -345,4 +354,5 @@ void ResearchInfoState::think()
 	_timerLess->think (this, 0);
 	_timerMore->think (this, 0);
 }
+
 }

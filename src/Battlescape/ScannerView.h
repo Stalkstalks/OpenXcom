@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SCANNERVIEW_H
-#define OPENXCOM_SCANNERVIEW_H
-
 #include "../Engine/InteractiveSurface.h"
 
 namespace OpenXcom
@@ -34,16 +32,14 @@ class ScannerView : public InteractiveSurface
 {
 	Game * _game;
 	/// Handle clicking
-	void mouseClick (Action *action, State *state);
+	void mouseClick (Action *action, State *state) override;
 	BattleUnit *_unit;
 	int _frame;
 public:
 	/// Create the ScannerView
 	ScannerView (int w, int h, int x, int y, Game * game, BattleUnit *unit);
 	/// Draw the scanner view
-	void draw();
+	void draw() override;
 	void animate();
 };
 }
-
-#endif

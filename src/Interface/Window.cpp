@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -40,7 +40,8 @@ Sound *Window::soundPopup[3];
  * @param y Y position in pixels.
  * @param popup Popup animation.
  */
-Window::Window(State *state, int width, int height, int x, int y, WindowPopup popup) : Surface(width, height, x, y), _dx(-x), _dy(-y), _bg(0), _color(0), _popup(popup), _popupStep(0.0), _state(state), _contrast(false), _screen(false), _thinBorder(false)
+Window::Window(State *state, int width, int height, int x, int y, WindowPopup popup) : Surface(width, height, x, y),
+	_dx(-x), _dy(-y), _bg(0), _color(0), _popup(popup), _popupStep(0.0), _state(state), _contrast(false), _screen(false), _thinBorder(false), _innerColor(0), _mute(false)
 {
 	_timer = new Timer(10);
 	_timer->onTimer((SurfaceHandler)&Window::popup);
@@ -74,7 +75,7 @@ Window::~Window()
  * Changes the surface used to draw the background of the window.
  * @param bg New background.
  */
-void Window::setBackground(Surface *bg)
+void Window::setBackground(const Surface *bg)
 {
 	_bg = bg;
 	_redraw = true;
@@ -129,7 +130,7 @@ void Window::think()
  */
 void Window::popup()
 {
-	if (AreSame(_popupStep, 0.0))
+	if (!_mute && AreSame(_popupStep, 0.0))
 	{
 		int sound = RNG::seedless(0,2);
 		if (soundPopup[sound] != 0)
@@ -248,17 +249,22 @@ void Window::draw()
 			else
 				square.h = 1;
 		}
+		if (_innerColor != 0)
+		{
+			drawRect(&square, _innerColor);
+		}
 	}
 
 	if (_bg != 0)
 	{
-		_bg->getCrop()->x = square.x - _dx;
-		_bg->getCrop()->y = square.y - _dy;
-		_bg->getCrop()->w = square.w ;
-		_bg->getCrop()->h = square.h ;
-		_bg->setX(square.x);
-		_bg->setY(square.y);
-		_bg->blit(this);
+		auto crop = _bg->getCrop();
+		crop.getCrop()->x = square.x - _dx;
+		crop.getCrop()->y = square.y - _dy;
+		crop.getCrop()->w = square.w ;
+		crop.getCrop()->h = square.h ;
+		crop.setX(square.x);
+		crop.setY(square.y);
+		crop.blit(this);
 	}
 }
 
@@ -287,4 +293,13 @@ void Window::setThinBorder()
 {
 	_thinBorder = true;
 }
+
+/**
+ * Changes the window to have a custom inner color.
+ */
+void Window::setInnerColor(Uint8 innerColor)
+{
+	_innerColor = innerColor;
+}
+
 }

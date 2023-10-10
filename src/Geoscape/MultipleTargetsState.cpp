@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "MultipleTargetsState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Savegame/Target.h"
@@ -45,7 +44,8 @@ namespace OpenXcom
  * @param craft Pointer to craft to retarget (NULL if none).
  * @param state Pointer to the Geoscape state.
  */
-MultipleTargetsState::MultipleTargetsState(std::vector<Target*> targets, Craft *craft, GeoscapeState *state) : _targets(targets), _craft(craft), _state(state)
+MultipleTargetsState::MultipleTargetsState(std::vector<Target*> targets, std::vector<Craft*> crafts, GeoscapeState *state, bool useCustomSound) :
+	_targets(targets), _crafts(std::move(crafts)), _state(state), _useCustomSound(useCustomSound)
 {
 	_screen = false;
 
@@ -59,12 +59,12 @@ MultipleTargetsState::MultipleTargetsState(std::vector<Target*> targets, Craft *
 		_window = new Window(this, 136, winHeight, 60, winY, POPUP_VERTICAL);
 
 		// Set palette
-		setInterface("UFOInfo");
+		setInterface("multipleTargets");
 
-		add(_window, "window", "UFOInfo");
+		add(_window, "window", "multipleTargets");
 
 		// Set up objects
-		_window->setBackground(_game->getMod()->getSurface("BACK15.SCR"));
+		setWindowBackground(_window, "multipleTargets");
 
 		int y = btnY;
 		for (size_t i = 0; i < _targets.size(); ++i)
@@ -72,7 +72,7 @@ MultipleTargetsState::MultipleTargetsState(std::vector<Target*> targets, Craft *
 			TextButton *button = new TextButton(116, BUTTON_HEIGHT, 70, y);
 			button->setText(_targets[i]->getName(_game->getLanguage()));
 			button->onMouseClick((ActionHandler)&MultipleTargetsState::btnTargetClick);
-			add(button, "button", "UFOInfo");
+			add(button, "button", "multipleTargets");
 
 			_btnTargets.push_back(button);
 
@@ -115,18 +115,18 @@ void MultipleTargetsState::init()
 void MultipleTargetsState::popupTarget(Target *target)
 {
 	_game->popState();
-	if (_craft == 0)
+	if (_crafts.size() == 0)
 	{
 		Base* b = dynamic_cast<Base*>(target);
 		Craft* c = dynamic_cast<Craft*>(target);
 		Ufo* u = dynamic_cast<Ufo*>(target);
 		if (b != 0)
 		{
-			_game->pushState(new InterceptState(_state->getGlobe(), b));
+			_game->pushState(new InterceptState(_state->getGlobe(), _useCustomSound, b));
 		}
 		else if (c != 0)
 		{
-			_game->pushState(new GeoscapeCraftState(c, _state->getGlobe(), 0));
+			_game->pushState(new GeoscapeCraftState(c, _state->getGlobe(), 0, _useCustomSound));
 		}
 		else if (u != 0)
 		{
@@ -139,7 +139,7 @@ void MultipleTargetsState::popupTarget(Target *target)
 	}
 	else
 	{
-		_game->pushState(new ConfirmDestinationState(_craft, target));
+		_game->pushState(new ConfirmDestinationState(_crafts, target));
 	}
 }
 
@@ -165,7 +165,7 @@ void MultipleTargetsState::btnTargetClick(Action *action)
 			popupTarget(_targets[i]);
 			break;
 		}
-	}	
+	}
 }
 
 }

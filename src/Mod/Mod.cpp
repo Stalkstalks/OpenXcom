@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,16 +17,18 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Mod.h"
+#include "ModScript.h"
 #include <algorithm>
+#include <functional>
 #include <sstream>
 #include <climits>
+#include <cassert>
 #include "../Engine/CrossPlatform.h"
 #include "../Engine/FileMap.h"
 #include "../Engine/Palette.h"
 #include "../Engine/Font.h"
 #include "../Engine/Surface.h"
 #include "../Engine/SurfaceSet.h"
-#include "../Engine/Language.h"
 #include "../Engine/Music.h"
 #include "../Engine/GMCat.h"
 #include "../Engine/SoundSet.h"
@@ -39,38 +41,50 @@
 #include "../Engine/ShaderMove.h"
 #include "../Engine/Exception.h"
 #include "../Engine/Logger.h"
+#include "../Engine/ScriptBind.h"
+#include "../Engine/Collections.h"
 #include "SoundDefinition.h"
 #include "ExtraSprites.h"
+#include "CustomPalettes.h"
 #include "ExtraSounds.h"
 #include "../Engine/AdlibMusic.h"
+#include "../Engine/CatFile.h"
 #include "../fmath.h"
 #include "../Engine/RNG.h"
 #include "../Engine/Options.h"
 #include "../Battlescape/Pathfinding.h"
-#include "SoldierNamePool.h"
 #include "RuleCountry.h"
 #include "RuleRegion.h"
 #include "RuleBaseFacility.h"
 #include "RuleCraft.h"
 #include "RuleCraftWeapon.h"
+#include "RuleItemCategory.h"
 #include "RuleItem.h"
 #include "RuleUfo.h"
 #include "RuleTerrain.h"
 #include "MapScript.h"
 #include "RuleSoldier.h"
-#include "Unit.h"
+#include "RuleSkill.h"
+#include "RuleCommendations.h"
 #include "AlienRace.h"
+#include "RuleEnviroEffects.h"
+#include "RuleStartingCondition.h"
 #include "AlienDeployment.h"
 #include "Armor.h"
 #include "ArticleDefinition.h"
 #include "RuleInventory.h"
 #include "RuleResearch.h"
 #include "RuleManufacture.h"
+#include "RuleManufactureShortcut.h"
 #include "ExtraStrings.h"
 #include "RuleInterface.h"
+#include "RuleArcScript.h"
+#include "RuleEventScript.h"
+#include "RuleEvent.h"
 #include "RuleMissionScript.h"
 #include "../Geoscape/Globe.h"
 #include "../Savegame/SavedGame.h"
+#include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Region.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Country.h"
@@ -81,12 +95,18 @@
 #include "../Ufopaedia/Ufopaedia.h"
 #include "../Savegame/AlienStrategy.h"
 #include "../Savegame/GameTime.h"
+#include "../Savegame/SoldierDiary.h"
 #include "UfoTrajectory.h"
 #include "RuleAlienMission.h"
 #include "MCDPatch.h"
 #include "StatString.h"
 #include "RuleGlobe.h"
 #include "RuleVideo.h"
+#include "RuleConverter.h"
+#include "RuleSoldierTransformation.h"
+#include "RuleSoldierBonus.h"
+
+#define ARRAYLEN(x) (std::size(x))
 
 namespace OpenXcom
 {
@@ -117,44 +137,75 @@ int Mod::BASESCAPE_CURSOR;
 int Mod::BATTLESCAPE_CURSOR;
 int Mod::UFOPAEDIA_CURSOR;
 int Mod::GRAPHS_CURSOR;
+int Mod::DAMAGE_RANGE;
+int Mod::EXPLOSIVE_DAMAGE_RANGE;
+int Mod::FIRE_DAMAGE_RANGE[2];
 std::string Mod::DEBRIEF_MUSIC_GOOD;
 std::string Mod::DEBRIEF_MUSIC_BAD;
 int Mod::DIFFICULTY_COEFFICIENT[5];
+int Mod::SELL_PRICE_COEFFICIENT[5];
+int Mod::DIFFICULTY_BASED_RETAL_DELAY[5];
+int Mod::UNIT_RESPONSE_SOUNDS_FREQUENCY[4];
+bool Mod::EXTENDED_ITEM_RELOAD_COST;
+bool Mod::EXTENDED_RUNNING_COST;
+bool Mod::EXTENDED_HWP_LOAD_ORDER;
+int Mod::EXTENDED_MELEE_REACTIONS;
+int Mod::EXTENDED_TERRAIN_MELEE;
+int Mod::EXTENDED_UNDERWATER_THROW_FACTOR;
+bool Mod::EXTENDED_EXPERIENCE_AWARD_SYSTEM;
+
+constexpr size_t MaxDifficultyLevels = 5;
+
+
+/// Special value for default string different to empty one.
+const std::string Mod::STR_NULL = { '\0' };
+/// Predefined name for first loaded mod that have all original data
+const std::string ModNameMaster = "master";
+/// Predefined name for current mod that is loading rulesets.
+const std::string ModNameCurrent = "current";
+
+/// Reduction of size allocated for transparency LUTs.
+const size_t ModTransparencySizeReduction = 100;
 
 void Mod::resetGlobalStatics()
 {
-	Mod::DOOR_OPEN = 3;
-	Mod::SLIDING_DOOR_OPEN = 20;
-	Mod::SLIDING_DOOR_CLOSE = 21;
-	Mod::SMALL_EXPLOSION = 2;
-	Mod::LARGE_EXPLOSION = 5;
-	Mod::EXPLOSION_OFFSET = 0;
-	Mod::SMOKE_OFFSET = 8;
-	Mod::UNDERWATER_SMOKE_OFFSET = 0;
-	Mod::ITEM_DROP = 38;
-	Mod::ITEM_THROW = 39;
-	Mod::ITEM_RELOAD = 17;
-	Mod::WALK_OFFSET = 22;
-	Mod::FLYING_SOUND = 15;
-	Mod::BUTTON_PRESS = 0;
-	Mod::WINDOW_POPUP[0] = 1;
-	Mod::WINDOW_POPUP[1] = 2;
-	Mod::WINDOW_POPUP[2] = 3;
-	Mod::UFO_FIRE = 8;
-	Mod::UFO_HIT = 12;
-	Mod::UFO_CRASH = 10;
-	Mod::UFO_EXPLODE = 11;
-	Mod::INTERCEPTOR_HIT = 10;
-	Mod::INTERCEPTOR_EXPLODE = 13;
-	Mod::GEOSCAPE_CURSOR = 252;
-	Mod::BASESCAPE_CURSOR = 252;
-	Mod::BATTLESCAPE_CURSOR = 144;
-	Mod::UFOPAEDIA_CURSOR = 252;
-	Mod::GRAPHS_CURSOR = 252;
-	Mod::DEBRIEF_MUSIC_GOOD = "GMMARS";
-	Mod::DEBRIEF_MUSIC_BAD = "GMMARS";
+	DOOR_OPEN = 3;
+	SLIDING_DOOR_OPEN = 20;
+	SLIDING_DOOR_CLOSE = 21;
+	SMALL_EXPLOSION = 2;
+	LARGE_EXPLOSION = 5;
+	EXPLOSION_OFFSET = 0;
+	SMOKE_OFFSET = 8;
+	UNDERWATER_SMOKE_OFFSET = 0;
+	ITEM_DROP = 38;
+	ITEM_THROW = 39;
+	ITEM_RELOAD = 17;
+	WALK_OFFSET = 22;
+	FLYING_SOUND = 15;
+	BUTTON_PRESS = 0;
+	WINDOW_POPUP[0] = 1;
+	WINDOW_POPUP[1] = 2;
+	WINDOW_POPUP[2] = 3;
+	UFO_FIRE = 8;
+	UFO_HIT = 12;
+	UFO_CRASH = 10;
+	UFO_EXPLODE = 11;
+	INTERCEPTOR_HIT = 10;
+	INTERCEPTOR_EXPLODE = 13;
+	GEOSCAPE_CURSOR = 252;
+	BASESCAPE_CURSOR = 252;
+	BATTLESCAPE_CURSOR = 144;
+	UFOPAEDIA_CURSOR = 252;
+	GRAPHS_CURSOR = 252;
+	DAMAGE_RANGE = 100;
+	EXPLOSIVE_DAMAGE_RANGE = 50;
+	FIRE_DAMAGE_RANGE[0] = 5;
+	FIRE_DAMAGE_RANGE[1] = 10;
+	DEBRIEF_MUSIC_GOOD = "GMMARS";
+	DEBRIEF_MUSIC_BAD = "GMMARS";
 
 	Globe::OCEAN_COLOR = Palette::blockOffset(12);
+	Globe::OCEAN_SHADING = true;
 	Globe::COUNTRY_LABEL_COLOR = 239;
 	Globe::LINE_COLOR = 162;
 	Globe::CITY_LABEL_COLOR = 138;
@@ -175,20 +226,163 @@ void Mod::resetGlobalStatics()
 	DIFFICULTY_COEFFICIENT[2] = 2;
 	DIFFICULTY_COEFFICIENT[3] = 3;
 	DIFFICULTY_COEFFICIENT[4] = 4;
+
+	SELL_PRICE_COEFFICIENT[0] = 100;
+	SELL_PRICE_COEFFICIENT[1] = 100;
+	SELL_PRICE_COEFFICIENT[2] = 100;
+	SELL_PRICE_COEFFICIENT[3] = 100;
+	SELL_PRICE_COEFFICIENT[4] = 100;
+
+	DIFFICULTY_BASED_RETAL_DELAY[0] = 0;
+	DIFFICULTY_BASED_RETAL_DELAY[1] = 0;
+	DIFFICULTY_BASED_RETAL_DELAY[2] = 0;
+	DIFFICULTY_BASED_RETAL_DELAY[3] = 0;
+	DIFFICULTY_BASED_RETAL_DELAY[4] = 0;
+
+	UNIT_RESPONSE_SOUNDS_FREQUENCY[0] = 100; // select unit
+	UNIT_RESPONSE_SOUNDS_FREQUENCY[1] = 100; // start moving
+	UNIT_RESPONSE_SOUNDS_FREQUENCY[2] = 100; // select weapon
+	UNIT_RESPONSE_SOUNDS_FREQUENCY[3] = 20;  // annoyed
+
+	EXTENDED_ITEM_RELOAD_COST = false;
+	EXTENDED_RUNNING_COST = false;
+	EXTENDED_HWP_LOAD_ORDER = false;
+	EXTENDED_MELEE_REACTIONS = 0;
+	EXTENDED_TERRAIN_MELEE = 0;
+	EXTENDED_UNDERWATER_THROW_FACTOR = 0;
+	EXTENDED_EXPERIENCE_AWARD_SYSTEM = true; // FIXME: change default to false in OXCE v8.0+ ?
 }
+
+/**
+ * Detail
+ */
+class ModScriptGlobal : public ScriptGlobal
+{
+	size_t _modCurr = 0;
+	std::vector<std::pair<std::string, int>> _modNames;
+	ScriptValues<Mod> _scriptValues;
+
+	void loadRuleList(int &value, const YAML::Node &node) const
+	{
+		if (node)
+		{
+			auto name = node.as<std::string>();
+			if (name == ModNameMaster)
+			{
+				value = 0;
+			}
+			else if (name == ModNameCurrent)
+			{
+				value = _modCurr;
+			}
+			else
+			{
+				for (const auto& p : _modNames)
+				{
+					if (name == p.first)
+					{
+						value = p.second;
+						return;
+					}
+				}
+				value = -1;
+			}
+		}
+	}
+	void saveRuleList(const int &value, YAML::Node &node) const
+	{
+		for (const auto& p : _modNames)
+		{
+			if (value == p.second)
+			{
+				node = p.first;
+				return;
+			}
+		}
+	}
+
+public:
+	/// Initialize shared globals like types.
+	void initParserGlobals(ScriptParserBase* parser) override
+	{
+		parser->registerPointerType<Mod>();
+		parser->registerPointerType<SavedGame>();
+		parser->registerPointerType<SavedBattleGame>();
+	}
+
+	/// Prepare for loading data.
+	void beginLoad() override
+	{
+		ScriptGlobal::beginLoad();
+
+		addTagValueType<ModScriptGlobal, &ModScriptGlobal::loadRuleList, &ModScriptGlobal::saveRuleList>("RuleList");
+		addConst("RuleList." + ModNameMaster, (int)0);
+		addConst("RuleList." + ModNameCurrent, (int)0);
+	}
+	/// Finishing loading data.
+	void endLoad() override
+	{
+		ScriptGlobal::endLoad();
+	}
+
+	/// Add mod name and id.
+	void addMod(const std::string& s, int i)
+	{
+		auto name = "RuleList." + s;
+		addConst(name, (int)i);
+		_modNames.push_back(std::make_pair(s, i));
+	}
+	/// Set current mod id.
+	void setMod(int i)
+	{
+		updateConst("RuleList." + ModNameCurrent, (int)i);
+		_modCurr = i;
+	}
+
+	/// Get script values
+	ScriptValues<Mod>& getScriptValues() { return _scriptValues; }
+};
 
 /**
  * Creates an empty mod.
  */
 Mod::Mod() :
-	_maxViewDistance(20), _maxDarknessToSeeUnits(9), _costEngineer(0), _costScientist(0), _timePersonnel(0), _initialFunding(0),
+	_inventoryOverlapsPaperdoll(false),
+	_maxViewDistance(20), _maxDarknessToSeeUnits(9), _maxStaticLightDistance(16), _maxDynamicLightDistance(24), _enhancedLighting(0),
+	_costHireEngineer(0), _costHireScientist(0),
+	_costEngineer(0), _costScientist(0), _timePersonnel(0), _hireByCountryOdds(0), _hireByRegionOdds(0), _initialFunding(0),
 	_aiUseDelayBlaster(3), _aiUseDelayFirearm(0), _aiUseDelayGrenade(3), _aiUseDelayMelee(0), _aiUseDelayPsionic(0),
-	_startingTime(6, 1, 1, 1999, 12, 0, 0), _facilityListOrder(0), _craftListOrder(0), _itemListOrder(0),
-	_researchListOrder(0),  _manufactureListOrder(0), _ufopaediaListOrder(0), _invListOrder(0), _modOffset(0)
+	_aiFireChoiceIntelCoeff(5), _aiFireChoiceAggroCoeff(5), _aiExtendedFireModeChoice(false), _aiRespectMaxRange(false), _aiDestroyBaseFacilities(false),
+	_aiPickUpWeaponsMoreActively(false), _aiPickUpWeaponsMoreActivelyCiv(false),
+	_maxLookVariant(0), _tooMuchSmokeThreshold(10), _customTrainingFactor(100), _minReactionAccuracy(0), _chanceToStopRetaliation(0), _lessAliensDuringBaseDefense(false),
+	_allowCountriesToCancelAlienPact(false), _buildInfiltrationBaseCloseToTheCountry(false), _allowAlienBasesOnWrongTextures(true),
+	_kneelBonusGlobal(115), _oneHandedPenaltyGlobal(80),
+	_enableCloseQuartersCombat(0), _closeQuartersAccuracyGlobal(100), _closeQuartersTuCostGlobal(12), _closeQuartersEnergyCostGlobal(8), _closeQuartersSneakUpGlobal(0),
+	_noLOSAccuracyPenaltyGlobal(-1),
+	_surrenderMode(0),
+	_bughuntMinTurn(999), _bughuntMaxEnemies(2), _bughuntRank(0), _bughuntLowMorale(40), _bughuntTimeUnitsLeft(60),
+	_manaEnabled(false), _manaBattleUI(false), _manaTrainingPrimary(false), _manaTrainingSecondary(false), _manaReplenishAfterMission(true),
+	_loseMoney("loseGame"), _loseRating("loseGame"), _loseDefeat("loseGame"),
+	_ufoGlancingHitThreshold(0), _ufoBeamWidthParameter(1000),
+	_escortRange(20), _drawEnemyRadarCircles(1), _escortsJoinFightAgainstHK(true), _hunterKillerFastRetarget(true),
+	_crewEmergencyEvacuationSurvivalChance(100), _pilotsEmergencyEvacuationSurvivalChance(100),
+	_soldiersPerRank({-1, -1, 5, 11, 23, 30}),
+	_pilotAccuracyZeroPoint(55), _pilotAccuracyRange(40), _pilotReactionsZeroPoint(55), _pilotReactionsRange(60),
+	_performanceBonusFactor(0), _enableNewResearchSorting(false), _displayCustomCategories(0), _shareAmmoCategories(false), _showDogfightDistanceInKm(false), _showFullNameInAlienInventory(false),
+	_alienInventoryOffsetX(80), _alienInventoryOffsetBigUnit(32),
+	_hidePediaInfoButton(false), _extraNerdyPediaInfoType(0),
+	_giveScoreAlsoForResearchedArtifacts(false), _statisticalBulletConservation(false), _stunningImprovesMorale(false),
+	_tuRecoveryWakeUpNewTurn(100), _shortRadarRange(0), _buildTimeReductionScaling(100),
+	_defeatScore(0), _defeatFunds(0), _difficultyDemigod(false), _startingTime(6, 1, 1, 1999, 12, 0, 0), _startingDifficulty(0),
+	_baseDefenseMapFromLocation(0), _disableUnderwaterSounds(false), _enableUnitResponseSounds(false), _pediaReplaceCraftFuelWithRangeType(-1),
+	_facilityListOrder(0), _craftListOrder(0), _itemCategoryListOrder(0), _itemListOrder(0),
+	_researchListOrder(0),  _manufactureListOrder(0), _soldierBonusListOrder(0), _transformationListOrder(0), _ufopaediaListOrder(0), _invListOrder(0), _soldierListOrder(0),
+	_modCurrent(0), _statePalette(0)
 {
 	_muteMusic = new Music();
 	_muteSound = new Sound();
 	_globe = new RuleGlobe();
+	_scriptGlobal = new ModScriptGlobal();
 
 	//load base damage types
 	RuleDamageType *dmg;
@@ -197,13 +391,6 @@ Mod::Mod() :
 	dmg = new RuleDamageType();
 	dmg->ResistType = DT_NONE;
 	dmg->RandomType = DRT_NONE;
-	dmg->IgnoreOverKill = true;
-	dmg->ToHealth = 0.0f;
-	dmg->ToArmor = 0.0f;
-	dmg->ToWound = 0.0f;
-	dmg->ToItem = 0.0f;
-	dmg->ToTile = 0.0f;
-	dmg->ToStun = 0.0f;
 	_damageTypes[dmg->ResistType] = dmg;
 
 	dmg = new RuleDamageType();
@@ -245,19 +432,24 @@ Mod::Mod() :
 	dmg->ToItem = 0.0f;
 	dmg->ToTile = 0.0f;
 	dmg->ToStun = 1.0f;
+	dmg->RandomStun = false;
+	dmg->TileDamageMethod = 2;
 	_damageTypes[dmg->ResistType] = dmg;
 
 	dmg = new RuleDamageType();
 	dmg->ResistType = DT_HE;
+	dmg->RandomType = DRT_EXPLOSION;
 	dmg->FixRadius = -1;
 	dmg->IgnoreOverKill = true;
 	dmg->IgnoreSelfDestruct = true;
 	dmg->RadiusEffectiveness = 0.05f;
 	dmg->ToItem = 1.0f;
+	dmg->TileDamageMethod = 2;
 	_damageTypes[dmg->ResistType] = dmg;
 
 	dmg = new RuleDamageType();
 	dmg->ResistType = DT_SMOKE;
+	dmg->RandomType = DRT_NONE;
 	dmg->FixRadius = -1;
 	dmg->IgnoreOverKill = true;
 	dmg->IgnoreDirection = true;
@@ -270,10 +462,12 @@ Mod::Mod() :
 	dmg->ToItem = 0.0f;
 	dmg->ToTile = 0.0f;
 	dmg->ToStun = 1.0f;
+	dmg->TileDamageMethod = 2;
 	_damageTypes[dmg->ResistType] = dmg;
 
 	dmg = new RuleDamageType();
 	dmg->ResistType = DT_IN;
+	dmg->RandomType = DRT_FIRE;
 	dmg->FixRadius = -1;
 	dmg->FireBlastCalc = true;
 	dmg->IgnoreOverKill = true;
@@ -288,7 +482,39 @@ Mod::Mod() :
 	dmg->ToItem = 0.0f;
 	dmg->ToTile = 0.0f;
 	dmg->ToStun = 0.0f;
+	dmg->TileDamageMethod = 2;
 	_damageTypes[dmg->ResistType] = dmg;
+
+	for (int itd = DT_10; itd < DAMAGE_TYPES; ++itd)
+	{
+		dmg = new RuleDamageType();
+		dmg->ResistType = static_cast<ItemDamageType>(itd);
+		dmg->IgnoreOverKill = true;
+		_damageTypes[dmg->ResistType] = dmg;
+	}
+
+	_converter = new RuleConverter();
+	_statAdjustment.resize(MaxDifficultyLevels);
+	_statAdjustment[0].aimMultiplier = 0.5;
+	_statAdjustment[0].armorMultiplier = 0.5;
+	_statAdjustment[0].growthMultiplier = 0;
+	for (size_t i = 1; i != MaxDifficultyLevels; ++i)
+	{
+		_statAdjustment[i].aimMultiplier = 1.0;
+		_statAdjustment[i].armorMultiplier = 1.0;
+		_statAdjustment[i].growthMultiplier = (int)i;
+	}
+
+	// Setting default value for array
+	_ufoTractorBeamSizeModifiers[0] = 400;
+	_ufoTractorBeamSizeModifiers[1] = 200;
+	_ufoTractorBeamSizeModifiers[2] = 100;
+	_ufoTractorBeamSizeModifiers[3] = 50;
+	_ufoTractorBeamSizeModifiers[4] = 25;
+
+	_pilotBraveryThresholds[0] = 90;
+	_pilotBraveryThresholds[1] = 80;
+	_pilotBraveryThresholds[2] = 30;
 }
 
 /**
@@ -299,160 +525,247 @@ Mod::~Mod()
 	delete _muteMusic;
 	delete _muteSound;
 	delete _globe;
-	for (std::map<std::string, Font*>::iterator i = _fonts.begin(); i != _fonts.end(); ++i)
+	delete _converter;
+	delete _scriptGlobal;
+	for (auto& pair : _fonts)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto& pair : _surfaces)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, SurfaceSet*>::iterator i = _sets.begin(); i != _sets.end(); ++i)
+	for (auto& pair : _sets)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, Palette*>::iterator i = _palettes.begin(); i != _palettes.end(); ++i)
+	for (auto& pair : _palettes)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, Music*>::iterator i = _musics.begin(); i != _musics.end(); ++i)
+	for (auto& pair : _musics)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, SoundSet*>::iterator i = _sounds.begin(); i != _sounds.end(); ++i)
+	for (auto& pair : _sounds)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector<RuleDamageType*>::iterator i = _damageTypes.begin(); i != _damageTypes.end(); ++i)
+	for (auto* rdt : _damageTypes)
 	{
-		delete *i;
+		delete rdt;
 	}
-	for (std::map<std::string, RuleCountry*>::iterator i = _countries.begin(); i != _countries.end(); ++i)
+	for (auto& pair : _countries)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleRegion*>::iterator i = _regions.begin(); i != _regions.end(); ++i)
+	for (auto& pair : _extraGlobeLabels)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleBaseFacility*>::iterator i = _facilities.begin(); i != _facilities.end(); ++i)
+	for (auto& pair : _regions)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleCraft*>::iterator i = _crafts.begin(); i != _crafts.end(); ++i)
+	for (auto& pair : _facilities)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleCraftWeapon*>::iterator i = _craftWeapons.begin(); i != _craftWeapons.end(); ++i)
+	for (auto& pair : _crafts)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleItem*>::iterator i = _items.begin(); i != _items.end(); ++i)
+	for (auto& pair : _craftWeapons)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleUfo*>::iterator i = _ufos.begin(); i != _ufos.end(); ++i)
+	for (auto& pair : _itemCategories)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleTerrain*>::iterator i = _terrains.begin(); i != _terrains.end(); ++i)
+	for (auto& pair : _items)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, MapDataSet*>::iterator i = _mapDataSets.begin(); i != _mapDataSets.end(); ++i)
+	for (auto& pair : _ufos)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleSoldier*>::iterator i = _soldiers.begin(); i != _soldiers.end(); ++i)
+	for (auto& pair : _terrains)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, Unit*>::iterator i = _units.begin(); i != _units.end(); ++i)
+	for (auto& pair : _mapDataSets)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, AlienRace*>::iterator i = _alienRaces.begin(); i != _alienRaces.end(); ++i)
+	for (auto& pair : _soldiers)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, AlienDeployment*>::iterator i = _alienDeployments.begin(); i != _alienDeployments.end(); ++i)
+	for (auto& pair : _skills)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, Armor*>::iterator i = _armors.begin(); i != _armors.end(); ++i)
+	for (auto& pair : _units)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, ArticleDefinition*>::iterator i = _ufopaediaArticles.begin(); i != _ufopaediaArticles.end(); ++i)
+	for (auto& pair : _alienRaces)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleInventory*>::iterator i = _invs.begin(); i != _invs.end(); ++i)
+	for (auto& pair : _enviroEffects)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleResearch *>::const_iterator i = _research.begin(); i != _research.end(); ++i)
+	for (auto& pair : _startingConditions)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleManufacture *>::const_iterator i = _manufacture.begin(); i != _manufacture.end(); ++i)
+	for (auto& pair : _alienDeployments)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, UfoTrajectory *>::const_iterator i = _ufoTrajectories.begin(); i != _ufoTrajectories.end(); ++i)
+	for (auto& pair : _armors)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleAlienMission *>::const_iterator i = _alienMissions.begin(); i != _alienMissions.end(); ++i)
+	for (auto& pair : _ufopaediaArticles)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, MCDPatch *>::const_iterator i = _MCDPatches.begin(); i != _MCDPatches.end(); ++i)
+	for (auto& pair : _invs)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector< std::pair<std::string, ExtraSprites *> >::const_iterator i = _extraSprites.begin(); i != _extraSprites.end(); ++i)
+	for (auto& pair : _research)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector< std::pair<std::string, ExtraSounds *> >::const_iterator i = _extraSounds.begin(); i != _extraSounds.end(); ++i)
+	for (auto& pair : _manufacture)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, ExtraStrings *>::const_iterator i = _extraStrings.begin(); i != _extraStrings.end(); ++i)
+	for (auto& pair : _manufactureShortcut)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleInterface *>::const_iterator i = _interfaces.begin(); i != _interfaces.end(); ++i)
+	for (auto& pair : _soldierBonus)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, std::vector<MapScript*> >::iterator i = _mapScripts.begin(); i != _mapScripts.end(); ++i)
+	for (auto& pair : _soldierTransformation)
 	{
-		for (std::vector<MapScript*>::iterator j = (*i).second.begin(); j != (*i).second.end(); ++j)
+		delete pair.second;
+	}
+	for (auto& pair : _ufoTrajectories)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _alienMissions)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _MCDPatches)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _extraSprites)
+	{
+		for (auto* extraSprites : pair.second)
 		{
-			delete *j;
+			delete extraSprites;
 		}
 	}
-	for (std::map<std::string, RuleVideo *>::const_iterator i = _videos.begin(); i != _videos.end(); ++i)
+	for (auto& pair : _customPalettes)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleMusic *>::const_iterator i = _musicDefs.begin(); i != _musicDefs.end(); ++i)
+	for (auto& pair : _extraSounds)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, RuleMissionScript*>::const_iterator i = _missionScripts.begin(); i != _missionScripts.end(); ++i)
+	for (auto& pair : _extraStrings)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::map<std::string, SoundDefinition*>::const_iterator i = _soundDefs.begin(); i != _soundDefs.end(); ++i)
+	for (auto& pair : _interfaces)
 	{
-		delete i->second;
+		delete pair.second;
 	}
-	for (std::vector<StatString*>::const_iterator i = _statStrings.begin(); i != _statStrings.end(); ++i)
+	for (auto& pair : _mapScripts)
 	{
-		delete (*i);
+		for (auto* mapScript : pair.second)
+		{
+			delete mapScript;
+		}
+	}
+	for (auto& pair : _videos)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _musicDefs)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _arcScripts)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _eventScripts)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _events)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _missionScripts)
+	{
+		delete pair.second;
+	}
+	for (auto& pair : _soundDefs)
+	{
+		delete pair.second;
+	}
+	for (auto* statString : _statStrings)
+	{
+		delete statString;
+	}
+	for (auto& pair : _commendations)
+	{
+		delete pair.second;
+	}
+}
+
+/**
+ * Gets a specific rule element by ID.
+ * @param id String ID of the rule element.
+ * @param name Human-readable name of the rule type.
+ * @param map Map associated to the rule type.
+ * @param error Throw an error if not found.
+ * @return Pointer to the rule element, or NULL if not found.
+ */
+template <typename T>
+T *Mod::getRule(const std::string &id, const std::string &name, const std::map<std::string, T*> &map, bool error) const
+{
+	if (isEmptyRuleName(id))
+	{
+		return 0;
+	}
+	typename std::map<std::string, T*>::const_iterator i = map.find(id);
+	if (i != map.end() && i->second != 0)
+	{
+		return i->second;
+	}
+	else
+	{
+		if (error)
+		{
+			throw Exception(name + " " + id + " not found");
+		}
+		return 0;
 	}
 }
 
@@ -461,10 +774,29 @@ Mod::~Mod()
  * @param name Name of the font.
  * @return Pointer to the font.
  */
-Font *Mod::getFont(const std::string &name) const
+Font *Mod::getFont(const std::string &name, bool error) const
 {
-	std::map<std::string, Font*>::const_iterator i = _fonts.find(name);
-	if (_fonts.end() != i) return i->second; else return 0;
+	return getRule(name, "Font", _fonts, error);
+}
+
+/**
+ * Loads any extra sprites associated to a surface when
+ * it's first requested.
+ * @param name Surface name.
+ */
+void Mod::lazyLoadSurface(const std::string &name)
+{
+	if (Options::lazyLoadResources)
+	{
+		auto i = _extraSprites.find(name);
+		if (i != _extraSprites.end())
+		{
+			for (auto* extraSprites : i->second)
+			{
+				loadExtraSprite(extraSprites);
+			}
+		}
+	}
 }
 
 /**
@@ -472,10 +804,10 @@ Font *Mod::getFont(const std::string &name) const
  * @param name Name of the surface.
  * @return Pointer to the surface.
  */
-Surface *Mod::getSurface(const std::string &name) const
+Surface *Mod::getSurface(const std::string &name, bool error)
 {
-	std::map<std::string, Surface*>::const_iterator i = _surfaces.find(name);
-	if (_surfaces.end() != i) return i->second; else return 0;
+	lazyLoadSurface(name);
+	return getRule(name, "Sprite", _surfaces, error);
 }
 
 /**
@@ -483,10 +815,10 @@ Surface *Mod::getSurface(const std::string &name) const
  * @param name Name of the surface set.
  * @return Pointer to the surface set.
  */
-SurfaceSet *Mod::getSurfaceSet(const std::string &name) const
+SurfaceSet *Mod::getSurfaceSet(const std::string &name, bool error)
 {
-	std::map<std::string, SurfaceSet*>::const_iterator i = _sets.find(name);
-	if (_sets.end() != i) return i->second; else return 0;
+	lazyLoadSurface(name);
+	return getRule(name, "Sprite Set", _sets, error);
 }
 
 /**
@@ -494,7 +826,7 @@ SurfaceSet *Mod::getSurfaceSet(const std::string &name) const
  * @param name Name of the music.
  * @return Pointer to the music.
  */
-Music *Mod::getMusic(const std::string &name) const
+Music *Mod::getMusic(const std::string &name, bool error) const
 {
 	if (Options::mute)
 	{
@@ -502,9 +834,18 @@ Music *Mod::getMusic(const std::string &name) const
 	}
 	else
 	{
-		std::map<std::string, Music*>::const_iterator i = _musics.find(name);
-		if (_musics.end() != i) return i->second; else return _muteMusic;
+		return getRule(name, "Music", _musics, error);
 	}
+}
+
+/**
+ * Returns the list of all music tracks
+ * provided by the mod.
+ * @return List of music tracks.
+ */
+const std::map<std::string, Music*> &Mod::getMusicTrackList() const
+{
+	return _musics;
 }
 
 /**
@@ -521,17 +862,21 @@ Music *Mod::getRandomMusic(const std::string &name) const
 	else
 	{
 		std::vector<Music*> music;
-		for (std::map<std::string, Music*>::const_iterator i = _musics.begin(); i != _musics.end(); ++i)
+		for (auto& pair : _musics)
 		{
-			if (i->first.find(name) != std::string::npos)
+			if (pair.first.find(name) != std::string::npos)
 			{
-				music.push_back(i->second);
+				music.push_back(pair.second);
 			}
 		}
 		if (music.empty())
+		{
 			return _muteMusic;
+		}
 		else
+		{
 			return music[RNG::seedless(0, music.size() - 1)];
+		}
 	}
 }
 
@@ -546,9 +891,10 @@ void Mod::playMusic(const std::string &name, int id)
 	{
 		int loop = -1;
 		// hacks
-		if (!Options::musicAlwaysLoop &&
-			(name == "GMSTORY" || name == "GMWIN" || name == "GMLOSE"))
+		if (!Options::musicAlwaysLoop && (name == "GMSTORY" || name == "GMWIN" || name == "GMLOSE"))
+		{
 			loop = 0;
+		}
 
 		Music *music = 0;
 		if (id == 0)
@@ -565,7 +911,16 @@ void Mod::playMusic(const std::string &name, int id)
 		if (music != _muteMusic)
 		{
 			_playingMusic = name;
+			for (auto& item : _musics)
+			{
+				if (item.second == music)
+				{
+					setCurrentMusicTrack(item.first);
+					break;
+				}
+			}
 		}
+		Log(LOG_VERBOSE)<<"Mod::playMusic('" << name << "'): playing " << _playingMusic;
 	}
 }
 
@@ -574,10 +929,9 @@ void Mod::playMusic(const std::string &name, int id)
  * @param name Name of the sound set.
  * @return Pointer to the sound set.
  */
-SoundSet *Mod::getSoundSet(const std::string &name) const
+SoundSet *Mod::getSoundSet(const std::string &name, bool error) const
 {
-	std::map<std::string, SoundSet*>::const_iterator i = _sounds.find(name);
-	if (_sounds.end() != i) return i->second; else return 0;
+	return getRule(name, "Sound Set", _sounds, error);
 }
 
 /**
@@ -586,7 +940,7 @@ SoundSet *Mod::getSoundSet(const std::string &name) const
  * @param sound ID of the sound.
  * @return Pointer to the sound.
  */
-Sound *Mod::getSound(const std::string &set, unsigned int sound) const
+Sound *Mod::getSound(const std::string &set, int sound) const
 {
 	if (Options::mute)
 	{
@@ -594,8 +948,22 @@ Sound *Mod::getSound(const std::string &set, unsigned int sound) const
 	}
 	else
 	{
-		SoundSet *ss = getSoundSet(set);
-		if (ss != 0) return ss->getSound(sound); else return 0;
+		SoundSet *ss = getSoundSet(set, false);
+		if (ss != 0)
+		{
+			Sound *s = ss->getSound(sound);
+			if (s == 0)
+			{
+				Log(LOG_ERROR) << "Sound " << sound << " in " << set << " not found";
+				return _muteSound;
+			}
+			return s;
+		}
+		else
+		{
+			Log(LOG_ERROR) << "SoundSet " << set << " not found";
+			return _muteSound;
+		}
 	}
 }
 
@@ -604,40 +972,16 @@ Sound *Mod::getSound(const std::string &set, unsigned int sound) const
  * @param name Name of the palette.
  * @return Pointer to the palette.
  */
-Palette *Mod::getPalette(const std::string &name) const
+Palette *Mod::getPalette(const std::string &name, bool error) const
 {
-	std::map<std::string, Palette*>::const_iterator i = _palettes.find(name);
-	if (_palettes.end() != i) return i->second; else return 0;
-}
-
-/**
- * Changes the palette of all the graphics in the mod.
- * @param colors Pointer to the set of colors.
- * @param firstcolor Offset of the first color to replace.
- * @param ncolors Amount of colors to replace.
- */
-void Mod::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
-{
-	for (std::map<std::string, Font*>::iterator i = _fonts.begin(); i != _fonts.end(); ++i)
-	{
-		i->second->getSurface()->setPalette(colors, firstcolor, ncolors);
-	}
-	for (std::map<std::string, Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
-	{
-		if (i->first.substr(i->first.length() - 3, i->first.length()) != "LBM")
-			i->second->setPalette(colors, firstcolor, ncolors);
-	}
-	for (std::map<std::string, SurfaceSet*>::iterator i = _sets.begin(); i != _sets.end(); ++i)
-	{
-		i->second->setPalette(colors, firstcolor, ncolors);
-	}
+	return getRule(name, "Palette", _palettes, error);
 }
 
 /**
  * Returns the list of voxeldata in the mod.
  * @return Pointer to the list of voxeldata.
  */
-std::vector<Uint16> *Mod::getVoxelData()
+const std::vector<Uint16> *Mod::getVoxelData() const
 {
 	return &_voxelData;
 }
@@ -650,7 +994,7 @@ std::vector<Uint16> *Mod::getVoxelData()
  */
 Sound *Mod::getSoundByDepth(unsigned int depth, unsigned int sound) const
 {
-	if (depth == 0)
+	if (depth == 0 || _disableUnderwaterSounds)
 		return getSound("BATTLE.CAT", sound);
 	else
 		return getSound("BATTLE2.CAT", sound);
@@ -665,84 +1009,1312 @@ const std::vector<std::vector<Uint8> > *Mod::getLUTs() const
 	return &_transparencyLUTs;
 }
 
+
+/**
+ * Verify if value have defined surface in given set.
+ */
+void Mod::verifySpriteOffset(const std::string &parent, const int& sprite, const std::string &set) const
+{
+	if (Options::lazyLoadResources)
+	{
+		// we can't check if index is correct when set is loaded
+		return;
+	}
+
+	auto* s = getRule(set, "Sprite Set", _sets, true);
+
+	if (s->getTotalFrames() == 0)
+	{
+		// HACK: some sprites should be shared between different sets (for example 'Projectiles' and 'UnderwaterProjectiles'),
+		// but in some cases one set is not used (for example if the weapon is 'underwaterOnly: true').
+		// If there are no surfaces at all, this means this index is not used.
+		// In some corner cases it will not work correcty, for example if someone does not add any surface to the set at all.
+		return;
+	}
+
+	checkForSoftError(
+		sprite != Mod::NO_SURFACE && s->getFrame(sprite) == nullptr,
+		parent,
+		"Wrong index " + std::to_string(sprite) + " for surface set " + set + " (please note that the index in the ruleset is smaller, by several thousands)",
+		LOG_ERROR
+	);
+}
+
+/**
+ * Verify if value have defined surface in given set.
+ */
+void Mod::verifySpriteOffset(const std::string &parent, const std::vector<int>& sprites, const std::string &set) const
+{
+	if (Options::lazyLoadResources)
+	{
+		// we can't check if index is correct when set is loaded
+		return;
+	}
+
+	auto* s = getRule(set, "Sprite Set", _sets, true);
+
+	if (s->getTotalFrames() == 0)
+	{
+		// HACK: some sprites should be shared between different sets (for example 'Projectiles' and 'UnderwaterProjectiles'),
+		// but in some cases one set is not used (for example if the weapon is 'underwaterOnly: true').
+		// If there are no surfaces at all, this means this index is not used.
+		// In some corner cases it will not work correcty, for example if someone does not add any surface to the set at all.
+		return;
+	}
+
+	for (auto sprite : sprites)
+	{
+		checkForSoftError(
+			sprite != Mod::NO_SURFACE && s->getFrame(sprite) == nullptr,
+			parent,
+			"Wrong index " + std::to_string(sprite) + " for surface set " + set + " (please note that the index in the ruleset is smaller, by several thousands)",
+			LOG_ERROR
+		);
+	}
+}
+
+/**
+ * Verify if value have defined sound in given set.
+ */
+void Mod::verifySoundOffset(const std::string &parent, const int& sound, const std::string &set) const
+{
+	if (Options::mute)
+	{
+		// when mute is set not sound data is loaded and we can't check for correct data
+		return;
+	}
+
+	auto* s = getSoundSet(set);
+
+	checkForSoftError(
+		sound != Mod::NO_SOUND && s->getSound(sound) == nullptr,
+		parent,
+		"Wrong index " + std::to_string(sound) + " for sound set " + set + " (please note that the index in the ruleset is smaller, by several thousands)",
+		LOG_ERROR
+	);
+}
+
+/**
+ * Verify if value have defined sound in given set.
+ */
+void Mod::verifySoundOffset(const std::string &parent, const std::vector<int>& sounds, const std::string &set) const
+{
+	if (Options::mute)
+	{
+		// when mute is set not sound data is loaded and we can't check for correct data
+		return;
+	}
+
+	auto* s = getSoundSet(set);
+
+	for (auto sound : sounds)
+	{
+		checkForSoftError(
+			sound != Mod::NO_SOUND && s->getSound(sound) == nullptr,
+			parent,
+			"Wrong index " + std::to_string(sound) + " for sound set " + set + " (please note that the index in the ruleset is smaller, by several thousands)",
+			LOG_ERROR
+		);
+	}
+}
+
+
 /**
  * Returns the current mod-based offset for resources.
  * @return Mod offset.
  */
 int Mod::getModOffset() const
 {
-	return _modOffset;
+	return _modCurrent->offset;
+}
+
+
+
+namespace
+{
+
+const std::string YamlTagSeqShort = "!!seq";
+const std::string YamlTagSeq = "tag:yaml.org,2002:seq";
+const std::string YamlTagMapShort = "!!map";
+const std::string YamlTagMap = "tag:yaml.org,2002:map";
+const std::string YamlTagNonSpecific = "?";
+
+const std::string InfoTag = "!info";
+const std::string AddTag = "!add";
+const std::string RemoveTag = "!remove";
+
+bool isListHelper(const YAML::Node &node)
+{
+	return node.IsSequence() == true && (node.Tag() == YamlTagSeq || node.Tag() == YamlTagNonSpecific || node.Tag() == InfoTag);
+}
+
+bool isListAddTagHelper(const YAML::Node &node)
+{
+	return node.IsSequence() == true && node.Tag() == AddTag;
+}
+
+bool isListRemoveTagHelper(const YAML::Node &node)
+{
+	return node.IsSequence() == true && node.Tag() == RemoveTag;
+}
+
+bool isMapHelper(const YAML::Node &node)
+{
+	return node.IsMap() == true && (node.Tag() == YamlTagMap || node.Tag() == YamlTagNonSpecific || node.Tag() == InfoTag);
+}
+
+bool isMapAddTagHelper(const YAML::Node &node)
+{
+	return node.IsMap() == true && node.Tag() == AddTag;
+}
+
+void throwOnBadListHelper(const std::string &parent, const YAML::Node &node)
+{
+	std::ostringstream err;
+	if (node.IsSequence())
+	{
+		// it is a sequence, but it could not be loaded... this means the tag is not supported
+		err << "unsupported node tag '" << node.Tag() << "'";
+	}
+	else
+	{
+		err << "wrong node type, expected a list";
+	}
+	throw LoadRuleException(parent, node, err.str());
+}
+
+void throwOnBadMapHelper(const std::string &parent, const YAML::Node &node)
+{
+	std::ostringstream err;
+	if (node.IsMap())
+	{
+		// it is a map, but it could not be loaded... this means the tag is not supported
+		err << "unsupported node tag '" << node.Tag() << "'";
+	}
+	else
+	{
+		err << "wrong node type, expected a map";
+	}
+	throw LoadRuleException(parent, node, err.str());
+}
+
+template<typename... T>
+void showInfo(const std::string &parent, const YAML::Node &node, T... names)
+{
+	if (node.Tag() == InfoTag)
+	{
+		Logger info;
+		info.get() << "Options available for " << parent << " at line " << node.Mark().line << " are: ";
+		((info.get() << " " << names), ...);
+	}
+}
+
+
+
+/**
+ * Tag dispatch struct representing normal load logic.
+ */
+struct LoadFuncStandard
+{
+	auto funcTagForNew() -> LoadFuncStandard { return { }; }
+};
+
+/**
+ * Tag dispatch struct representing special function that allows adding and removing elements.
+ */
+struct LoadFuncEditable
+{
+	auto funcTagForNew() -> LoadFuncStandard { return { }; }
+};
+
+/**
+ * Tag dispatch struct representing can have null value.
+ */
+struct LoadFuncNullable
+{
+	auto funcTagForNew() -> LoadFuncNullable { return { }; }
+};
+
+
+
+/**
+ * Terminal function loading integer.
+ */
+void loadHelper(const std::string &parent, int& v, const YAML::Node &node)
+{
+	v = node.as<int>();
+}
+
+/**
+ * Terminal function loading string.
+ * Function can't load empty string.
+ */
+void loadHelper(const std::string &parent, std::string& v, const YAML::Node &node)
+{
+	v = node.as<std::string>();
+	if (Mod::isEmptyRuleName(v))
+	{
+		throw LoadRuleException(parent, node, "Invalid value for name");
+	}
+}
+
+/**
+ * Function loading string.
+ * If node do not exists then it do not change value.
+ * Function can't load empty string.
+ */
+void loadHelper(const std::string &parent, std::string& v, const YAML::Node &node, LoadFuncStandard)
+{
+	if (node)
+	{
+		loadHelper(parent, v, node);
+	}
+}
+
+/**
+ * Function loading string with option for pseudo null value.
+ * If node do not exists then it do not change value.
+ */
+void loadHelper(const std::string &parent, std::string& v, const YAML::Node &node, LoadFuncNullable)
+{
+	if (node)
+	{
+		if (node.IsNull())
+		{
+			v = Mod::STR_NULL;
+		}
+		else
+		{
+			v = node.as<std::string>();
+			if (v == Mod::STR_NULL)
+			{
+				throw LoadRuleException(parent, node, "Invalid value for name ");
+			}
+		}
+	}
+}
+
+template<typename T, typename... LoadFuncTag>
+void loadHelper(const std::string &parent, std::vector<T>& v, const YAML::Node &node, LoadFuncStandard, LoadFuncTag... rest)
+{
+	if (node)
+	{
+		showInfo(parent, node, YamlTagSeqShort);
+
+		if (isListHelper(node))
+		{
+			v.clear();
+			v.reserve(node.size());
+			for (const YAML::Node& n : node)
+			{
+				loadHelper(parent, v.emplace_back(), n, rest.funcTagForNew()...);
+			}
+		}
+		else
+		{
+			throwOnBadListHelper(parent, node);
+		}
+	}
+}
+
+template<typename T, typename... LoadFuncTag>
+void loadHelper(const std::string &parent, std::vector<T>& v, const YAML::Node &node, LoadFuncEditable, LoadFuncTag... rest)
+{
+	if (node)
+	{
+		showInfo(parent, node, YamlTagSeqShort, AddTag, RemoveTag);
+
+		if (isListHelper(node))
+		{
+			v.clear();
+			v.reserve(node.size());
+			for (const YAML::Node& n : node)
+			{
+				loadHelper(parent, v.emplace_back(), n, rest.funcTagForNew()...);
+			}
+		}
+		else if (isListAddTagHelper(node))
+		{
+			v.reserve(v.size() + node.size());
+			for (const YAML::Node& n : node)
+			{
+				loadHelper(parent, v.emplace_back(), n, rest...);
+			}
+		}
+		else if (isListRemoveTagHelper(node))
+		{
+			const auto begin = v.begin();
+			auto end = v.end();
+			for (const YAML::Node& n : node)
+			{
+				end = std::remove(begin, end, n.as<T>());
+			}
+			v.erase(end, v.end());
+		}
+		else
+		{
+			throwOnBadListHelper(parent, node);
+		}
+	}
+}
+
+template<typename K, typename V, typename... LoadFuncTag>
+void loadHelper(const std::string &parent, std::map<K, V>& v, const YAML::Node &node, LoadFuncStandard, LoadFuncTag... rest)
+{
+	if (node)
+	{
+		showInfo(parent, node, YamlTagMapShort);
+
+		if (isMapHelper(node))
+		{
+			v.clear();
+			for (const std::pair<YAML::Node, YAML::Node>& n : node)
+			{
+				auto key = n.first.as<K>();
+
+				loadHelper(parent, v[key], n.second, rest.funcTagForNew()...);
+			}
+		}
+		else
+		{
+			throwOnBadMapHelper(parent, node);
+		}
+	}
+}
+
+template<typename K, typename V, typename... LoadFuncTag>
+void loadHelper(const std::string &parent, std::map<K, V>& v, const YAML::Node &node, LoadFuncEditable, LoadFuncTag... rest)
+{
+	if (node)
+	{
+		showInfo(parent, node, YamlTagMapShort, AddTag, RemoveTag);
+
+		if (isMapHelper(node))
+		{
+			v.clear();
+			for (const std::pair<YAML::Node, YAML::Node>& n : node)
+			{
+				auto key = n.first.as<K>();
+
+				loadHelper(parent, v[key], n.second, rest.funcTagForNew()...);
+			}
+		}
+		else if (isMapAddTagHelper(node))
+		{
+			for (const std::pair<YAML::Node, YAML::Node>& n : node)
+			{
+				auto key = n.first.as<K>();
+
+				loadHelper(parent, v[key], n.second, rest...);
+			}
+		}
+		else if (isListRemoveTagHelper(node)) // we use a list here as we only need the keys
+		{
+			for (const YAML::Node& n : node)
+			{
+				v.erase(n.as<K>());
+			}
+		}
+		else
+		{
+			throwOnBadMapHelper(parent, node);
+		}
+	}
+}
+
+/**
+ * Fixed order map, rely on fact that yaml-cpp try preserve map order from loaded file
+ */
+template<typename K, typename V, typename... LoadFuncTag>
+void loadHelper(const std::string &parent, std::vector<std::pair<K, V>>& v, const YAML::Node &node, LoadFuncEditable, LoadFuncTag... rest)
+{
+	if (node)
+	{
+		showInfo(parent, node, YamlTagMapShort, AddTag, RemoveTag);
+
+		auto pushBack = [&](const K& k) -> V&
+		{
+			return v.emplace_back(std::pair<K, V>{ k, V{} }).second;
+		};
+
+		auto findOrPushBack = [&](const K& k) -> V&
+		{
+			for (auto& p : v)
+			{
+				if (p.first == k)
+				{
+					return p.second;
+				}
+			}
+			return pushBack(k);
+		};
+
+		if (isMapHelper(node))
+		{
+			v.clear();
+			for (const std::pair<YAML::Node, YAML::Node>& n : node)
+			{
+				auto key = n.first.as<K>();
+
+				loadHelper(parent, pushBack(key), n.second, rest.funcTagForNew()...);
+			}
+		}
+		else if (isMapAddTagHelper(node))
+		{
+			for (const std::pair<YAML::Node, YAML::Node>& n : node)
+			{
+				auto key = n.first.as<K>();
+
+				loadHelper(parent, findOrPushBack(key), n.second, rest...);
+			}
+		}
+		else if (isListRemoveTagHelper(node)) // we use a list here as we only need the keys
+		{
+			for (const YAML::Node& n : node)
+			{
+				auto key = n.as<K>();
+				Collections::removeIf(v, [&](auto& p){ return p.first == key; });
+			}
+		}
+		else
+		{
+			throwOnBadMapHelper(parent, node);
+		}
+	}
+}
+
+
+
+const std::string YamlRuleNodeDelete = "delete";
+const std::string YamlRuleNodeNew = "new";
+const std::string YamlRuleNodeOverride = "override";
+const std::string YamlRuleNodeUpdate = "update";
+
+
+void loadRuleInfoHelper(const YAML::Node &node, const char* nodeName, const char* type)
+{
+	if (node.Tag() == InfoTag)
+	{
+		Logger info;
+		info.get() << "Main node names available for '" << nodeName << ":' at line " << node.Mark().line << " are: ";
+		info.get() << " '" << YamlRuleNodeDelete << ":',";
+		info.get() << " '" << YamlRuleNodeNew << ":',";
+		info.get() << " '" << YamlRuleNodeOverride << ":',";
+		info.get() << " '" << YamlRuleNodeUpdate << ":',";
+		info.get() << " '" << type << ":'";
+	}
+}
+
+} // namespace
+
+/**
+ * Get offset and index for sound set or sprite set.
+ * @param parent Name of parent node, used for better error message
+ * @param offset Member to load new value.
+ * @param node Node with data
+ * @param shared Max offset limit that is shared for every mod
+ * @param multiplier Value used by `projectile` surface set to convert projectile offset to index offset in surface.
+ * @param sizeScale Value used by transparency colors, reduce total number of available space for offset.
+ */
+void Mod::loadOffsetNode(const std::string &parent, int& offset, const YAML::Node &node, int shared, const std::string &set, size_t multiplier, size_t sizeScale) const
+{
+	assert(_modCurrent);
+	const ModData* curr = _modCurrent;
+	if (node.IsScalar())
+	{
+		offset = node.as<int>();
+	}
+	else if (isMapHelper(node))
+	{
+		offset = node["index"].as<int>();
+		std::string mod = node["mod"].as<std::string>();
+		if (mod == ModNameMaster)
+		{
+			curr = &_modData.at(0);
+		}
+		else if (mod == ModNameCurrent)
+		{
+			//nothing
+		}
+		else
+		{
+			const ModData* n = 0;
+			for (size_t i = 0; i < _modData.size(); ++i)
+			{
+				const ModData& d = _modData[i];
+				if (d.name == mod)
+				{
+					n = &d;
+					break;
+				}
+			}
+
+			if (n)
+			{
+				curr = n;
+			}
+			else
+			{
+				std::ostringstream err;
+				err << "unknown mod '" << mod << "' used";
+				throw LoadRuleException(parent, node, err.str());
+			}
+		}
+	}
+	else
+	{
+		throw LoadRuleException(parent, node, "unsupported yaml node");
+	}
+
+	static_assert(Mod::NO_SOUND == -1, "NO_SOUND need to equal -1");
+	static_assert(Mod::NO_SURFACE == -1, "NO_SURFACE need to equal -1");
+
+	if (offset < -1)
+	{
+		std::ostringstream err;
+		err << "offset '" << offset << "' has incorrect value in set '" << set << "'";
+		throw LoadRuleException(parent, node, err.str());
+	}
+	else if (offset == -1)
+	{
+		//ok
+	}
+	else
+	{
+		int f = offset;
+		f *= multiplier;
+		if ((size_t)f > curr->size / sizeScale)
+		{
+			std::ostringstream err;
+			err << "offset '" << offset << "' exceeds mod size limit " << (curr->size / multiplier / sizeScale) << " in set '" << set << "'";
+			throw LoadRuleException(parent, node, err.str());
+		}
+		if (f >= shared)
+			f += curr->offset / sizeScale;
+		offset = f;
+	}
 }
 
 /**
  * Returns the appropriate mod-based offset for a sprite.
  * If the ID is bigger than the surfaceset contents, the mod offset is applied.
- * @param id Numeric ID of the sprite.
- * @param resource Name of the surfaceset to lookup.
+ * @param parent Name of parent node, used for better error message
+ * @param sprite Member to load new sprite ID index.
+ * @param node Node with data
+ * @param set Name of the surfaceset to lookup.
+ * @param multiplier Value used by `projectile` surface set to convert projectile offset to index offset in surface.
  */
-int Mod::getSpriteOffset(int sprite, const std::string& set) const
+void Mod::loadSpriteOffset(const std::string &parent, int& sprite, const YAML::Node &node, const std::string &set, size_t multiplier) const
 {
-	SurfaceSet *ss = getSurfaceSet(set);
-	if (ss != 0 && sprite >= (int)ss->getTotalFrames())
-		return sprite + _modOffset;
-	else
-		return sprite;
+	if (node)
+	{
+		loadOffsetNode(parent, sprite, node, getRule(set, "Sprite Set", _sets, true)->getMaxSharedFrames(), set, multiplier);
+	}
+}
+
+/**
+ * Gets the mod offset array for a certain sprite.
+ * @param parent Name of parent node, used for better error message
+ * @param sprites Member to load new array of sprite ID index.
+ * @param node Node with data
+ * @param set Name of the surfaceset to lookup.
+ */
+void Mod::loadSpriteOffset(const std::string &parent, std::vector<int>& sprites, const YAML::Node &node, const std::string &set) const
+{
+	if (node)
+	{
+		int maxShared = getRule(set, "Sprite Set", _sets, true)->getMaxSharedFrames();
+		sprites.clear();
+		if (isListHelper(node))
+		{
+			for (YAML::const_iterator i = node.begin(); i != node.end(); ++i)
+			{
+				sprites.push_back(Mod::NO_SURFACE);
+				loadOffsetNode(parent, sprites.back(), *i, maxShared, set, 1);
+				if (checkForSoftError(sprites.back() == Mod::NO_SURFACE, parent, *i, "incorrect value in sprite list"))
+				{
+					sprites.pop_back();
+				}
+			}
+		}
+		else
+		{
+			sprites.push_back(Mod::NO_SURFACE);
+			loadOffsetNode(parent, sprites.back(), node, maxShared, set, 1);
+		}
+	}
 }
 
 /**
  * Returns the appropriate mod-based offset for a sound.
  * If the ID is bigger than the soundset contents, the mod offset is applied.
- * @param id Numeric ID of the sound.
- * @param resource Name of the soundset to lookup.
+ * @param parent Name of parent node, used for better error message
+ * @param sound Member to load new sound ID index.
+ * @param node Node with data
+ * @param set Name of the soundset to lookup.
  */
-int Mod::getSoundOffset(int sound, const std::string& set) const
+void Mod::loadSoundOffset(const std::string &parent, int& sound, const YAML::Node &node, const std::string &set) const
 {
-	SoundSet *ss = getSoundSet(set);
-	if (ss != 0 && sound >= (int)ss->getTotalSounds())
-		return sound + _modOffset;
+	if (node)
+	{
+		loadOffsetNode(parent, sound, node, getSoundSet(set)->getMaxSharedSounds(), set, 1);
+	}
+}
+
+/**
+ * Gets the mod offset array for a certain sound.
+ * @param parent Name of parent node, used for better error message
+ * @param sounds Member to load new list of sound ID indexes.
+ * @param node Node with data
+ * @param set Name of the soundset to lookup.
+ */
+void Mod::loadSoundOffset(const std::string &parent, std::vector<int>& sounds, const YAML::Node &node, const std::string &set) const
+{
+	if (node)
+	{
+		int maxShared = getSoundSet(set)->getMaxSharedSounds();
+		sounds.clear();
+		if (isListHelper(node))
+		{
+			for (YAML::const_iterator i = node.begin(); i != node.end(); ++i)
+			{
+				sounds.push_back(Mod::NO_SOUND);
+				loadOffsetNode(parent, sounds.back(), *i, maxShared, set, 1);
+				if (checkForSoftError(sounds.back() == Mod::NO_SOUND, parent, *i, "incorrect value in sound list"))
+				{
+					sounds.pop_back();
+				}
+			}
+		}
+		else
+		{
+			sounds.push_back(Mod::NO_SOUND);
+			loadOffsetNode(parent, sounds.back(), node, maxShared, set, 1);
+		}
+	}
+}
+
+/**
+ * Gets the mod offset array for a certain transparency index.
+ * @param parent Name of parent node, used for better error message.
+ * @param index Member to load new transparency index.
+ * @param node Node with data.
+ */
+void Mod::loadTransparencyOffset(const std::string &parent, int& index, const YAML::Node &node) const
+{
+	if (node)
+	{
+		loadOffsetNode(parent, index, node, 0, "TransparencyLUTs", 1, ModTransparencySizeReduction);
+	}
+}
+
+/**
+ * Returns the appropriate mod-based offset for a generic ID.
+ * If the ID is bigger than the max, the mod offset is applied.
+ * @param id Numeric ID.
+ * @param max Maximum vanilla value.
+ */
+int Mod::getOffset(int id, int max) const
+{
+	assert(_modCurrent);
+	if (id > max)
+		return id + _modCurrent->offset;
 	else
-		return sound;
+		return id;
+}
+
+/**
+ * Load base functions to bit set.
+ */
+void Mod::loadBaseFunction(const std::string& parent, RuleBaseFacilityFunctions& f, const YAML::Node& node)
+{
+	if (node)
+	{
+		try
+		{
+			if (isListHelper(node))
+			{
+				f.reset();
+				for (const YAML::Node& n : node)
+				{
+					f.set(_baseFunctionNames.addName(n.as<std::string>(), f.size()));
+				}
+			}
+			else if (isListAddTagHelper(node))
+			{
+				for (const YAML::Node& n : node)
+				{
+					f.set(_baseFunctionNames.addName(n.as<std::string>(), f.size()));
+				}
+			}
+			else if (isListRemoveTagHelper(node))
+			{
+				for (const YAML::Node& n : node)
+				{
+					f.set(_baseFunctionNames.addName(n.as<std::string>(), f.size()), false);
+				}
+			}
+			else
+			{
+				throwOnBadListHelper(parent, node);
+			}
+		}
+		catch(LoadRuleException& ex)
+		{
+			//context is already included in exception, no need add more
+			throw;
+		}
+		catch(Exception& ex)
+		{
+			throw LoadRuleException(parent, node, ex.what());
+		}
+	}
+}
+
+/**
+ * Get names of function names in given bitset.
+ */
+std::vector<std::string> Mod::getBaseFunctionNames(RuleBaseFacilityFunctions f) const
+{
+	std::vector<std::string> vec;
+	vec.reserve(f.count());
+	for (size_t i = 0; i < f.size(); ++i)
+	{
+		if (f.test(i))
+		{
+			vec.push_back(_baseFunctionNames.getName(i));
+		}
+	}
+	return vec;
+}
+
+/**
+ * Loads a list of ints.
+ * Another mod can only override the whole list, no partial edits allowed.
+ */
+void Mod::loadInts(const std::string &parent, std::vector<int>& ints, const YAML::Node &node) const
+{
+	loadHelper(parent, ints, node, LoadFuncStandard{});
+}
+
+/**
+ * Loads a list of ints where order of items does not matter.
+ * Another mod can remove or add new values without altering the whole list.
+ */
+void Mod::loadUnorderedInts(const std::string &parent, std::vector<int>& ints, const YAML::Node &node) const
+{
+	loadHelper(parent, ints, node, LoadFuncEditable{});
+}
+
+
+/**
+ * Loads a name.
+ */
+void Mod::loadName(const std::string &parent, std::string& name, const YAML::Node &node) const
+{
+	loadHelper(parent, name, node, LoadFuncStandard{});
+}
+
+/**
+ * Loads a name. Have option of loading null `~` as special string value.
+ */
+void Mod::loadNameNull(const std::string &parent, std::string& name, const YAML::Node &node) const
+{
+	loadHelper(parent, name, node, LoadFuncNullable{});
+}
+
+/**
+ * Loads a list of names.
+ * Another mod can only override the whole list, no partial edits allowed.
+ */
+void Mod::loadNames(const std::string &parent, std::vector<std::string>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncStandard{});
+}
+
+/**
+ * Loads a list of names where order of items does not matter.
+ * Another mod can remove or add new values without altering the whole list.
+ */
+void Mod::loadUnorderedNames(const std::string &parent, std::vector<std::string>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{});
+}
+
+
+
+/**
+ * Loads a map from names to names.
+ */
+void Mod::loadNamesToNames(const std::string &parent, std::vector<std::pair<std::string, std::vector<std::string>>>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{}, LoadFuncEditable{});
+}
+
+/**
+ * Loads a map from names to names.
+ */
+void Mod::loadUnorderedNamesToNames(const std::string &parent, std::map<std::string, std::string>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{});
+}
+
+/**
+ * Loads a map from names to ints.
+ */
+void Mod::loadUnorderedNamesToInt(const std::string &parent, std::map<std::string, int>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{});
+}
+
+/**
+ * Loads a map from names to vector of ints.
+ */
+void Mod::loadUnorderedNamesToInts(const std::string &parent, std::map<std::string, std::vector<int>>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{}, LoadFuncStandard{});
+}
+
+/**
+ * Loads a map from names to names to int.
+ */
+void Mod::loadUnorderedNamesToNamesToInt(const std::string &parent, std::map<std::string, std::map<std::string, int>>& names, const YAML::Node &node) const
+{
+	loadHelper(parent, names, node, LoadFuncEditable{}, LoadFuncEditable{});
+}
+
+/**
+ * Loads data for kill criteria from Commendations.
+ */
+void Mod::loadKillCriteria(const std::string &parent, std::vector<std::vector<std::pair<int, std::vector<std::string> > > >& v, const YAML::Node &node) const
+{
+	//TODO: very specific use case, not all levels fully supported
+	if (node)
+	{
+		auto loadInner = [&](std::vector<std::pair<int, std::vector<std::string>>>& vv, const YAML::Node &n)
+		{
+			showInfo(parent, n, YamlTagSeqShort);
+
+			if (isListHelper(n))
+			{
+				vv = n.as<std::vector<std::pair<int, std::vector<std::string>>>>();
+			}
+			else
+			{
+				throwOnBadListHelper(parent, n);
+			}
+		};
+
+		showInfo(parent, node, YamlTagSeqShort, AddTag);
+
+		if (isListHelper(node))
+		{
+			v.clear();
+			v.reserve(node.size());
+			for (const YAML::Node& n : node)
+			{
+				loadInner(v.emplace_back(), n);
+			}
+		}
+		else if (isListAddTagHelper(node))
+		{
+			v.reserve(v.size() + node.size());
+			for (const YAML::Node& n : node)
+			{
+				loadInner(v.emplace_back(), n);
+			}
+		}
+		else
+		{
+			throwOnBadListHelper(parent, node);
+		}
+	}
+}
+
+
+
+
+template<typename T>
+static void afterLoadHelper(const char* name, Mod* mod, std::map<std::string, T*>& list, void (T::* func)(const Mod*))
+{
+	std::ostringstream errorStream;
+	int errorLimit = 30;
+	int errorCount = 0;
+
+	errorStream << "During linking rulesets of " << name << ":\n";
+	for (auto& rule : list)
+	{
+		try
+		{
+			(rule.second->* func)(mod);
+		}
+		catch (LoadRuleException &e)
+		{
+			++errorCount;
+			errorStream << e.what() << "\n";
+			if (errorCount == errorLimit)
+			{
+				break;
+			}
+		}
+		catch (Exception &e)
+		{
+			++errorCount;
+			errorStream << "Error processing '" << rule.first << "' in " << name << ": " << e.what() << "\n";
+			if (errorCount == errorLimit)
+			{
+				break;
+			}
+		}
+	}
+	if (errorCount)
+	{
+		throw Exception(errorStream.str());
+	}
+}
+
+/**
+ * Helper function used to disable invalid mod and throw exception to quit game
+ * @param modId Mod id
+ * @param error Error message
+ */
+static void throwModOnErrorHelper(const std::string& modId, const std::string& error)
+{
+	std::ostringstream errorStream;
+
+	errorStream << "failed to load '"
+		<< Options::getModInfos().at(modId).getName()
+		<< "'";
+
+	if (!Options::debug)
+	{
+		Log(LOG_WARNING) << "disabling mod with invalid ruleset: " << modId;
+		auto it = std::find(Options::mods.begin(), Options::mods.end(), std::pair<std::string, bool>(modId, true));
+		if (it == Options::mods.end())
+		{
+			Log(LOG_ERROR) << "cannot find broken mod in mods list: " << modId;
+			Log(LOG_ERROR) << "clearing mods list";
+			Options::mods.clear();
+		}
+		else
+		{
+			it->second = false;
+		}
+		Options::save();
+
+		errorStream << "; mod disabled";
+	}
+	errorStream << std::endl << error;
+
+	throw Exception(errorStream.str());
 }
 
 /**
  * Loads a list of mods specified in the options.
- * @param mods List of <modId, rulesetFiles> pairs.
+ * List of <modId, rulesetFiles> pairs is fetched from the FileMap / VFS
+ * being set up in options updateMods
  */
-void Mod::loadAll(const std::vector< std::pair< std::string, std::vector<std::string> > > &mods)
+void Mod::loadAll()
 {
+	ModScript parser{ _scriptGlobal, this };
+	const auto& mods = FileMap::getRulesets();
+
+	Log(LOG_INFO) << "Loading begins...";
+	if (Options::oxceModValidationLevel < LOG_ERROR)
+	{
+		Log(LOG_ERROR) << "Validation of mod data disabled, game can crash when run";
+	}
+	else if (Options::oxceModValidationLevel < LOG_WARNING)
+	{
+		Log(LOG_WARNING) << "Validation of mod data reduced, game can behave incorrectly";
+	}
+	_scriptGlobal->beginLoad();
+	_modData.clear();
+	_modData.resize(mods.size());
+
+	std::set<std::string> usedModNames;
+	usedModNames.insert(ModNameMaster);
+	usedModNames.insert(ModNameCurrent);
+
+
+	// calculated offsets and other things for all mods
+	size_t offset = 0;
+	for (size_t i = 0; mods.size() > i; ++i)
+	{
+		const std::string& modId = mods[i].first;
+		if (usedModNames.insert(modId).second == false)
+		{
+			throwModOnErrorHelper(modId, "this mod name is already used");
+		}
+		_scriptGlobal->addMod(mods[i].first, 1000 * (int)offset);
+		const ModInfo *modInfo = &Options::getModInfos().at(modId);
+		size_t size = modInfo->getReservedSpace();
+		_modData[i].name = modId;
+		_modData[i].offset = 1000 * offset;
+		_modData[i].info = modInfo;
+		_modData[i].size = 1000 * size;
+		offset += size;
+	}
+
+	Log(LOG_INFO) << "Pre-loading rulesets...";
+	// load rulesets that can affect loading vanilla resources
+	for (size_t i = 0; _modData.size() > i; ++i)
+	{
+		_modCurrent = &_modData.at(i);
+		const ModInfo *info = _modCurrent->info;
+		if (!info->getResourceConfigFile().empty())
+		{
+			auto file = FileMap::getModRuleFile(_modCurrent->info, _modCurrent->info->getResourceConfigFile());
+			if (file)
+			{
+				loadResourceConfigFile(*file);
+			}
+		}
+	}
+
+	Log(LOG_INFO) << "Loading vanilla resources...";
+	// vanilla resources load
+	_modCurrent = &_modData.at(0);
+	loadVanillaResources();
+	_surfaceOffsetBasebits = _sets["BASEBITS.PCK"]->getMaxSharedFrames();
+	_surfaceOffsetBigobs = _sets["BIGOBS.PCK"]->getMaxSharedFrames();
+	_surfaceOffsetFloorob = _sets["FLOOROB.PCK"]->getMaxSharedFrames();
+	_surfaceOffsetHandob = _sets["HANDOB.PCK"]->getMaxSharedFrames();
+	_surfaceOffsetHit = _sets["HIT.PCK"]->getMaxSharedFrames();
+	_surfaceOffsetSmoke = _sets["SMOKE.PCK"]->getMaxSharedFrames();
+
+	_soundOffsetBattle = _sounds["BATTLE.CAT"]->getMaxSharedSounds();
+	_soundOffsetGeo = _sounds["GEO.CAT"]->getMaxSharedSounds();
+
+	Log(LOG_INFO) << "Loading rulesets...";
+	// load rest rulesets
 	for (size_t i = 0; mods.size() > i; ++i)
 	{
 		try
 		{
-			loadMod(mods[i].second, i);
+			_modCurrent = &_modData.at(i);
+			_scriptGlobal->setMod((int)_modCurrent->offset);
+			loadMod(mods[i].second, parser);
 		}
 		catch (Exception &e)
 		{
 			const std::string &modId = mods[i].first;
-			Log(LOG_WARNING) << "disabling mod with invalid ruleset: " << modId;
-			std::vector<std::pair<std::string, bool> >::iterator it =
-				std::find(Options::mods.begin(), Options::mods.end(),
-					std::pair<std::string, bool>(modId, true));
-			if (it == Options::mods.end())
+			throwModOnErrorHelper(modId, e.what());
+		}
+	}
+	Log(LOG_INFO) << "Loading rulesets done.";
+
+	//back master
+	_modCurrent = &_modData.at(0);
+	_scriptGlobal->endLoad();
+
+	// post-processing item categories
+	std::map<std::string, std::string> replacementRules;
+	for (const auto& pair : _itemCategories)
+	{
+		if (!pair.second->getReplaceBy().empty())
+		{
+			replacementRules[pair.first] = pair.second->getReplaceBy();
+		}
+	}
+	for (auto& pair : _items)
+	{
+		pair.second->updateCategories(&replacementRules);
+	}
+
+	// find out if paperdoll overlaps with inventory slots
+	int x1 = RuleInventory::PAPERDOLL_X;
+	int y1 = RuleInventory::PAPERDOLL_Y;
+	int w1 = RuleInventory::PAPERDOLL_W;
+	int h1 = RuleInventory::PAPERDOLL_H;
+	for (const auto& invCategory : _invs)
+	{
+		for (const auto& invSlot : *invCategory.second->getSlots())
+		{
+			int x2 = invCategory.second->getX() + (invSlot.x * RuleInventory::SLOT_W);
+			int y2 = invCategory.second->getY() + (invSlot.y * RuleInventory::SLOT_H);
+			int w2 = RuleInventory::SLOT_W;
+			int h2 = RuleInventory::SLOT_H;
+			if (x1 + w1 < x2 || x2 + w2 < x1 || y1 + h1 < y2 || y2 + h2 < y1)
 			{
-				Log(LOG_ERROR) << "cannot find broken mod in mods list: " << modId;
-				Log(LOG_ERROR) << "clearing mods list";
-				Options::mods.clear();
+				// intersection is empty
 			}
 			else
 			{
-				it->second = false;
+				_inventoryOverlapsPaperdoll = true;
 			}
-			Options::save();
-
-			throw Exception("failed to load '" +
-				Options::getModInfos().at(modId).getName() +
-				"'; mod disabled for next startup\n" +
-				e.what());
 		}
 	}
-	sortLists();
+
+
 	loadExtraResources();
+
+
+	Log(LOG_INFO) << "After load.";
+	// cross link rule objects
+
+	afterLoadHelper("research", this, _research, &RuleResearch::afterLoad);
+	afterLoadHelper("items", this, _items, &RuleItem::afterLoad);
+	afterLoadHelper("manufacture", this, _manufacture, &RuleManufacture::afterLoad);
+	afterLoadHelper("armors", this, _armors, &Armor::afterLoad);
+	afterLoadHelper("units", this, _units, &Unit::afterLoad);
+	afterLoadHelper("soldiers", this, _soldiers, &RuleSoldier::afterLoad);
+	afterLoadHelper("facilities", this, _facilities, &RuleBaseFacility::afterLoad);
+	afterLoadHelper("startingConditions", this, _startingConditions, &RuleStartingCondition::afterLoad);
+	afterLoadHelper("enviroEffects", this, _enviroEffects, &RuleEnviroEffects::afterLoad);
+	afterLoadHelper("commendations", this, _commendations, &RuleCommendations::afterLoad);
+	afterLoadHelper("skills", this, _skills, &RuleSkill::afterLoad);
+	afterLoadHelper("craftWeapons", this, _craftWeapons, &RuleCraftWeapon::afterLoad);
+	afterLoadHelper("countries", this, _countries, &RuleCountry::afterLoad);
+
+	for (auto& a : _armors)
+	{
+		if (a.second->hasInfiniteSupply())
+		{
+			_armorsForSoldiersCache.push_back(a.second);
+		}
+		else if (a.second->getStoreItem())
+		{
+			_armorsForSoldiersCache.push_back(a.second);
+			_armorStorageItemsCache.push_back(a.second->getStoreItem());
+		}
+	}
+	//_armorsForSoldiersCache sorted in sortList()
+	Collections::sortVector(_armorStorageItemsCache);
+	Collections::sortVectorMakeUnique(_armorStorageItemsCache);
+
+
+	for (auto& c : _craftWeapons)
+	{
+		const RuleItem* item = nullptr;
+
+		item = c.second->getLauncherItem();
+		if (item)
+		{
+			_craftWeaponStorageItemsCache.push_back(item);
+		}
+
+		item = c.second->getClipItem();
+		if (item)
+		{
+			_craftWeaponStorageItemsCache.push_back(item);
+		}
+	}
+	Collections::sortVector(_craftWeaponStorageItemsCache);
+	Collections::sortVectorMakeUnique(_craftWeaponStorageItemsCache);
+
+
+	for (auto& r : _research)
+	{
+		if (r.second->unlockFinalMission())
+		{
+			if (_finalResearch != nullptr)
+			{
+				checkForSoftError(true, "mod", "Both '" + _finalResearch->getName() + "' and '" + r.second->getName() + "' research are marked as 'unlockFinalMission: true'", LOG_INFO);
+
+				// to make old mods semi-compatible with new code we decide that last updated rule will be consider final research. This could make false-positive as last update could not touch this flag.
+				if (getModLastUpdatingRule(r.second)->offset < getModLastUpdatingRule(_finalResearch)->offset)
+				{
+					continue;
+				}
+			}
+			_finalResearch = r.second;
+		}
+	}
+
+
+	// check unique listOrder
+	{
+		std::vector<int> tmp;
+		tmp.reserve(_soldierBonus.size());
+		for (auto i : _soldierBonus)
+		{
+			tmp.push_back(i.second->getListOrder());
+		}
+		std::sort(tmp.begin(), tmp.end());
+		auto it = std::unique(tmp.begin(), tmp.end());
+		bool wasUnique = (it == tmp.end());
+		if (!wasUnique)
+		{
+			throw Exception("List order for soldier bonus types must be unique!");
+		}
+	}
+
+	// auto-create alternative manufacture rules
+	for (auto shortcutPair : _manufactureShortcut)
+	{
+		// 1. check if the new project has a unique name
+		auto typeNew = shortcutPair.first;
+		auto it = _manufacture.find(typeNew);
+		if (it != _manufacture.end())
+		{
+			throw Exception("Manufacture project '" + typeNew + "' already exists! Choose a different name for this alternative project.");
+		}
+
+		// 2. copy an existing manufacture project
+		const RuleManufacture* ruleStartFrom = getManufacture(shortcutPair.second->getStartFrom(), true);
+		RuleManufacture* ruleNew = new RuleManufacture(*ruleStartFrom);
+		_manufacture[typeNew] = ruleNew;
+		_manufactureIndex.push_back(typeNew);
+
+		// 3. change the name and break down the sub-projects into simpler components
+		if (ruleNew != 0)
+		{
+			ruleNew->breakDown(this, shortcutPair.second);
+		}
+	}
+
+	// recommended user options
+	if (!_recommendedUserOptions.empty() && !Options::oxceRecommendedOptionsWereSet)
+	{
+		_recommendedUserOptions.erase("maximizeInfoScreens"); // FIXME: make proper categorisations in the next release
+		_recommendedUserOptions.erase("oxceModValidationLevel");
+
+		for (auto& optionInfo : Options::getOptionInfo())
+		{
+			if (optionInfo.type() != OPTION_KEY && !optionInfo.category().empty())
+			{
+				optionInfo.load(_recommendedUserOptions, false);
+			}
+		}
+
+		Options::oxceRecommendedOptionsWereSet = true;
+		Options::save();
+	}
+
+	// fixed user options
+	if (!_fixedUserOptions.empty())
+	{
+		_fixedUserOptions.erase("oxceLinks");
+		_fixedUserOptions.erase("oxceUpdateCheck");
+		_fixedUserOptions.erase("maximizeInfoScreens"); // FIXME: make proper categorisations in the next release
+		_fixedUserOptions.erase("oxceModValidationLevel");
+		_fixedUserOptions.erase("oxceAutoNightVisionThreshold");
+		_fixedUserOptions.erase("oxceAlternateCraftEquipmentManagement");
+
+		for (auto& optionInfo : Options::getOptionInfo())
+		{
+			if (optionInfo.type() != OPTION_KEY && !optionInfo.category().empty())
+			{
+				optionInfo.load(_fixedUserOptions, false);
+			}
+		}
+		Options::save();
+	}
+
+	// additional validation of options not visible in the GUI
+	{
+		if (Options::oxceMaxEquipmentLayoutTemplates < 10 ||
+			Options::oxceMaxEquipmentLayoutTemplates > SavedGame::MAX_EQUIPMENT_LAYOUT_TEMPLATES ||
+			Options::oxceMaxEquipmentLayoutTemplates % 10 != 0)
+		{
+			Options::oxceMaxEquipmentLayoutTemplates = 20;
+		}
+	}
+
+	Log(LOG_INFO) << "Loading ended.";
+
+	sortLists();
 	modResources();
 }
 
@@ -750,80 +2322,317 @@ void Mod::loadAll(const std::vector< std::pair< std::string, std::vector<std::st
  * Loads a list of rulesets from YAML files for the mod at the specified index. The first
  * mod loaded should be the master at index 0, then 1, and so on.
  * @param rulesetFiles List of rulesets to load.
- * @param modIdx Mod index number.
+ * @param parsers Object with all available parsers.
  */
-void Mod::loadMod(const std::vector<std::string> &rulesetFiles, size_t modIdx)
+void Mod::loadMod(const std::vector<FileMap::FileRecord> &rulesetFiles, ModScript &parsers)
 {
-	_modOffset = 1000 * modIdx;
-
-	for (std::vector<std::string>::const_iterator i = rulesetFiles.begin(); i != rulesetFiles.end(); ++i)
+	for (const auto& filerec : rulesetFiles)
 	{
-		Log(LOG_VERBOSE) << "- " << *i;
+		Log(LOG_VERBOSE) << "- " << filerec.fullpath;
 		try
 		{
-			loadFile(*i);
+			loadFile(filerec, parsers);
+		}
+		catch (Exception &e)
+		{
+			throw Exception(filerec.fullpath + ": " + std::string(e.what()));
 		}
 		catch (YAML::Exception &e)
 		{
-			throw Exception((*i) + " (" + std::string(e.what()) + ")");
+			throw Exception(filerec.fullpath + ": " + std::string(e.what()));
 		}
 	}
 
 	// these need to be validated, otherwise we're gonna get into some serious trouble down the line.
 	// it may seem like a somewhat arbitrary limitation, but there is a good reason behind it.
-	// i'd need to know what results are going to be before they are formulated, and there's a heirarchical structure to
+	// i'd need to know what results are going to be before they are formulated, and there's a hierarchical structure to
 	// the order in which variables are determined for a mission, and the order is DIFFERENT for regular missions vs
 	// missions that spawn a mission site. where normally we pick a region, then a mission based on the weights for that region.
 	// a terror-type mission picks a mission type FIRST, then a region based on the criteria defined by the mission.
 	// there is no way i can conceive of to reconcile this difference to allow mixing and matching,
 	// short of knowing the results of calls to the RNG before they're determined.
-	// the best solution i can come up with is to disallow it, as there are other ways to acheive what this would amount to anyway,
+	// the best solution i can come up with is to disallow it, as there are other ways to achieve what this would amount to anyway,
 	// and they don't require time travel. - Warboy
-	for (std::map<std::string, RuleMissionScript*>::iterator i = _missionScripts.begin(); i != _missionScripts.end(); ++i)
+	for (auto& pair : _missionScripts)
 	{
-		RuleMissionScript *rule = (*i).second;
+		RuleMissionScript *rule = pair.second;
 		std::set<std::string> missions = rule->getAllMissionTypes();
 		if (!missions.empty())
 		{
-			std::set<std::string>::const_iterator j = missions.begin();
-			bool isSiteType = getAlienMission(*j) && getAlienMission(*j)->getObjective() == OBJECTIVE_SITE;
+			auto j = missions.begin();
+			if (!getAlienMission(*j))
+			{
+				throw Exception("Error with MissionScript: " + pair.first + ": alien mission type: " + *j + " not defined, do not incite the judgement of Amaunator.");
+			}
+			bool isSiteType = getAlienMission(*j)->getObjective() == OBJECTIVE_SITE;
 			rule->setSiteType(isSiteType);
 			for (;j != missions.end(); ++j)
 			{
 				if (getAlienMission(*j) && (getAlienMission(*j)->getObjective() == OBJECTIVE_SITE) != isSiteType)
 				{
-					throw Exception("Error with MissionScript: " + (*i).first + " cannot mix terror/non-terror missions in a single command, so sayeth the wise Alaundo.");
+					throw Exception("Error with MissionScript: " + pair.first + ": cannot mix terror/non-terror missions in a single command, so sayeth the wise Alaundo.");
 				}
 			}
 		}
 	}
 
-	if (modIdx == 0)
+	// instead of passing a pointer to the region load function and moving the alienMission loading before region loading
+	// and sanitizing there, i'll sanitize here, i'm sure this sanitation will grow, and will need to be refactored into
+	// its own function at some point, but for now, i'll put it here next to the missionScript sanitation, because it seems
+	// the logical place for it, given that this sanitation is required as a result of moving all terror mission handling
+	// into missionScripting behaviour. apologies to all the modders that will be getting errors and need to adjust their
+	// rulesets, but this will save you weird errors down the line.
+	for (auto& pair : _regions)
 	{
-		loadVanillaResources();
+		// bleh, make copies, const correctness kinda screwed me here.
+		WeightedOptions weights = pair.second->getAvailableMissions();
+		std::vector<std::string> names = weights.getNames();
+		for (const auto& name : names)
+		{
+			if (!getAlienMission(name))
+			{
+				throw Exception("Error with MissionWeights: Region: " + pair.first + ": alien mission type: " + name + " not defined, do not incite the judgement of Amaunator.");
+			}
+			if (getAlienMission(name)->getObjective() == OBJECTIVE_SITE)
+			{
+				throw Exception("Error with MissionWeights: Region: " + pair.first + " has " + name + " listed. Terror mission can only be invoked via missionScript, so sayeth the Spider Queen.");
+			}
+		}
 	}
+}
+
+/**
+ * Loads a ruleset from a YAML file that have basic resources configuration.
+ * @param filename YAML filename.
+ */
+void Mod::loadResourceConfigFile(const FileMap::FileRecord &filerec)
+{
+	YAML::Node doc = filerec.getYAML();
+
+	for (YAML::const_iterator i = doc["soundDefs"].begin(); i != doc["soundDefs"].end(); ++i)
+	{
+		SoundDefinition *rule = loadRule(*i, &_soundDefs);
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+
+	if (const YAML::Node& luts = doc["transparencyLUTs"])
+	{
+		const size_t start = _modCurrent->offset / ModTransparencySizeReduction;
+		const size_t limit =  _modCurrent->size / ModTransparencySizeReduction;
+		size_t curr = 0;
+
+		_transparencies.resize(start + limit);
+		for (YAML::const_iterator i = luts.begin(); i != luts.end(); ++i)
+		{
+			const YAML::Node& c = (*i)["colors"];
+			if (c.IsSequence())
+			{
+				for (YAML::const_iterator j = c.begin(); j != c.end(); ++j, ++curr)
+				{
+					if (curr == limit)
+					{
+						throw Exception("transparencyLUTs mod limit reach");
+					}
+
+					auto loadByteValue = [&](const YAML::Node& n)
+					{
+						int v = n.as<int>(-1);
+						checkForSoftError(v < 0 || v > 255, "transparencyLUTs", n, "value outside allowed range");
+						return Clamp(v, 0, 255);
+					};
+
+					if ((*j)[0].IsScalar())
+					{
+						SDL_Color color;
+						color.r = loadByteValue((*j)[0]);
+						color.g = loadByteValue((*j)[1]);
+						color.b = loadByteValue((*j)[2]);
+						color.unused = (*j)[3] ? loadByteValue((*j)[3]): 2;
+
+
+						for (int opacity = 0; opacity < TransparenciesOpacityLevels; ++opacity)
+						{
+							// pseudo interpolation of palette color with tint
+							// for small values `op` its should behave same as original TFTD
+							// but for bigger values it make result closer to tint color
+							const int op = Clamp((opacity+1) * color.unused, 0, 64);
+							const float co = 1.0f - Sqr(op / 64.0f); // 1.0 -> 0.0
+							const float to = op * 1.0f; // 0.0 -> 64.0
+
+							SDL_Color taint;
+							taint.r = Clamp((int)(color.r * to), 0, 255);
+							taint.g = Clamp((int)(color.g * to), 0, 255);
+							taint.b = Clamp((int)(color.b * to), 0, 255);
+							taint.unused = 255 * co;
+							_transparencies[start + curr][opacity] = taint;
+						};
+					}
+					else
+					{
+						for (int opacity = 0; opacity < TransparenciesOpacityLevels; ++opacity)
+						{
+							const YAML::Node& n = (*j)[opacity];
+
+							SDL_Color taint;
+							taint.r = loadByteValue(n[0]);
+							taint.g = loadByteValue(n[1]);
+							taint.b = loadByteValue(n[2]);
+							taint.unused = 255 - loadByteValue(n[3]);
+							_transparencies[start + curr][opacity] = taint;
+						};
+						std::reverse(std::begin(_transparencies[start + curr]), std::end(_transparencies[start + curr]));
+					}
+				}
+			}
+			else
+			{
+				throw Exception("unknown transparencyLUTs node type");
+			}
+		}
+	}
+}
+
+/**
+ * Loads "constants" node.
+ */
+void Mod::loadConstants(const YAML::Node &node)
+{
+	loadSoundOffset("constants", DOOR_OPEN, node["doorSound"], "BATTLE.CAT");
+	loadSoundOffset("constants", SLIDING_DOOR_OPEN, node["slidingDoorSound"], "BATTLE.CAT");
+	loadSoundOffset("constants", SLIDING_DOOR_CLOSE, node["slidingDoorClose"], "BATTLE.CAT");
+	loadSoundOffset("constants", SMALL_EXPLOSION, node["smallExplosion"], "BATTLE.CAT");
+	loadSoundOffset("constants", LARGE_EXPLOSION, node["largeExplosion"], "BATTLE.CAT");
+
+	loadSpriteOffset("constants", EXPLOSION_OFFSET, node["explosionOffset"], "X1.PCK");
+	loadSpriteOffset("constants", SMOKE_OFFSET, node["smokeOffset"], "SMOKE.PCK");
+	loadSpriteOffset("constants", UNDERWATER_SMOKE_OFFSET, node["underwaterSmokeOffset"], "SMOKE.PCK");
+
+	loadSoundOffset("constants", ITEM_DROP, node["itemDrop"], "BATTLE.CAT");
+	loadSoundOffset("constants", ITEM_THROW, node["itemThrow"], "BATTLE.CAT");
+	loadSoundOffset("constants", ITEM_RELOAD, node["itemReload"], "BATTLE.CAT");
+	loadSoundOffset("constants", WALK_OFFSET, node["walkOffset"], "BATTLE.CAT");
+	loadSoundOffset("constants", FLYING_SOUND, node["flyingSound"], "BATTLE.CAT");
+
+	loadSoundOffset("constants", BUTTON_PRESS, node["buttonPress"], "GEO.CAT");
+	if (node["windowPopup"])
+	{
+		int k = 0;
+		for (YAML::const_iterator j = node["windowPopup"].begin(); j != node["windowPopup"].end() && k < 3; ++j, ++k)
+		{
+			loadSoundOffset("constants", WINDOW_POPUP[k], (*j), "GEO.CAT");
+		}
+	}
+	loadSoundOffset("constants", UFO_FIRE, node["ufoFire"], "GEO.CAT");
+	loadSoundOffset("constants", UFO_HIT, node["ufoHit"], "GEO.CAT");
+	loadSoundOffset("constants", UFO_CRASH, node["ufoCrash"], "GEO.CAT");
+	loadSoundOffset("constants", UFO_EXPLODE, node["ufoExplode"], "GEO.CAT");
+	loadSoundOffset("constants", INTERCEPTOR_HIT, node["interceptorHit"], "GEO.CAT");
+	loadSoundOffset("constants", INTERCEPTOR_EXPLODE, node["interceptorExplode"], "GEO.CAT");
+	GEOSCAPE_CURSOR = node["geoscapeCursor"].as<int>(GEOSCAPE_CURSOR);
+	BASESCAPE_CURSOR = node["basescapeCursor"].as<int>(BASESCAPE_CURSOR);
+	BATTLESCAPE_CURSOR = node["battlescapeCursor"].as<int>(BATTLESCAPE_CURSOR);
+	UFOPAEDIA_CURSOR = node["ufopaediaCursor"].as<int>(UFOPAEDIA_CURSOR);
+	GRAPHS_CURSOR = node["graphsCursor"].as<int>(GRAPHS_CURSOR);
+	DAMAGE_RANGE = node["damageRange"].as<int>(DAMAGE_RANGE);
+	EXPLOSIVE_DAMAGE_RANGE = node["explosiveDamageRange"].as<int>(EXPLOSIVE_DAMAGE_RANGE);
+	size_t num = 0;
+	for (YAML::const_iterator j = node["fireDamageRange"].begin(); j != node["fireDamageRange"].end() && num < 2; ++j)
+	{
+		FIRE_DAMAGE_RANGE[num] = (*j).as<int>(FIRE_DAMAGE_RANGE[num]);
+		++num;
+	}
+	DEBRIEF_MUSIC_GOOD = node["goodDebriefingMusic"].as<std::string>(DEBRIEF_MUSIC_GOOD);
+	DEBRIEF_MUSIC_BAD = node["badDebriefingMusic"].as<std::string>(DEBRIEF_MUSIC_BAD);
+	EXTENDED_ITEM_RELOAD_COST = node["extendedItemReloadCost"].as<bool>(EXTENDED_ITEM_RELOAD_COST);
+	EXTENDED_RUNNING_COST = node["extendedRunningCost"].as<bool>(EXTENDED_RUNNING_COST);
+	EXTENDED_HWP_LOAD_ORDER = node["extendedHwpLoadOrder"].as<bool>(EXTENDED_HWP_LOAD_ORDER);
+	EXTENDED_MELEE_REACTIONS = node["extendedMeleeReactions"].as<int>(EXTENDED_MELEE_REACTIONS);
+	EXTENDED_TERRAIN_MELEE = node["extendedTerrainMelee"].as<int>(EXTENDED_TERRAIN_MELEE);
+	EXTENDED_UNDERWATER_THROW_FACTOR = node["extendedUnderwaterThrowFactor"].as<int>(EXTENDED_UNDERWATER_THROW_FACTOR);
+	EXTENDED_EXPERIENCE_AWARD_SYSTEM = node["extendedExperienceAwardSystem"].as<bool>(EXTENDED_EXPERIENCE_AWARD_SYSTEM);
 }
 
 /**
  * Loads a ruleset's contents from a YAML file.
  * Rules that match pre-existing rules overwrite them.
  * @param filename YAML filename.
+ * @param parsers Object with all available parsers.
  */
-void Mod::loadFile(const std::string &filename)
+void Mod::loadFile(const FileMap::FileRecord &filerec, ModScript &parsers)
 {
-	BattleUnit::Parser.LogInfo();
+	auto doc = filerec.getYAML();
 
-	YAML::Node doc = YAML::LoadFile(filename);
+	auto loadDocInfoHelper = [&](const char* nodeName)
+	{
+		if (doc.Tag() == InfoTag)
+		{
+			Logger info;
+			info.get() << "Available rule '" << nodeName << ":'";
+		}
 
-	for (YAML::const_iterator i = doc["countries"].begin(); i != doc["countries"].end(); ++i)
+		return doc[nodeName];
+	};
+
+	if (const YAML::Node &extended = loadDocInfoHelper("extended"))
+	{
+		if (const YAML::Node& t = extended["tagsFile"])
+		{
+			auto filePath = t.as<std::string>();
+			auto file = FileMap::getModRuleFile(_modCurrent->info, filePath);
+
+			if (false == checkForSoftError(file == nullptr, "extended", t, "Unknown file name for 'tagsFile': '" + filePath + "'", LOG_ERROR))
+			{
+				//copy only tags and load them in current file.
+				YAML::Node tempTags = file->getYAML()["extended"]["tags"];
+				YAML::Node tempExtended;
+				tempExtended["tags"] = tempTags;
+
+				_scriptGlobal->load(tempExtended);
+			}
+		}
+
+		_scriptGlobal->load(extended);
+		_scriptGlobal->getScriptValues().load(extended, parsers.getShared(), "globals");
+	}
+
+	auto iterateRules = [&](const char* nodeName, const char* type)
+	{
+		const YAML::Node& node = loadDocInfoHelper(nodeName);
+
+		loadRuleInfoHelper(node, nodeName, type);
+
+		return Collections::rangeValueUncheck(node.begin(), node.end());
+	};
+
+	auto iterateRulesSpecific = [&](const char* nodeName)
+	{
+		const YAML::Node& node = loadDocInfoHelper(nodeName);
+
+		return Collections::rangeValueUncheck(node.begin(), node.end());
+	};
+
+
+
+	for (YAML::const_iterator i : iterateRules("countries", "type"))
 	{
 		RuleCountry *rule = loadRule(*i, &_countries, &_countriesIndex);
 		if (rule != 0)
 		{
-			rule->load(*i);
+			rule->load(*i, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["regions"].begin(); i != doc["regions"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("extraGlobeLabels", "type"))
+	{
+		RuleCountry *rule = loadRule(*i, &_extraGlobeLabels, &_extraGlobeLabelsIndex);
+		if (rule != 0)
+		{
+			rule->load(*i, parsers);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("regions", "type"))
 	{
 		RuleRegion *rule = loadRule(*i, &_regions, &_regionsIndex);
 		if (rule != 0)
@@ -831,25 +2640,23 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i);
 		}
 	}
-	for (YAML::const_iterator i = doc["facilities"].begin(); i != doc["facilities"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("facilities", "type"))
 	{
-		RuleBaseFacility *rule = loadRule(*i, &_facilities, &_facilitiesIndex);
+		RuleBaseFacility *rule = loadRule(*i, &_facilities, &_facilitiesIndex, "type", RuleListOrderedFactory<RuleBaseFacility>{ _facilityListOrder, 100 });
 		if (rule != 0)
 		{
-			_facilityListOrder += 100;
-			rule->load(*i, this, _facilityListOrder);
+			rule->load(*i, this);
 		}
 	}
-	for (YAML::const_iterator i = doc["crafts"].begin(); i != doc["crafts"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("crafts", "type"))
 	{
-		RuleCraft *rule = loadRule(*i, &_crafts, &_craftsIndex);
+		RuleCraft *rule = loadRule(*i, &_crafts, &_craftsIndex, "type", RuleListOrderedFactory<RuleCraft>{ _craftListOrder, 100 });
 		if (rule != 0)
 		{
-			_craftListOrder += 100;
-			rule->load(*i, this, _craftListOrder);
+			rule->load(*i, this, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["craftWeapons"].begin(); i != doc["craftWeapons"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("craftWeapons", "type"))
 	{
 		RuleCraftWeapon *rule = loadRule(*i, &_craftWeapons, &_craftWeaponsIndex);
 		if (rule != 0)
@@ -857,33 +2664,39 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i, this);
 		}
 	}
-	for (YAML::const_iterator i = doc["items"].begin(); i != doc["items"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("itemCategories", "type"))
 	{
-		RuleItem *rule = loadRule(*i, &_items, &_itemsIndex);
-		if (rule != 0)
-		{
-			_itemListOrder += 100;
-			rule->load(*i, this, _itemListOrder);
-		}
-	}
-	for (YAML::const_iterator i = doc["ufos"].begin(); i != doc["ufos"].end(); ++i)
-	{
-		RuleUfo *rule = loadRule(*i, &_ufos, &_ufosIndex);
+		RuleItemCategory *rule = loadRule(*i, &_itemCategories, &_itemCategoriesIndex, "type", RuleListOrderedFactory<RuleItemCategory>{ _itemCategoryListOrder, 100 });
 		if (rule != 0)
 		{
 			rule->load(*i, this);
 		}
 	}
-	for (YAML::const_iterator i = doc["invs"].begin(); i != doc["invs"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("items", "type"))
 	{
-		RuleInventory *rule = loadRule(*i, &_invs, &_invsIndex, "id");
+		RuleItem *rule = loadRule(*i, &_items, &_itemsIndex, "type", RuleListOrderedFactory<RuleItem>{ _itemListOrder, 100 });
 		if (rule != 0)
 		{
-			_invListOrder += 10;
-			rule->load(*i, _invListOrder);
+			rule->load(*i, this, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["terrains"].begin(); i != doc["terrains"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("ufos", "type"))
+	{
+		RuleUfo *rule = loadRule(*i, &_ufos, &_ufosIndex);
+		if (rule != 0)
+		{
+			rule->load(*i, this, parsers);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("invs", "id"))
+	{
+		RuleInventory *rule = loadRule(*i, &_invs, &_invsIndex, "id", RuleListOrderedFactory<RuleInventory>{ _invListOrder, 10 });
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("terrains", "name"))
 	{
 		RuleTerrain *rule = loadRule(*i, &_terrains, &_terrainIndex, "name");
 		if (rule != 0)
@@ -892,23 +2705,31 @@ void Mod::loadFile(const std::string &filename)
 		}
 	}
 
-	for (YAML::const_iterator i = doc["armors"].begin(); i != doc["armors"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("armors", "type"))
 	{
 		Armor *rule = loadRule(*i, &_armors, &_armorsIndex);
 		if (rule != 0)
 		{
-			rule->load(*i, BattleUnit::Parser);
+			rule->load(*i, this, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["soldiers"].begin(); i != doc["soldiers"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("skills", "type"))
 	{
-		RuleSoldier *rule = loadRule(*i, &_soldiers, &_soldiersIndex);
+		RuleSkill *rule = loadRule(*i, &_skills, &_skillsIndex);
 		if (rule != 0)
 		{
-			rule->load(*i, this);
+			rule->load(*i, this, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["units"].begin(); i != doc["units"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("soldiers", "type"))
+	{
+		RuleSoldier *rule = loadRule(*i, &_soldiers, &_soldiersIndex, "type", RuleListOrderedFactory<RuleSoldier>{ _soldierListOrder, 1 });
+		if (rule != 0)
+		{
+			rule->load(*i, this, parsers);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("units", "type"))
 	{
 		Unit *rule = loadRule(*i, &_units);
 		if (rule != 0)
@@ -916,7 +2737,7 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i, this);
 		}
 	}
-	for (YAML::const_iterator i = doc["alienRaces"].begin(); i != doc["alienRaces"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("alienRaces", "id"))
 	{
 		AlienRace *rule = loadRule(*i, &_alienRaces, &_aliensIndex, "id");
 		if (rule != 0)
@@ -924,37 +2745,154 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i);
 		}
 	}
-	for (YAML::const_iterator i = doc["alienDeployments"].begin(); i != doc["alienDeployments"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("enviroEffects", "type"))
+	{
+		RuleEnviroEffects* rule = loadRule(*i, &_enviroEffects, &_enviroEffectsIndex);
+		if (rule != 0)
+		{
+			rule->load(*i, this);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("startingConditions", "type"))
+	{
+		RuleStartingCondition *rule = loadRule(*i, &_startingConditions, &_startingConditionsIndex);
+		if (rule != 0)
+		{
+			rule->load(*i, this);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("alienDeployments", "type"))
 	{
 		AlienDeployment *rule = loadRule(*i, &_alienDeployments, &_deploymentsIndex);
+		if (rule != 0)
+		{
+			rule->load(*i, this);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("research", "name"))
+	{
+		RuleResearch *rule = loadRule(*i, &_research, &_researchIndex, "name", RuleListOrderedFactory<RuleResearch>{ _researchListOrder, 100 });
+		if (rule != 0)
+		{
+			rule->load(*i, this, parsers);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("manufacture", "name"))
+	{
+		RuleManufacture *rule = loadRule(*i, &_manufacture, &_manufactureIndex, "name", RuleListOrderedFactory<RuleManufacture>{ _manufactureListOrder, 100 });
+		if (rule != 0)
+		{
+			rule->load(*i, this);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("manufactureShortcut", "name"))
+	{
+		RuleManufactureShortcut *rule = loadRule(*i, &_manufactureShortcut, 0, "name");
 		if (rule != 0)
 		{
 			rule->load(*i);
 		}
 	}
-	for (YAML::const_iterator i = doc["research"].begin(); i != doc["research"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("soldierBonuses", "name"))
 	{
-		RuleResearch *rule = loadRule(*i, &_research, &_researchIndex, "name");
+		RuleSoldierBonus *rule = loadRule(*i, &_soldierBonus, &_soldierBonusIndex, "name", RuleListOrderedFactory<RuleSoldierBonus>{ _soldierBonusListOrder, 100 });
 		if (rule != 0)
 		{
-			_researchListOrder += 100;
-			rule->load(*i, _researchListOrder);
-			if ((*i)["unlockFinalMission"].as<bool>(false))
-			{
-				_finalResearch = (*i)["name"].as<std::string>(_finalResearch);
-			}
+			rule->load(*i, this, parsers);
 		}
 	}
-	for (YAML::const_iterator i = doc["manufacture"].begin(); i != doc["manufacture"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("soldierTransformation", "name"))
 	{
-		RuleManufacture *rule = loadRule(*i, &_manufacture, &_manufactureIndex, "name");
+		RuleSoldierTransformation *rule = loadRule(*i, &_soldierTransformation, &_soldierTransformationIndex, "name", RuleListOrderedFactory<RuleSoldierTransformation>{ _transformationListOrder, 100 });
 		if (rule != 0)
 		{
-			_manufactureListOrder += 100;
-			rule->load(*i, _manufactureListOrder);
+			rule->load(*i, this);
 		}
 	}
-	for (YAML::const_iterator i = doc["ufopaedia"].begin(); i != doc["ufopaedia"].end(); ++i)
+	for (YAML::const_iterator i : iterateRules("commendations", "type"))
+	{
+		RuleCommendations *rule = loadRule(*i, &_commendations);
+		if (rule != 0)
+		{
+			rule->load(*i, this);
+		}
+	}
+
+
+
+	for (YAML::const_iterator i : iterateRules("ufoTrajectories", "id"))
+	{
+		UfoTrajectory *rule = loadRule(*i, &_ufoTrajectories, 0, "id");
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("alienMissions", "type"))
+	{
+		RuleAlienMission *rule = loadRule(*i, &_alienMissions, &_alienMissionsIndex);
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("arcScripts", "type"))
+	{
+		RuleArcScript* rule = loadRule(*i, &_arcScripts, &_arcScriptIndex, "type");
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("eventScripts", "type"))
+	{
+		RuleEventScript* rule = loadRule(*i, &_eventScripts, &_eventScriptIndex, "type");
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("events", "name"))
+	{
+		RuleEvent* rule = loadRule(*i, &_events, &_eventIndex, "name");
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRules("missionScripts", "type"))
+	{
+		RuleMissionScript *rule = loadRule(*i, &_missionScripts, &_missionScriptIndex, "type");
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+
+
+
+	for (YAML::const_iterator i : iterateRulesSpecific("mapScripts"))
+	{
+		std::string type = (*i)["type"].as<std::string>();
+		if ((*i)["delete"])
+		{
+			type = (*i)["delete"].as<std::string>(type);
+		}
+		if (_mapScripts.find(type) != _mapScripts.end())
+		{
+			Collections::deleteAll(_mapScripts[type]);
+		}
+		for (YAML::const_iterator j = (*i)["commands"].begin(); j != (*i)["commands"].end(); ++j)
+		{
+			MapScript *mapScript = new MapScript();
+			mapScript->load(*j);
+			_mapScripts[type].push_back(mapScript);
+		}
+	}
+
+
+
+	for (YAML::const_iterator i : iterateRulesSpecific("ufopaedia"))
 	{
 		if ((*i)["id"])
 		{
@@ -966,6 +2904,10 @@ void Mod::loadFile(const std::string &filename)
 			}
 			else
 			{
+				if (!(*i)["type_id"].IsDefined()) { // otherwise it throws and I wasted hours
+					Log(LOG_ERROR) << "ufopaedia item misses type_id attribute.";
+					continue;
+				}
 				UfopaediaTypeId type = (UfopaediaTypeId)(*i)["type_id"].as<int>();
 				switch (type)
 				{
@@ -999,78 +2941,284 @@ void Mod::loadFile(const std::string &filename)
 		else if ((*i)["delete"])
 		{
 			std::string type = (*i)["delete"].as<std::string>();
-			std::map<std::string, ArticleDefinition*>::iterator i = _ufopaediaArticles.find(type);
-			if (i != _ufopaediaArticles.end())
+			auto j = _ufopaediaArticles.find(type);
+			if (j != _ufopaediaArticles.end())
 			{
-				_ufopaediaArticles.erase(i);
+				_ufopaediaArticles.erase(j);
 			}
-			std::vector<std::string>::iterator idx = std::find(_ufopaediaIndex.begin(), _ufopaediaIndex.end(), type);
+			auto idx = std::find(_ufopaediaIndex.begin(), _ufopaediaIndex.end(), type);
 			if (idx != _ufopaediaIndex.end())
 			{
 				_ufopaediaIndex.erase(idx);
 			}
 		}
 	}
-	// Bases can't be copied, so for savegame purposes we store the node instead
-	YAML::Node base = doc["startingBase"];
-	if (base)
+
+
+
+	auto loadStartingBase = [&](const char* startingBaseType, YAML::Node &destRef)
 	{
-		for (YAML::const_iterator i = base.begin(); i != base.end(); ++i)
+		// Bases can't be copied, so for savegame purposes we store the node instead
+		YAML::Node base = loadDocInfoHelper(startingBaseType);
+		if (base)
 		{
-			_startingBase[i->first.as<std::string>()] = YAML::Node(i->second);
+			if (isMapHelper(base))
+			{
+				for (YAML::const_iterator i = base.begin(); i != base.end(); ++i)
+				{
+					destRef[i->first.as<std::string>()] = YAML::Node(i->second);
+				}
+			}
+			else
+			{
+				throw LoadRuleException(startingBaseType, base, "expected normal map node");
+			}
 		}
-	}
+	};
+	loadStartingBase("startingBase", _startingBaseDefault);
+	loadStartingBase("startingBaseBeginner", _startingBaseBeginner);
+	loadStartingBase("startingBaseExperienced", _startingBaseExperienced);
+	loadStartingBase("startingBaseVeteran", _startingBaseVeteran);
+	loadStartingBase("startingBaseGenius", _startingBaseGenius);
+	loadStartingBase("startingBaseSuperhuman", _startingBaseSuperhuman);
+
 	if (doc["startingTime"])
 	{
 		_startingTime.load(doc["startingTime"]);
 	}
+	_startingDifficulty = doc["startingDifficulty"].as<int>(_startingDifficulty);
 	_maxViewDistance = doc["maxViewDistance"].as<int>(_maxViewDistance);
 	_maxDarknessToSeeUnits = doc["maxDarknessToSeeUnits"].as<int>(_maxDarknessToSeeUnits);
+	_costHireEngineer = doc["costHireEngineer"].as<int>(_costHireEngineer);
+	_costHireScientist = doc["costHireScientist"].as<int>(_costHireScientist);
 	_costEngineer = doc["costEngineer"].as<int>(_costEngineer);
 	_costScientist = doc["costScientist"].as<int>(_costScientist);
 	_timePersonnel = doc["timePersonnel"].as<int>(_timePersonnel);
+	_hireByCountryOdds = doc["hireByCountryOdds"].as<int>(_hireByCountryOdds);
+	_hireByRegionOdds = doc["hireByRegionOdds"].as<int>(_hireByRegionOdds);
 	_initialFunding = doc["initialFunding"].as<int>(_initialFunding);
 	_alienFuel = doc["alienFuel"].as<std::pair<std::string, int> >(_alienFuel);
 	_fontName = doc["fontName"].as<std::string>(_fontName);
+	_psiUnlockResearch = doc["psiUnlockResearch"].as<std::string>(_psiUnlockResearch);
+	_fakeUnderwaterBaseUnlockResearch = doc["fakeUnderwaterBaseUnlockResearch"].as<std::string>(_fakeUnderwaterBaseUnlockResearch);
+	_newBaseUnlockResearch = doc["newBaseUnlockResearch"].as<std::string>(_newBaseUnlockResearch);
+	_hireScientistsUnlockResearch = doc["hireScientistsUnlockResearch"].as<std::string>(_hireScientistsUnlockResearch);
+	_hireEngineersUnlockResearch = doc["hireEngineersUnlockResearch"].as<std::string>(_hireEngineersUnlockResearch);
+	loadBaseFunction("mod", _hireScientistsRequiresBaseFunc, doc["hireScientistsRequiresBaseFunc"]);
+	loadBaseFunction("mod", _hireEngineersRequiresBaseFunc, doc["hireEngineersRequiresBaseFunc"]);
+	_destroyedFacility = doc["destroyedFacility"].as<std::string>(_destroyedFacility);
 
 	_aiUseDelayGrenade = doc["turnAIUseGrenade"].as<int>(_aiUseDelayGrenade);
 	_aiUseDelayBlaster = doc["turnAIUseBlaster"].as<int>(_aiUseDelayBlaster);
-	if (const YAML::Node &nodeAI = doc["ai"])
+	if (const YAML::Node &nodeAI = loadDocInfoHelper("ai"))
 	{
 		_aiUseDelayBlaster = nodeAI["useDelayBlaster"].as<int>(_aiUseDelayBlaster);
 		_aiUseDelayFirearm = nodeAI["useDelayFirearm"].as<int>(_aiUseDelayFirearm);
 		_aiUseDelayGrenade = nodeAI["useDelayGrenade"].as<int>(_aiUseDelayGrenade);
 		_aiUseDelayMelee   = nodeAI["useDelayMelee"].as<int>(_aiUseDelayMelee);
 		_aiUseDelayPsionic = nodeAI["useDelayPsionic"].as<int>(_aiUseDelayPsionic);
+
+		_aiFireChoiceIntelCoeff = nodeAI["fireChoiceIntelCoeff"].as<int>(_aiFireChoiceIntelCoeff);
+		_aiFireChoiceAggroCoeff = nodeAI["fireChoiceAggroCoeff"].as<int>(_aiFireChoiceAggroCoeff);
+		_aiExtendedFireModeChoice = nodeAI["extendedFireModeChoice"].as<bool>(_aiExtendedFireModeChoice);
+		_aiRespectMaxRange = nodeAI["respectMaxRange"].as<bool>(_aiRespectMaxRange);
+		_aiDestroyBaseFacilities = nodeAI["destroyBaseFacilities"].as<bool>(_aiDestroyBaseFacilities);
+		_aiPickUpWeaponsMoreActively = nodeAI["pickUpWeaponsMoreActively"].as<bool>(_aiPickUpWeaponsMoreActively);
+		_aiPickUpWeaponsMoreActivelyCiv = nodeAI["pickUpWeaponsMoreActivelyCiv"].as<bool>(_aiPickUpWeaponsMoreActivelyCiv);
+	}
+	_maxLookVariant = doc["maxLookVariant"].as<int>(_maxLookVariant);
+	_tooMuchSmokeThreshold = doc["tooMuchSmokeThreshold"].as<int>(_tooMuchSmokeThreshold);
+	_customTrainingFactor = doc["customTrainingFactor"].as<int>(_customTrainingFactor);
+	_minReactionAccuracy = doc["minReactionAccuracy"].as<int>(_minReactionAccuracy);
+	_chanceToStopRetaliation = doc["chanceToStopRetaliation"].as<int>(_chanceToStopRetaliation);
+	_lessAliensDuringBaseDefense = doc["lessAliensDuringBaseDefense"].as<bool>(_lessAliensDuringBaseDefense);
+	_allowCountriesToCancelAlienPact = doc["allowCountriesToCancelAlienPact"].as<bool>(_allowCountriesToCancelAlienPact);
+	_buildInfiltrationBaseCloseToTheCountry = doc["buildInfiltrationBaseCloseToTheCountry"].as<bool>(_buildInfiltrationBaseCloseToTheCountry);
+	_allowAlienBasesOnWrongTextures = doc["allowAlienBasesOnWrongTextures"].as<bool>(_allowAlienBasesOnWrongTextures);
+	_kneelBonusGlobal = doc["kneelBonusGlobal"].as<int>(_kneelBonusGlobal);
+	_oneHandedPenaltyGlobal = doc["oneHandedPenaltyGlobal"].as<int>(_oneHandedPenaltyGlobal);
+	_enableCloseQuartersCombat = doc["enableCloseQuartersCombat"].as<int>(_enableCloseQuartersCombat);
+	_closeQuartersAccuracyGlobal = doc["closeQuartersAccuracyGlobal"].as<int>(_closeQuartersAccuracyGlobal);
+	_closeQuartersTuCostGlobal = doc["closeQuartersTuCostGlobal"].as<int>(_closeQuartersTuCostGlobal);
+	_closeQuartersEnergyCostGlobal = doc["closeQuartersEnergyCostGlobal"].as<int>(_closeQuartersEnergyCostGlobal);
+	_closeQuartersSneakUpGlobal = doc["closeQuartersSneakUpGlobal"].as<int>(_closeQuartersSneakUpGlobal);
+	_noLOSAccuracyPenaltyGlobal = doc["noLOSAccuracyPenaltyGlobal"].as<int>(_noLOSAccuracyPenaltyGlobal);
+	_surrenderMode = doc["surrenderMode"].as<int>(_surrenderMode);
+	_bughuntMinTurn = doc["bughuntMinTurn"].as<int>(_bughuntMinTurn);
+	_bughuntMaxEnemies = doc["bughuntMaxEnemies"].as<int>(_bughuntMaxEnemies);
+	_bughuntRank = doc["bughuntRank"].as<int>(_bughuntRank);
+	_bughuntLowMorale = doc["bughuntLowMorale"].as<int>(_bughuntLowMorale);
+	_bughuntTimeUnitsLeft = doc["bughuntTimeUnitsLeft"].as<int>(_bughuntTimeUnitsLeft);
+
+
+	if (const YAML::Node &nodeMana = loadDocInfoHelper("mana"))
+	{
+		_manaEnabled = nodeMana["enabled"].as<bool>(_manaEnabled);
+		_manaBattleUI = nodeMana["battleUI"].as<bool>(_manaBattleUI);
+		_manaUnlockResearch = nodeMana["unlockResearch"].as<std::string>(_manaUnlockResearch);
+		_manaTrainingPrimary = nodeMana["trainingPrimary"].as<bool>(_manaTrainingPrimary);
+		_manaTrainingSecondary = nodeMana["trainingSecondary"].as<bool>(_manaTrainingSecondary);
+
+		_manaMissingWoundThreshold = nodeMana["woundThreshold"].as<int>(_manaMissingWoundThreshold);
+		_manaReplenishAfterMission = nodeMana["replenishAfterMission"].as<bool>(_manaReplenishAfterMission);
+	}
+	if (const YAML::Node &nodeHealth = loadDocInfoHelper("health"))
+	{
+		_healthMissingWoundThreshold = nodeHealth["woundThreshold"].as<int>(_healthMissingWoundThreshold);
+		_healthReplenishAfterMission = nodeHealth["replenishAfterMission"].as<bool>(_healthReplenishAfterMission);
+	}
+
+
+	if (const YAML::Node &nodeGameOver = loadDocInfoHelper("gameOver"))
+	{
+		_loseMoney = nodeGameOver["loseMoney"].as<std::string>(_loseMoney);
+		_loseRating = nodeGameOver["loseRating"].as<std::string>(_loseRating);
+		_loseDefeat = nodeGameOver["loseDefeat"].as<std::string>(_loseDefeat);
+	}
+	_ufoGlancingHitThreshold = doc["ufoGlancingHitThreshold"].as<int>(_ufoGlancingHitThreshold);
+	_ufoBeamWidthParameter = doc["ufoBeamWidthParameter"].as<int>(_ufoBeamWidthParameter);
+	if (doc["ufoTractorBeamSizeModifiers"])
+	{
+		int index = 0;
+		for (YAML::const_iterator i = doc["ufoTractorBeamSizeModifiers"].begin(); i != doc["ufoTractorBeamSizeModifiers"].end() && index < 5; ++i)
+		{
+			_ufoTractorBeamSizeModifiers[index] = (*i).as<int>(_ufoTractorBeamSizeModifiers[index]);
+			index++;
+		}
+	}
+	_escortRange = doc["escortRange"].as<int>(_escortRange);
+	_drawEnemyRadarCircles = doc["drawEnemyRadarCircles"].as<int>(_drawEnemyRadarCircles);
+	_escortsJoinFightAgainstHK = doc["escortsJoinFightAgainstHK"].as<bool>(_escortsJoinFightAgainstHK);
+	_hunterKillerFastRetarget = doc["hunterKillerFastRetarget"].as<bool>(_hunterKillerFastRetarget);
+	_crewEmergencyEvacuationSurvivalChance = doc["crewEmergencyEvacuationSurvivalChance"].as<int>(_crewEmergencyEvacuationSurvivalChance);
+	_pilotsEmergencyEvacuationSurvivalChance = doc["pilotsEmergencyEvacuationSurvivalChance"].as<int>(_pilotsEmergencyEvacuationSurvivalChance);
+	_soldiersPerRank[RANK_SERGEANT] = doc["soldiersPerSergeant"].as<int>(_soldiersPerRank[RANK_SERGEANT]);
+	_soldiersPerRank[RANK_CAPTAIN] = doc["soldiersPerCaptain"].as<int>(_soldiersPerRank[RANK_CAPTAIN]);
+	_soldiersPerRank[RANK_COLONEL] = doc["soldiersPerColonel"].as<int>(_soldiersPerRank[RANK_COLONEL]);
+	_soldiersPerRank[RANK_COMMANDER] = doc["soldiersPerCommander"].as<int>(_soldiersPerRank[RANK_COMMANDER]);
+	_pilotAccuracyZeroPoint = doc["pilotAccuracyZeroPoint"].as<int>(_pilotAccuracyZeroPoint);
+	_pilotAccuracyRange = doc["pilotAccuracyRange"].as<int>(_pilotAccuracyRange);
+	_pilotReactionsZeroPoint = doc["pilotReactionsZeroPoint"].as<int>(_pilotReactionsZeroPoint);
+	_pilotReactionsRange = doc["pilotReactionsRange"].as<int>(_pilotReactionsRange);
+	if (doc["pilotBraveryThresholds"])
+	{
+		int index = 0;
+		for (YAML::const_iterator i = doc["pilotBraveryThresholds"].begin(); i != doc["pilotBraveryThresholds"].end() && index < 3; ++i)
+		{
+			_pilotBraveryThresholds[index] = (*i).as<int>(_pilotBraveryThresholds[index]);
+			index++;
+		}
+	}
+	_performanceBonusFactor = doc["performanceBonusFactor"].as<int>(_performanceBonusFactor);
+	_enableNewResearchSorting = doc["enableNewResearchSorting"].as<bool>(_enableNewResearchSorting);
+	_displayCustomCategories = doc["displayCustomCategories"].as<int>(_displayCustomCategories);
+	_shareAmmoCategories = doc["shareAmmoCategories"].as<bool>(_shareAmmoCategories);
+	_showDogfightDistanceInKm = doc["showDogfightDistanceInKm"].as<bool>(_showDogfightDistanceInKm);
+	_showFullNameInAlienInventory = doc["showFullNameInAlienInventory"].as<bool>(_showFullNameInAlienInventory);
+	_alienInventoryOffsetX = doc["alienInventoryOffsetX"].as<int>(_alienInventoryOffsetX);
+	_alienInventoryOffsetBigUnit = doc["alienInventoryOffsetBigUnit"].as<int>(_alienInventoryOffsetBigUnit);
+	_hidePediaInfoButton = doc["hidePediaInfoButton"].as<bool>(_hidePediaInfoButton);
+	_extraNerdyPediaInfoType = doc["extraNerdyPediaInfoType"].as<int>(_extraNerdyPediaInfoType);
+	_giveScoreAlsoForResearchedArtifacts = doc["giveScoreAlsoForResearchedArtifacts"].as<bool>(_giveScoreAlsoForResearchedArtifacts);
+	_statisticalBulletConservation = doc["statisticalBulletConservation"].as<bool>(_statisticalBulletConservation);
+	_stunningImprovesMorale = doc["stunningImprovesMorale"].as<bool>(_stunningImprovesMorale);
+	_tuRecoveryWakeUpNewTurn = doc["tuRecoveryWakeUpNewTurn"].as<int>(_tuRecoveryWakeUpNewTurn);
+	_shortRadarRange = doc["shortRadarRange"].as<int>(_shortRadarRange);
+	_buildTimeReductionScaling = doc["buildTimeReductionScaling"].as<int>(_buildTimeReductionScaling);
+	_baseDefenseMapFromLocation = doc["baseDefenseMapFromLocation"].as<int>(_baseDefenseMapFromLocation);
+	_pediaReplaceCraftFuelWithRangeType = doc["pediaReplaceCraftFuelWithRangeType"].as<int>(_pediaReplaceCraftFuelWithRangeType);
+	_missionRatings = doc["missionRatings"].as<std::map<int, std::string> >(_missionRatings);
+	_monthlyRatings = doc["monthlyRatings"].as<std::map<int, std::string> >(_monthlyRatings);
+	loadUnorderedNamesToNames("mod", _fixedUserOptions, doc["fixedUserOptions"]);
+	loadUnorderedNamesToNames("mod", _recommendedUserOptions, doc["recommendedUserOptions"]);
+	loadUnorderedNames("mod", _hiddenMovementBackgrounds, doc["hiddenMovementBackgrounds"]);
+	loadUnorderedNames("mod", _baseNamesFirst, doc["baseNamesFirst"]);
+	loadUnorderedNames("mod", _baseNamesMiddle, doc["baseNamesMiddle"]);
+	loadUnorderedNames("mod", _baseNamesLast, doc["baseNamesLast"]);
+	loadUnorderedNames("mod", _operationNamesFirst, doc["operationNamesFirst"]);
+	loadUnorderedNames("mod", _operationNamesLast, doc["operationNamesLast"]);
+	_disableUnderwaterSounds = doc["disableUnderwaterSounds"].as<bool>(_disableUnderwaterSounds);
+	_enableUnitResponseSounds = doc["enableUnitResponseSounds"].as<bool>(_enableUnitResponseSounds);
+	for (YAML::const_iterator i : iterateRulesSpecific("unitResponseSounds"))
+	{
+		std::string type = (*i)["name"].as<std::string>();
+		if ((*i)["selectUnitSound"])
+			loadSoundOffset(type, _selectUnitSound[type], (*i)["selectUnitSound"], "BATTLE.CAT");
+		if ((*i)["startMovingSound"])
+			loadSoundOffset(type, _startMovingSound[type], (*i)["startMovingSound"], "BATTLE.CAT");
+		if ((*i)["selectWeaponSound"])
+			loadSoundOffset(type, _selectWeaponSound[type], (*i)["selectWeaponSound"], "BATTLE.CAT");
+		if ((*i)["annoyedSound"])
+			loadSoundOffset(type, _annoyedSound[type], (*i)["annoyedSound"], "BATTLE.CAT");
+	}
+	loadSoundOffset("global", _selectBaseSound, doc["selectBaseSound"], "BATTLE.CAT");
+	loadSoundOffset("global", _startDogfightSound, doc["startDogfightSound"], "BATTLE.CAT");
+	if (doc["flagByKills"])
+	{
+		_flagByKills = doc["flagByKills"].as<std::vector<int> >(_flagByKills);
+	}
+
+
+
+	_defeatScore = doc["defeatScore"].as<int>(_defeatScore);
+	_defeatFunds = doc["defeatFunds"].as<int>(_defeatFunds);
+	_difficultyDemigod = doc["difficultyDemigod"].as<bool>(_difficultyDemigod);
+
+	if (const YAML::Node& difficultyCoefficientOverrides = loadDocInfoHelper("difficultyCoefficientOverrides"))
+	{
+		_monthlyRatingThresholds = difficultyCoefficientOverrides["monthlyRatingThresholds"].as< std::vector<int> >(_monthlyRatingThresholds);
+		_ufoFiringRateCoefficients = difficultyCoefficientOverrides["ufoFiringRateCoefficients"].as< std::vector<int> >(_ufoFiringRateCoefficients);
+		_ufoEscapeCountdownCoefficients = difficultyCoefficientOverrides["ufoEscapeCountdownCoefficients"].as< std::vector<int> >(_ufoEscapeCountdownCoefficients);
+		_retaliationTriggerOdds = difficultyCoefficientOverrides["retaliationTriggerOdds"].as< std::vector<int> >(_retaliationTriggerOdds);
+		_retaliationBaseRegionOdds = difficultyCoefficientOverrides["retaliationBaseRegionOdds"].as< std::vector<int> >(_retaliationBaseRegionOdds);
+		_aliensFacingCraftOdds = difficultyCoefficientOverrides["aliensFacingCraftOdds"].as< std::vector<int> >(_aliensFacingCraftOdds);
 	}
 
 	if (doc["difficultyCoefficient"])
 	{
 		size_t num = 0;
-		for (YAML::const_iterator i = doc["difficultyCoefficient"].begin(); i != doc["difficultyCoefficient"].end() && num < 5; ++i)
+		for (YAML::const_iterator i = doc["difficultyCoefficient"].begin(); i != doc["difficultyCoefficient"].end() && num < MaxDifficultyLevels; ++i)
 		{
 			DIFFICULTY_COEFFICIENT[num] = (*i).as<int>(DIFFICULTY_COEFFICIENT[num]);
+			_statAdjustment[num].growthMultiplier = DIFFICULTY_COEFFICIENT[num];
 			++num;
 		}
 	}
-	for (YAML::const_iterator i = doc["ufoTrajectories"].begin(); i != doc["ufoTrajectories"].end(); ++i)
+	if (doc["sellPriceCoefficient"])
 	{
-		UfoTrajectory *rule = loadRule(*i, &_ufoTrajectories, 0, "id");
-		if (rule != 0)
+		size_t num = 0;
+		for (YAML::const_iterator i = doc["sellPriceCoefficient"].begin(); i != doc["sellPriceCoefficient"].end() && num < MaxDifficultyLevels; ++i)
 		{
-			rule->load(*i);
+			SELL_PRICE_COEFFICIENT[num] = (*i).as<int>(SELL_PRICE_COEFFICIENT[num]);
+			++num;
 		}
 	}
-	for (YAML::const_iterator i = doc["alienMissions"].begin(); i != doc["alienMissions"].end(); ++i)
+	if (doc["difficultyBasedRetaliationDelay"])
 	{
-		RuleAlienMission *rule = loadRule(*i, &_alienMissions, &_alienMissionsIndex);
-		if (rule != 0)
+		size_t num = 0;
+		for (YAML::const_iterator i = doc["difficultyBasedRetaliationDelay"].begin(); i != doc["difficultyBasedRetaliationDelay"].end() && num < MaxDifficultyLevels; ++i)
 		{
-			rule->load(*i);
+			DIFFICULTY_BASED_RETAL_DELAY[num] = (*i).as<int>(DIFFICULTY_BASED_RETAL_DELAY[num]);
+			++num;
 		}
 	}
-	_alienItemLevels = doc["alienItemLevels"].as< std::vector< std::vector<int> > >(_alienItemLevels);
-	for (YAML::const_iterator i = doc["MCDPatches"].begin(); i != doc["MCDPatches"].end(); ++i)
+	if (doc["unitResponseSoundsFrequency"])
+	{
+		size_t num = 0;
+		for (YAML::const_iterator i = doc["unitResponseSoundsFrequency"].begin(); i != doc["unitResponseSoundsFrequency"].end() && num < 4; ++i)
+		{
+			UNIT_RESPONSE_SOUNDS_FREQUENCY[num] = (*i).as<int>(UNIT_RESPONSE_SOUNDS_FREQUENCY[num]);
+			++num;
+		}
+	}
+	if (doc["alienItemLevels"])
+	{
+		_alienItemLevels = doc["alienItemLevels"].as< std::vector< std::vector<int> > >();
+	}
+
+
+
+	for (YAML::const_iterator i = doc["MCDPatches"].begin(); i != doc["MCDPatches"].end(); ++i) //this should not be used by mods
 	{
 		std::string type = (*i)["type"].as<std::string>();
 		if (_MCDPatches.find(type) != _MCDPatches.end())
@@ -1079,33 +3227,55 @@ void Mod::loadFile(const std::string &filename)
 		}
 		else
 		{
-			std::auto_ptr<MCDPatch> patch(new MCDPatch());
+			MCDPatch *patch = new MCDPatch();
 			patch->load(*i);
-			_MCDPatches[type] = patch.release();
-			_MCDPatchesIndex.push_back(type);
+			_MCDPatches[type] = patch;
 		}
 	}
-	for (YAML::const_iterator i = doc["extraSprites"].begin(); i != doc["extraSprites"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("extraSprites"))
+	{
+		if ((*i)["type"] || (*i)["typeSingle"])
+		{
+			std::string type;
+			type = (*i)["type"].as<std::string>(type);
+			if (type.empty())
+			{
+				type = (*i)["typeSingle"].as<std::string>();
+			}
+			ExtraSprites *extraSprites = new ExtraSprites();
+			const ModData* data = _modCurrent;
+			// doesn't support modIndex
+			if (type == "TEXTURE.DAT")
+				data = &_modData.at(0);
+			extraSprites->load(*i, data);
+			_extraSprites[type].push_back(extraSprites);
+		}
+		else if ((*i)["delete"])
+		{
+			std::string type = (*i)["delete"].as<std::string>();
+			auto j = _extraSprites.find(type);
+			if (j != _extraSprites.end())
+			{
+				_extraSprites.erase(j);
+			}
+		}
+	}
+	for (YAML::const_iterator i : iterateRulesSpecific("customPalettes"))
+	{
+		CustomPalettes *rule = loadRule(*i, &_customPalettes, &_customPalettesIndex);
+		if (rule != 0)
+		{
+			rule->load(*i);
+		}
+	}
+	for (YAML::const_iterator i : iterateRulesSpecific("extraSounds"))
 	{
 		std::string type = (*i)["type"].as<std::string>();
-		std::auto_ptr<ExtraSprites> extraSprites(new ExtraSprites());
-		// doesn't support modIndex
-		if (type != "TEXTURE.DAT")
-			extraSprites->load(*i, _modOffset);
-		else
-			extraSprites->load(*i, 0);
-		_extraSprites.push_back(std::make_pair(type, extraSprites.release()));
-		_extraSpritesIndex.push_back(type);
+		ExtraSounds *extraSounds = new ExtraSounds();
+		extraSounds->load(*i, _modCurrent);
+		_extraSounds.push_back(std::make_pair(type, extraSounds));
 	}
-	for (YAML::const_iterator i = doc["extraSounds"].begin(); i != doc["extraSounds"].end(); ++i)
-	{
-		std::string type = (*i)["type"].as<std::string>();
-		std::auto_ptr<ExtraSounds> extraSounds(new ExtraSounds());
-		extraSounds->load(*i, _modOffset);
-		_extraSounds.push_back(std::make_pair(type, extraSounds.release()));
-		_extraSoundsIndex.push_back(type);
-	}
-	for (YAML::const_iterator i = doc["extraStrings"].begin(); i != doc["extraStrings"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("extraStrings"))
 	{
 		std::string type = (*i)["type"].as<std::string>();
 		if (_extraStrings.find(type) != _extraStrings.end())
@@ -1114,133 +3284,29 @@ void Mod::loadFile(const std::string &filename)
 		}
 		else
 		{
-			std::auto_ptr<ExtraStrings> extraStrings(new ExtraStrings());
+			ExtraStrings *extraStrings = new ExtraStrings();
 			extraStrings->load(*i);
-			_extraStrings[type] = extraStrings.release();
-			_extraStringsIndex.push_back(type);
+			_extraStrings[type] = extraStrings;
 		}
 	}
 
-	for (YAML::const_iterator i = doc["statStrings"].begin(); i != doc["statStrings"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("statStrings"))
 	{
 		StatString *statString = new StatString();
 		statString->load(*i);
 		_statStrings.push_back(statString);
 	}
 
-	for (YAML::const_iterator i = doc["interfaces"].begin(); i != doc["interfaces"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("interfaces"))
 	{
 		RuleInterface *rule = loadRule(*i, &_interfaces);
 		if (rule != 0)
 		{
-			rule->load(*i);
-		}
-	}
-	for (YAML::const_iterator i = doc["soundDefs"].begin(); i != doc["soundDefs"].end(); ++i)
-	{
-		SoundDefinition *rule = loadRule(*i, &_soundDefs);
-		if (rule != 0)
-		{
-			rule->load(*i);
-		}
-	}
-	if (doc["globe"])
-	{
-		_globe->load(doc["globe"]);
-	}
-	for (YAML::const_iterator i = doc["constants"].begin(); i != doc["constants"].end(); ++i)
-	{
-		Mod::DOOR_OPEN = (*i)["doorSound"].as<int>(Mod::DOOR_OPEN);
-		Mod::SLIDING_DOOR_OPEN = (*i)["slidingDoorSound"].as<int>(Mod::SLIDING_DOOR_OPEN);
-		Mod::SLIDING_DOOR_CLOSE = (*i)["slidingDoorClose"].as<int>(Mod::SLIDING_DOOR_CLOSE);
-		Mod::SMALL_EXPLOSION = (*i)["smallExplosion"].as<int>(Mod::SMALL_EXPLOSION);
-		Mod::LARGE_EXPLOSION = (*i)["largeExplosion"].as<int>(Mod::LARGE_EXPLOSION);
-		Mod::EXPLOSION_OFFSET = (*i)["explosionOffset"].as<int>(Mod::EXPLOSION_OFFSET);
-		Mod::SMOKE_OFFSET = (*i)["smokeOffset"].as<int>(Mod::SMOKE_OFFSET);
-		Mod::UNDERWATER_SMOKE_OFFSET = (*i)["underwaterSmokeOffset"].as<int>(Mod::UNDERWATER_SMOKE_OFFSET);
-		Mod::ITEM_DROP = (*i)["itemDrop"].as<int>(Mod::ITEM_DROP);
-		Mod::ITEM_THROW = (*i)["itemThrow"].as<int>(Mod::ITEM_THROW);
-		Mod::ITEM_RELOAD = (*i)["itemReload"].as<int>(Mod::ITEM_RELOAD);
-		Mod::WALK_OFFSET = (*i)["walkOffset"].as<int>(Mod::WALK_OFFSET);
-		Mod::FLYING_SOUND = (*i)["flyingSound"].as<int>(Mod::FLYING_SOUND);
-		Mod::BUTTON_PRESS = (*i)["buttonPress"].as<int>(Mod::BUTTON_PRESS);
-		if ((*i)["windowPopup"])
-		{
-			int k = 0;
-			for (YAML::const_iterator j = (*i)["windowPopup"].begin(); j != (*i)["windowPopup"].end() && k < 3; ++j, ++k)
-			{
-				Mod::WINDOW_POPUP[k] = (*j).as<int>(Mod::WINDOW_POPUP[k]);
-			}
-		}
-		Mod::UFO_FIRE = (*i)["ufoFire"].as<int>(Mod::UFO_FIRE);
-		Mod::UFO_HIT = (*i)["ufoHit"].as<int>(Mod::UFO_HIT);
-		Mod::UFO_CRASH = (*i)["ufoCrash"].as<int>(Mod::UFO_CRASH);
-		Mod::UFO_EXPLODE = (*i)["ufoExplode"].as<int>(Mod::UFO_EXPLODE);
-		Mod::INTERCEPTOR_HIT = (*i)["interceptorHit"].as<int>(Mod::INTERCEPTOR_HIT);
-		Mod::INTERCEPTOR_EXPLODE = (*i)["interceptorExplode"].as<int>(Mod::INTERCEPTOR_EXPLODE);
-		Mod::GEOSCAPE_CURSOR = (*i)["geoscapeCursor"].as<int>(Mod::GEOSCAPE_CURSOR);
-		Mod::BASESCAPE_CURSOR = (*i)["basescapeCursor"].as<int>(Mod::BASESCAPE_CURSOR);
-		Mod::BATTLESCAPE_CURSOR = (*i)["battlescapeCursor"].as<int>(Mod::BATTLESCAPE_CURSOR);
-		Mod::UFOPAEDIA_CURSOR = (*i)["ufopaediaCursor"].as<int>(Mod::UFOPAEDIA_CURSOR);
-		Mod::GRAPHS_CURSOR = (*i)["graphsCursor"].as<int>(Mod::GRAPHS_CURSOR);
-		Mod::DEBRIEF_MUSIC_GOOD = (*i)["goodDebriefingMusic"].as<std::string>(Mod::DEBRIEF_MUSIC_GOOD);
-		Mod::DEBRIEF_MUSIC_BAD = (*i)["badDebriefingMusic"].as<std::string>(Mod::DEBRIEF_MUSIC_BAD);
-	}
-	for (YAML::const_iterator i = doc["transparencyLUTs"].begin(); i != doc["transparencyLUTs"].end(); ++i)
-	{
-		for (YAML::const_iterator j = (*i)["colors"].begin(); j != (*i)["colors"].end(); ++j)
-		{
-			SDL_Color color;
-			color.r = (*j)[0].as<int>(0);
-			color.g = (*j)[1].as<int>(0);
-			color.b = (*j)[2].as<int>(0);
-			color.unused = (*j)[3].as<int>(2);;
-			_transparencies.push_back(color);
-		}
-	}
-	for (YAML::const_iterator i = doc["mapScripts"].begin(); i != doc["mapScripts"].end(); ++i)
-	{
-		std::string type = (*i)["type"].as<std::string>();
-		if ((*i)["delete"])
-		{
-			type = (*i)["delete"].as<std::string>(type);
-		}
-		if (_mapScripts.find(type) != _mapScripts.end())
-		{
-			for (std::vector<MapScript*>::iterator j = _mapScripts[type].begin(); j != _mapScripts[type].end();)
-			{
-				delete *j;
-				j = _mapScripts[type].erase(j);
-			}
-		}
-		for (YAML::const_iterator j = (*i)["commands"].begin(); j != (*i)["commands"].end(); ++j)
-		{
-			std::auto_ptr<MapScript> mapScript(new MapScript());
-			mapScript->load(*j);
-			_mapScripts[type].push_back(mapScript.release());
-		}
-	}
-	for (YAML::const_iterator i = doc["missionScripts"].begin(); i != doc["missionScripts"].end(); ++i)
-	{
-		RuleMissionScript *rule = loadRule(*i, &_missionScripts, &_missionScriptIndex, "type");
-		if (rule != 0)
-		{
-			rule->load(*i);
+			rule->load(*i, this);
 		}
 	}
 
-	// refresh _psiRequirements for psiStrengthEval
-	for (std::vector<std::string>::const_iterator i = _facilitiesIndex.begin(); i != _facilitiesIndex.end(); ++i)
-	{
-		RuleBaseFacility *rule = getBaseFacility(*i);
-		if (rule->getPsiLaboratories() > 0)
-		{
-			_psiRequirements = rule->getRequirements();
-			break;
-		}
-	}
-
-	for (YAML::const_iterator i = doc["cutscenes"].begin(); i != doc["cutscenes"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("cutscenes"))
 	{
 		RuleVideo *rule = loadRule(*i, &_videos);
 		if (rule != 0)
@@ -1248,7 +3314,7 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i);
 		}
 	}
-	for (YAML::const_iterator i = doc["musics"].begin(); i != doc["musics"].end(); ++i)
+	for (YAML::const_iterator i : iterateRulesSpecific("musics"))
 	{
 		RuleMusic *rule = loadRule(*i, &_musicDefs);
 		if (rule != 0)
@@ -1256,13 +3322,88 @@ void Mod::loadFile(const std::string &filename)
 			rule->load(*i);
 		}
 	}
+
+	if (doc["globe"])
+	{
+		_globe->load(doc["globe"]);
+	}
+	if (doc["converter"])
+	{
+		_converter->load(doc["converter"]);
+	}
+	if (const YAML::Node& constants = doc["constants"])
+	{
+		//backward compatibility version
+		if (constants.IsSequence())
+		{
+			for (YAML::const_iterator i = constants.begin(); i != constants.end(); ++i)
+			{
+				loadConstants((*i));
+			}
+		}
+		else
+		{
+			loadConstants(constants);
+		}
+	}
+
+	// refresh _psiRequirements for psiStrengthEval
+	for (const auto& facType : _facilitiesIndex)
+	{
+		RuleBaseFacility *rule = getBaseFacility(facType);
+		if (rule->getPsiLaboratories() > 0)
+		{
+			_psiRequirements = rule->getRequirements();
+			break;
+		}
+	}
+	// override the default (used when you want to separate screening and training)
+	if (!_psiUnlockResearch.empty())
+	{
+		_psiRequirements.clear();
+		_psiRequirements.push_back(_psiUnlockResearch);
+	}
+
+	size_t count = 0;
+	for (YAML::const_iterator i = doc["aimAndArmorMultipliers"].begin(); i != doc["aimAndArmorMultipliers"].end() && count < MaxDifficultyLevels; ++i)
+	{
+		_statAdjustment[count].aimMultiplier = (*i).as<double>(_statAdjustment[count].aimMultiplier);
+		_statAdjustment[count].armorMultiplier = (*i).as<double>(_statAdjustment[count].armorMultiplier);
+		++count;
+	}
+	count = 0;
+	for (YAML::const_iterator i = doc["aimMultipliers"].begin(); i != doc["aimMultipliers"].end() && count < MaxDifficultyLevels; ++i)
+	{
+		_statAdjustment[count].aimMultiplier = (*i).as<double>(_statAdjustment[count].aimMultiplier);
+		++count;
+	}
+	count = 0;
+	for (YAML::const_iterator i = doc["armorMultipliers"].begin(); i != doc["armorMultipliers"].end() && count < MaxDifficultyLevels; ++i)
+	{
+		_statAdjustment[count].armorMultiplier = (*i).as<double>(_statAdjustment[count].armorMultiplier);
+		++count;
+	}
+	if (doc["statGrowthMultipliers"])
+	{
+		_statAdjustment[0].statGrowth = doc["statGrowthMultipliers"].as<UnitStats>(_statAdjustment[0].statGrowth);
+		for (size_t i = 1; i != MaxDifficultyLevels; ++i)
+		{
+			_statAdjustment[i].statGrowth = _statAdjustment[0].statGrowth;
+		}
+	}
+	if (const YAML::Node &lighting = loadDocInfoHelper("lighting"))
+	{
+		_maxStaticLightDistance = lighting["maxStatic"].as<int>(_maxStaticLightDistance);
+		_maxDynamicLightDistance = lighting["maxDynamic"].as<int>(_maxDynamicLightDistance);
+		_enhancedLighting = lighting["enhanced"].as<int>(_enhancedLighting);
+	}
 }
 
 /**
- * Helper function protecting from circual references in node definition.
+ * Helper function protecting from circular references in node definition.
  * @param node Node to test
  * @param name Name of original node.
- * @param limit Current deepth.
+ * @param limit Current depth.
  */
 static void refNodeTestDeepth(const YAML::Node &node, const std::string &name, int limit)
 {
@@ -1275,7 +3416,7 @@ static void refNodeTestDeepth(const YAML::Node &node, const std::string &name, i
 		if (!nested.IsMap())
 		{
 			std::stringstream ss;
-			ss << "Invaild refNode at nest level of ";
+			ss << "Invalid refNode at nest level of ";
 			ss << limit;
 			ss << " in ";
 			ss << name;
@@ -1293,21 +3434,81 @@ static void refNodeTestDeepth(const YAML::Node &node, const std::string &name, i
  * @param key Rule key name.
  * @return Pointer to new rule if one was created, or NULL if one was removed.
  */
-template <typename T>
-T *Mod::loadRule(const YAML::Node &node, std::map<std::string, T*> *map, std::vector<std::string> *index, const std::string &key)
+template <typename T, typename F>
+T *Mod::loadRule(const YAML::Node &node, std::map<std::string, T*> *map, std::vector<std::string> *index, const std::string &key, F&& factory)
 {
 	T *rule = 0;
-	if (node[key])
+
+	auto getNode = [&](const YAML::Node& i, const std::string& nodeName)
 	{
-		std::string type = node[key].as<std::string>();
-		typename std::map<std::string, T*>::iterator i = map->find(type);
+		const auto& n = i[nodeName];
+		return std::make_tuple(nodeName, n, !!n);
+	};
+	auto haveNode = [&](const std::tuple<std::string, YAML::Node, bool>& nn)
+	{
+		return std::get<bool>(nn);
+	};
+	auto getDescriptionNode = [&](const std::tuple<std::string, YAML::Node, bool>& nn)
+	{
+		return std::string("'") + std::get<std::string>(nn) + "' at line " + std::to_string(std::get<YAML::Node>(nn).Mark().line);
+	};
+	auto getNameFromNode = [&](const std::tuple<std::string, YAML::Node, bool>& nn)
+	{
+		auto name = std::get<YAML::Node>(nn).as<std::string>();
+		if (isEmptyRuleName(name))
+		{
+			throw Exception("Invalid value for main node '" + key + "' at line " + std::to_string(node[key].Mark().line));
+		}
+		return name;
+	};
+	auto addTracking = [&](std::unordered_map<const void*, const ModData*>& track, const auto* t)
+	{
+		track[static_cast<const void*>(t)] = _modCurrent;
+	};
+	auto removeTracking = [&]( std::unordered_map<const void*, const ModData*>& track, const auto* t)
+	{
+		track.erase(static_cast<const void*>(t));
+	};
+
+	const auto defaultNode = getNode(node, key);
+	const auto deleteNode = getNode(node, YamlRuleNodeDelete);
+	const auto newNode = getNode(node, YamlRuleNodeNew);
+	const auto overrideNode = getNode(node, YamlRuleNodeOverride);
+	const auto updateNode = getNode(node, YamlRuleNodeUpdate);
+
+	{
+		// check for duplicates
+		const std::tuple<std::string, YAML::Node, bool>* last = nullptr;
+		for (auto* p : { &defaultNode, &deleteNode, &newNode, &updateNode, &overrideNode })
+		{
+			if (haveNode(*p))
+			{
+				if (last)
+				{
+					throw Exception("Conflict of main node " + getDescriptionNode(*last) + " and " + getDescriptionNode(*p));
+				}
+				else
+				{
+					last = p;
+				}
+			}
+		}
+	}
+
+	if (haveNode(defaultNode))
+	{
+		std::string type = getNameFromNode(defaultNode);
+
+
+		auto i = map->find(type);
 		if (i != map->end())
 		{
 			rule = i->second;
 		}
 		else
 		{
-			rule = new T(type);
+			rule = factory(type);
+			addTracking(_ruleCreationTracking, rule);
 			(*map)[type] = rule;
 			if (index != 0)
 			{
@@ -1315,26 +3516,96 @@ T *Mod::loadRule(const YAML::Node &node, std::map<std::string, T*> *map, std::ve
 			}
 		}
 
-		// protection from self referecing refNode node
+		// protection from self referencing refNode node
 		refNodeTestDeepth(node, type, 0);
+		addTracking(_ruleLastUpdateTracking, rule);
 	}
-	else if (node["delete"])
+	else if (haveNode(deleteNode))
 	{
-		std::string type = node["delete"].as<std::string>();
-		typename std::map<std::string, T*>::iterator i = map->find(type);
+		std::string type = getNameFromNode(deleteNode);
+
+		auto i = map->find(type);
 		if (i != map->end())
 		{
+			removeTracking(_ruleCreationTracking, i->second);
+			removeTracking(_ruleLastUpdateTracking, i->second);
+			delete i->second;
 			map->erase(i);
 		}
 		if (index != 0)
 		{
-			std::vector<std::string>::iterator idx = std::find(index->begin(), index->end(), type);
+			auto idx = std::find(index->begin(), index->end(), type);
 			if (idx != index->end())
 			{
 				index->erase(idx);
 			}
 		}
 	}
+	else if (haveNode(newNode))
+	{
+		std::string type = getNameFromNode(newNode);
+
+		auto i = map->find(type);
+		if (i != map->end())
+		{
+			checkForSoftError(true, type, "Rule named '" + type  + "' already used for " + getDescriptionNode(newNode), LOG_ERROR);
+		}
+		else
+		{
+			rule = factory(type);
+			addTracking(_ruleCreationTracking, rule);
+			(*map)[type] = rule;
+			if (index != 0)
+			{
+				index->push_back(type);
+			}
+
+			// protection from self referencing refNode node
+			refNodeTestDeepth(node, type, 0);
+			addTracking(_ruleLastUpdateTracking, rule);
+		}
+	}
+	else if (haveNode(overrideNode))
+	{
+		std::string type = getNameFromNode(overrideNode);
+
+		auto i = map->find(type);
+		if (i != map->end())
+		{
+			rule = i->second;
+
+			// protection from self referencing refNode node
+			refNodeTestDeepth(node, type, 0);
+			addTracking(_ruleLastUpdateTracking, rule);
+		}
+		else
+		{
+			checkForSoftError(true, type, "Rule named '" + type  + "' do not exist for " + getDescriptionNode(overrideNode), LOG_ERROR);
+		}
+	}
+	else if (haveNode(updateNode))
+	{
+		std::string type = getNameFromNode(updateNode);
+
+		auto i = map->find(type);
+		if (i != map->end())
+		{
+			rule = i->second;
+
+			// protection from self referencing refNode node
+			refNodeTestDeepth(node, type, 0);
+			addTracking(_ruleLastUpdateTracking, rule);
+		}
+		else
+		{
+			Log(LOG_INFO) << "Rule named '" << type  << "' do not exist for " << getDescriptionNode(updateNode);
+		}
+	}
+	else
+	{
+		//no correct id throw exception?
+	}
+
 	return rule;
 }
 
@@ -1342,58 +3613,157 @@ T *Mod::loadRule(const YAML::Node &node, std::map<std::string, T*> *map, std::ve
  * Generates a brand new saved game with starting data.
  * @return A new saved game.
  */
-SavedGame *Mod::newSave() const
+SavedGame *Mod::newSave(GameDifficulty diff) const
 {
 	SavedGame *save = new SavedGame();
+	save->setDifficulty(diff);
 
 	// Add countries
-	for (std::vector<std::string>::const_iterator i = _countriesIndex.begin(); i != _countriesIndex.end(); ++i)
+	for (const auto& countryName : _countriesIndex)
 	{
-		RuleCountry *country = getCountry(*i);
-		if (!country->getLonMin().empty())
-			save->getCountries()->push_back(new Country(country));
+		RuleCountry *countryRule = getCountry(countryName);
+		if (!countryRule->getLonMin().empty())
+			save->getCountries()->push_back(new Country(countryRule));
 	}
 	// Adjust funding to total $6M
 	int missing = ((_initialFunding - save->getCountryFunding()/1000) / (int)save->getCountries()->size()) * 1000;
-	for (std::vector<Country*>::iterator i = save->getCountries()->begin(); i != save->getCountries()->end(); ++i)
+	for (auto* country : *save->getCountries())
 	{
-		int funding = (*i)->getFunding().back() + missing;
+		int funding = country->getFunding().back() + missing;
 		if (funding < 0)
 		{
-			funding = (*i)->getFunding().back();
+			funding = country->getFunding().back();
 		}
-		(*i)->setFunding(funding);
+		country->setFunding(funding);
 	}
 	save->setFunds(save->getCountryFunding());
 
 	// Add regions
-	for (std::vector<std::string>::const_iterator i = _regionsIndex.begin(); i != _regionsIndex.end(); ++i)
+	for (const auto& regionName : _regionsIndex)
 	{
-		RuleRegion *region = getRegion(*i);
-		if (!region->getLonMin().empty())
-			save->getRegions()->push_back(new Region(region));
+		RuleRegion *regionRule = getRegion(regionName);
+		if (!regionRule->getLonMin().empty())
+			save->getRegions()->push_back(new Region(regionRule));
 	}
 
 	// Set up starting base
+	const YAML::Node &startingBaseByDiff = getStartingBase(diff);
 	Base *base = new Base(this);
-	base->load(_startingBase, save, true);
+	base->load(startingBaseByDiff, save, true);
+	save->getBases()->push_back(base);
 
 	// Correct IDs
-	for (std::vector<Craft*>::const_iterator i = base->getCrafts()->begin(); i != base->getCrafts()->end(); ++i)
+	for (auto* craft : *base->getCrafts())
 	{
-		save->getId((*i)->getRules()->getType());
+		save->getId(craft->getRules()->getType());
 	}
 
-	// Generate soldiers
-	int soldiers = _startingBase["randomSoldiers"].as<int>(0);
-	for (int i = 0; i < soldiers; ++i)
+	// Determine starting soldier types
+	std::vector<std::string> soldierTypes = _soldiersIndex; // copy!
+	for (auto iter = soldierTypes.begin(); iter != soldierTypes.end();)
 	{
-		Soldier *soldier = genSoldier(save);
-		soldier->setCraft(base->getCrafts()->front());
-		base->getSoldiers()->push_back(soldier);
+		if (getSoldier(*iter)->getRequirements().empty())
+		{
+			++iter;
+		}
+		else
+		{
+			iter = soldierTypes.erase(iter);
+		}
 	}
 
-	save->getBases()->push_back(base);
+	const YAML::Node &node = startingBaseByDiff["randomSoldiers"];
+	std::vector<std::string> randomTypes;
+	if (node)
+	{
+		// Starting soldiers specified by type
+		if (node.IsMap())
+		{
+			std::map<std::string, int> randomSoldiers = node.as< std::map<std::string, int> >(std::map<std::string, int>());
+			for (const auto& pair : randomSoldiers)
+			{
+				for (int s = 0; s < pair.second; ++s)
+				{
+					randomTypes.push_back(pair.first);
+				}
+			}
+		}
+		// Starting soldiers specified by amount
+		else if (node.IsScalar())
+		{
+			int randomSoldiers = node.as<int>(0);
+			if (randomSoldiers > 0 && soldierTypes.empty())
+			{
+				Log(LOG_ERROR) << "Cannot generate soldiers for the starting base. There are no available soldier types. Maybe all of them are locked by research?";
+			}
+			else
+			{
+				for (int s = 0; s < randomSoldiers; ++s)
+				{
+					randomTypes.push_back(soldierTypes[RNG::generate(0, soldierTypes.size() - 1)]);
+				}
+			}
+		}
+		// Generate soldiers
+		for (size_t i = 0; i < randomTypes.size(); ++i)
+		{
+			RuleSoldier* ruleSoldier = getSoldier(randomTypes[i], true);
+			int nationality = save->selectSoldierNationalityByLocation(this, ruleSoldier, nullptr); // -1 (unfortunately the first base is not placed yet)
+			Soldier *soldier = genSoldier(save, ruleSoldier, nationality);
+			base->getSoldiers()->push_back(soldier);
+			// Award soldier a special 'original eight' commendation
+			if (_commendations.find("STR_MEDAL_ORIGINAL8_NAME") != _commendations.end())
+			{
+				SoldierDiary *diary = soldier->getDiary();
+				diary->awardOriginalEightCommendation(this);
+				for (auto* comm : *diary->getSoldierCommendations())
+				{
+					comm->makeOld();
+				}
+			}
+		}
+		// Assign pilots to craft (interceptors first, transport last) and non-pilots to transports only
+		for (auto* soldier : *base->getSoldiers())
+		{
+			if (soldier->getArmor()->getSize() > 1)
+			{
+				// "Large soldiers" just stay in the base
+			}
+			else if (soldier->getRules()->getAllowPiloting())
+			{
+				Craft *found = 0;
+				for (auto* craft : *base->getCrafts())
+				{
+					if (!found && craft->getRules()->getAllowLanding() && craft->getSpaceUsed() < craft->getRules()->getMaxUnits())
+					{
+						// Remember transporter as fall-back, but search further for interceptors
+						found = craft;
+					}
+					if (!craft->getRules()->getAllowLanding() && craft->getSpaceUsed() < craft->getRules()->getPilots())
+					{
+						// Fill interceptors with minimum amount of pilots necessary
+						found = craft;
+					}
+				}
+				soldier->setCraft(found);
+			}
+			else
+			{
+				Craft *found = 0;
+				for (auto* craft : *base->getCrafts())
+				{
+					if (craft->getRules()->getAllowLanding() && craft->getSpaceUsed() < craft->getRules()->getMaxUnits())
+					{
+						// First available transporter will do
+						found = craft;
+						break;
+					}
+				}
+				soldier->setCraft(found);
+			}
+		}
+	}
+
 	// Setup alien strategy
 	save->getAlienStrategy().init(this);
 	save->setTime(_startingTime);
@@ -1406,10 +3776,9 @@ SavedGame *Mod::newSave() const
  * @param id Country type.
  * @return Rules for the country.
  */
-RuleCountry *Mod::getCountry(const std::string &id) const
+RuleCountry *Mod::getCountry(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleCountry*>::const_iterator i = _countries.find(id);
-	if (_countries.end() != i) return i->second; else return 0;
+	return getRule(id, "Country", _countries, error);
 }
 
 /**
@@ -1423,14 +3792,33 @@ const std::vector<std::string> &Mod::getCountriesList() const
 }
 
 /**
+ * Returns the rules for the specified extra globe label.
+ * @param id Extra globe label type.
+ * @return Rules for the extra globe label.
+ */
+RuleCountry *Mod::getExtraGlobeLabel(const std::string &id, bool error) const
+{
+	return getRule(id, "Extra Globe Label", _extraGlobeLabels, error);
+}
+
+/**
+ * Returns the list of all extra globe labels
+ * provided by the mod.
+ * @return List of extra globe labels.
+ */
+const std::vector<std::string> &Mod::getExtraGlobeLabelsList() const
+{
+	return _extraGlobeLabelsIndex;
+}
+
+/**
  * Returns the rules for the specified region.
  * @param id Region type.
  * @return Rules for the region.
  */
-RuleRegion *Mod::getRegion(const std::string &id) const
+RuleRegion *Mod::getRegion(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleRegion*>::const_iterator i = _regions.find(id);
-	if (_regions.end() != i) return i->second; else return 0;
+	return getRule(id, "Region", _regions, error);
 }
 
 /**
@@ -1448,10 +3836,9 @@ const std::vector<std::string> &Mod::getRegionsList() const
  * @param id Facility type.
  * @return Rules for the facility.
  */
-RuleBaseFacility *Mod::getBaseFacility(const std::string &id) const
+RuleBaseFacility *Mod::getBaseFacility(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleBaseFacility*>::const_iterator i = _facilities.find(id);
-	if (_facilities.end() != i) return i->second; else return 0;
+	return getRule(id, "Facility", _facilities, error);
 }
 
 /**
@@ -1469,10 +3856,9 @@ const std::vector<std::string> &Mod::getBaseFacilitiesList() const
  * @param id Craft type.
  * @return Rules for the craft.
  */
-RuleCraft *Mod::getCraft(const std::string &id) const
+RuleCraft *Mod::getCraft(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleCraft*>::const_iterator i = _crafts.find(id);
-	if (_crafts.end() != i) return i->second; else return 0;
+	return getRule(id, "Craft", _crafts, error);
 }
 
 /**
@@ -1490,10 +3876,9 @@ const std::vector<std::string> &Mod::getCraftsList() const
  * @param id Craft weapon type.
  * @return Rules for the craft weapon.
  */
-RuleCraftWeapon *Mod::getCraftWeapon(const std::string &id) const
+RuleCraftWeapon *Mod::getCraftWeapon(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleCraftWeapon*>::const_iterator i = _craftWeapons.find(id);
-	if (_craftWeapons.end() != i) return i->second; else return 0;
+	return getRule(id, "Craft Weapon", _craftWeapons, error);
 }
 
 /**
@@ -1505,18 +3890,47 @@ const std::vector<std::string> &Mod::getCraftWeaponsList() const
 {
 	return _craftWeaponsIndex;
 }
+/**
+ * Is given item a launcher or ammo for craft weapon.
+ */
+bool Mod::isCraftWeaponStorageItem(const RuleItem* item) const
+{
+	return Collections::sortVectorHave(_craftWeaponStorageItemsCache, item);
+}
+
+/**
+* Returns the rules for the specified item category.
+* @param id Item category type.
+* @return Rules for the item category, or 0 when the item category is not found.
+*/
+RuleItemCategory *Mod::getItemCategory(const std::string &id, bool error) const
+{
+	auto i = _itemCategories.find(id);
+	if (_itemCategories.end() != i) return i->second; else return 0;
+}
+
+/**
+* Returns the list of all item categories
+* provided by the mod.
+* @return List of item categories.
+*/
+const std::vector<std::string> &Mod::getItemCategoriesList() const
+{
+	return _itemCategoriesIndex;
+}
 
 /**
  * Returns the rules for the specified item.
  * @param id Item type.
  * @return Rules for the item, or 0 when the item is not found.
  */
-RuleItem *Mod::getItem(const std::string &id) const
+RuleItem *Mod::getItem(const std::string &id, bool error) const
 {
-	if (_items.find(id) != _items.end())
-		return _items.find(id)->second;
-	else
+	if (id == Armor::NONE)
+	{
 		return 0;
+	}
+	return getRule(id, "Item", _items, error);
 }
 
 /**
@@ -1534,10 +3948,9 @@ const std::vector<std::string> &Mod::getItemsList() const
  * @param id UFO type.
  * @return Rules for the UFO.
  */
-RuleUfo *Mod::getUfo(const std::string &id) const
+RuleUfo *Mod::getUfo(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleUfo*>::const_iterator i = _ufos.find(id);
-	if (_ufos.end() != i) return i->second; else return 0;
+	return getRule(id, "UFO", _ufos, error);
 }
 
 /**
@@ -1555,10 +3968,9 @@ const std::vector<std::string> &Mod::getUfosList() const
  * @param name Terrain name.
  * @return Rules for the terrain.
  */
-RuleTerrain *Mod::getTerrain(const std::string &name) const
+RuleTerrain *Mod::getTerrain(const std::string &name, bool error) const
 {
-	std::map<std::string, RuleTerrain*>::const_iterator i = _terrains.find(name);
-	if (_terrains.end() != i) return i->second; else return 0;
+	return getRule(name, "Terrain", _terrains, error);
 }
 
 /**
@@ -1578,7 +3990,7 @@ const std::vector<std::string> &Mod::getTerrainList() const
  */
 MapDataSet *Mod::getMapDataSet(const std::string &name)
 {
-	std::map<std::string, MapDataSet*>::iterator map = _mapDataSets.find(name);
+	auto map = _mapDataSets.find(name);
 	if (map == _mapDataSets.end())
 	{
 		MapDataSet *set = new MapDataSet(name);
@@ -1592,14 +4004,23 @@ MapDataSet *Mod::getMapDataSet(const std::string &name)
 }
 
 /**
+ * Returns the rules for the specified skill.
+ * @param name Skill type.
+ * @return Rules for the skill.
+ */
+RuleSkill *Mod::getSkill(const std::string &name, bool error) const
+{
+	return getRule(name, "Skill", _skills, error);
+}
+
+/**
  * Returns the info about a specific unit.
  * @param name Unit name.
  * @return Rules for the units.
  */
-RuleSoldier *Mod::getSoldier(const std::string &name) const
+RuleSoldier *Mod::getSoldier(const std::string &name, bool error) const
 {
-	std::map<std::string, RuleSoldier*>::const_iterator i = _soldiers.find(name);
-	if (_soldiers.end() != i) return i->second; else return 0;
+	return getRule(name, "Soldier", _soldiers, error);
 }
 
 /**
@@ -1613,14 +4034,32 @@ const std::vector<std::string> &Mod::getSoldiersList() const
 }
 
 /**
+ * Returns the rules for the specified commendation.
+ * @param id Commendation type.
+ * @return Rules for the commendation.
+ */
+RuleCommendations *Mod::getCommendation(const std::string &id, bool error) const
+{
+	return getRule(id, "Commendation", _commendations, error);
+}
+
+/**
+ * Gets the list of commendations provided by the mod.
+ * @return The list of commendations.
+ */
+const std::map<std::string, RuleCommendations *> &Mod::getCommendationsList() const
+{
+	return _commendations;
+}
+
+/**
  * Returns the info about a specific unit.
  * @param name Unit name.
  * @return Rules for the units.
  */
-Unit *Mod::getUnit(const std::string &name) const
+Unit *Mod::getUnit(const std::string &name, bool error) const
 {
-	std::map<std::string, Unit*>::const_iterator i = _units.find(name);
-	if (_units.end() != i) return i->second; else return 0;
+	return getRule(name, "Unit", _units, error);
 }
 
 /**
@@ -1628,10 +4067,9 @@ Unit *Mod::getUnit(const std::string &name) const
  * @param name Race name.
  * @return Rules for the race.
  */
-AlienRace *Mod::getAlienRace(const std::string &name) const
+AlienRace *Mod::getAlienRace(const std::string &name, bool error) const
 {
-	std::map<std::string, AlienRace*>::const_iterator i = _alienRaces.find(name);
-	if (_alienRaces.end() != i) return i->second; else return 0;
+	return getRule(name, "Alien Race", _alienRaces, error);
 }
 
 /**
@@ -1645,14 +4083,55 @@ const std::vector<std::string> &Mod::getAlienRacesList() const
 }
 
 /**
+ * Returns specific EnviroEffects.
+ * @param name EnviroEffects name.
+ * @return Rules for the EnviroEffects.
+ */
+RuleEnviroEffects* Mod::getEnviroEffects(const std::string& name) const
+{
+	auto i = _enviroEffects.find(name);
+	if (_enviroEffects.end() != i) return i->second; else return 0;
+}
+
+/**
+ * Returns the list of all EnviroEffects
+ * provided by the mod.
+ * @return List of EnviroEffects.
+ */
+const std::vector<std::string>& Mod::getEnviroEffectsList() const
+{
+	return _enviroEffectsIndex;
+}
+
+/**
+ * Returns the info about a specific starting condition.
+ * @param name Starting condition name.
+ * @return Rules for the starting condition.
+ */
+RuleStartingCondition* Mod::getStartingCondition(const std::string& name) const
+{
+	auto i = _startingConditions.find(name);
+	if (_startingConditions.end() != i) return i->second; else return 0;
+}
+
+/**
+ * Returns the list of all starting conditions
+ * provided by the mod.
+ * @return List of starting conditions.
+ */
+const std::vector<std::string>& Mod::getStartingConditionsList() const
+{
+	return _startingConditionsIndex;
+}
+
+/**
  * Returns the info about a specific deployment.
  * @param name Deployment name.
  * @return Rules for the deployment.
  */
-AlienDeployment *Mod::getDeployment(const std::string &name) const
+AlienDeployment *Mod::getDeployment(const std::string &name, bool error) const
 {
-	std::map<std::string, AlienDeployment*>::const_iterator i = _alienDeployments.find(name);
-	if (_alienDeployments.end() != i) return i->second; else return 0;
+	return getRule(name, "Alien Deployment", _alienDeployments, error);
 }
 
 /**
@@ -1665,15 +4144,15 @@ const std::vector<std::string> &Mod::getDeploymentsList() const
 	return _deploymentsIndex;
 }
 
+
 /**
  * Returns the info about a specific armor.
  * @param name Armor name.
  * @return Rules for the armor.
  */
-Armor *Mod::getArmor(const std::string &name) const
+Armor *Mod::getArmor(const std::string &name, bool error) const
 {
-	std::map<std::string, Armor*>::const_iterator i = _armors.find(name);
-	if (_armors.end() != i) return i->second; else return 0;
+	return getRule(name, "Armor", _armors, error);
 }
 
 /**
@@ -1687,8 +4166,42 @@ const std::vector<std::string> &Mod::getArmorsList() const
 }
 
 /**
- * Returns the cost of an individual engineer
- * for purchase/maintenance.
+ * Gets the available armors for soldiers.
+ */
+const std::vector<const Armor*> &Mod::getArmorsForSoldiers() const
+{
+	return _armorsForSoldiersCache;
+}
+
+/**
+ * Check if item is used for armor storage.
+ */
+bool Mod::isArmorStorageItem(const RuleItem* item) const
+{
+	return Collections::sortVectorHave(_armorStorageItemsCache, item);
+}
+
+
+/**
+ * Returns the hiring cost of an individual engineer.
+ * @return Cost.
+ */
+int Mod::getHireEngineerCost() const
+{
+	return _costHireEngineer != 0 ? _costHireEngineer : _costEngineer * 2;
+}
+
+/**
+* Returns the hiring cost of an individual scientist.
+* @return Cost.
+*/
+int Mod::getHireScientistCost() const
+{
+	return _costHireScientist != 0 ? _costHireScientist: _costScientist * 2;
+}
+
+/**
+ * Returns the monthly cost of an individual engineer.
  * @return Cost.
  */
 int Mod::getEngineerCost() const
@@ -1697,8 +4210,7 @@ int Mod::getEngineerCost() const
 }
 
 /**
- * Returns the cost of an individual scientist
- * for purchase/maintenance.
+ * Returns the monthly cost of an individual scientist.
  * @return Cost.
  */
 int Mod::getScientistCost() const
@@ -1717,14 +4229,31 @@ int Mod::getPersonnelTime() const
 }
 
 /**
+ * Gets maximum supported lookVariant.
+ * @return value in range from 0 to 63
+ */
+int Mod::getMaxLookVariant() const
+{
+	return abs(_maxLookVariant) % RuleSoldier::LookVariantMax;
+}
+
+/**
+ * Gets the escort range.
+ * @return Escort range.
+ */
+double Mod::getEscortRange() const
+{
+	return _escortRange;
+}
+
+/**
  * Returns the article definition for a given name.
  * @param name Article name.
  * @return Article definition.
  */
-ArticleDefinition *Mod::getUfopaediaArticle(const std::string &name) const
+ArticleDefinition *Mod::getUfopaediaArticle(const std::string &name, bool error) const
 {
-	std::map<std::string, ArticleDefinition*>::const_iterator i = _ufopaediaArticles.find(name);
-	if (_ufopaediaArticles.end() != i) return i->second; else return 0;
+	return getRule(name, "UFOpaedia Article", _ufopaediaArticles, error);
 }
 
 /**
@@ -1735,6 +4264,16 @@ ArticleDefinition *Mod::getUfopaediaArticle(const std::string &name) const
 const std::vector<std::string> &Mod::getUfopaediaList() const
 {
 	return _ufopaediaIndex;
+}
+
+/**
+* Returns the list of all article categories
+* provided by the mod.
+* @return List of categories.
+*/
+const std::vector<std::string> &Mod::getUfopaediaCategoryList() const
+{
+	return _ufopaediaCatIndex;
 }
 
 /**
@@ -1751,10 +4290,9 @@ std::map<std::string, RuleInventory*> *Mod::getInventories()
  * @param id Inventory type.
  * @return Inventory ruleset.
  */
-RuleInventory *Mod::getInventory(const std::string &id) const
+RuleInventory *Mod::getInventory(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleInventory*>::const_iterator i = _invs.find(id);
-	if (_invs.end() != i) return i->second; else return 0;
+	return getRule(id, "Inventory", _invs, error);
 }
 
 /**
@@ -1781,10 +4319,39 @@ const std::vector<std::string> &Mod::getInvsList() const
  * @param id Research project type.
  * @return Rules for the research project.
  */
-RuleResearch *Mod::getResearch (const std::string &id) const
+RuleResearch *Mod::getResearch(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleResearch *>::const_iterator i = _research.find(id);
-	if (_research.end() != i) return i->second; else return 0;
+	return getRule(id, "Research", _research, error);
+}
+
+/**
+ * Gets the ruleset list for from research list.
+ */
+std::vector<const RuleResearch*> Mod::getResearch(const std::vector<std::string> &id) const
+{
+	std::vector<const RuleResearch*> dest;
+	dest.reserve(id.size());
+	for (auto& name : id)
+	{
+		auto* rule = getResearch(name, false);
+		if (rule)
+		{
+			dest.push_back(rule);
+		}
+		else
+		{
+			throw Exception("Unknown research '" + name + "'");
+		}
+	}
+	return dest;
+}
+
+/**
+ * Gets the ruleset for a specific research project.
+ */
+const std::map<std::string, RuleResearch *> &Mod::getResearchMap() const
+{
+	return _research;
 }
 
 /**
@@ -1801,10 +4368,9 @@ const std::vector<std::string> &Mod::getResearchList() const
  * @param id Manufacture project type.
  * @return Rules for the manufacture project.
  */
-RuleManufacture *Mod::getManufacture (const std::string &id) const
+RuleManufacture *Mod::getManufacture (const std::string &id, bool error) const
 {
-	std::map<std::string, RuleManufacture *>::const_iterator i = _manufacture.find(id);
-	if (_manufacture.end() != i) return i->second; else return 0;
+	return getRule(id, "Manufacture", _manufacture, error);
 }
 
 /**
@@ -1816,6 +4382,43 @@ const std::vector<std::string> &Mod::getManufactureList() const
 	return _manufactureIndex;
 }
 
+/**
+ * Returns the rules for the specified soldier bonus type.
+ * @param id Soldier bonus type.
+ * @return Rules for the soldier bonus type.
+ */
+RuleSoldierBonus *Mod::getSoldierBonus(const std::string &id, bool error) const
+{
+	return getRule(id, "SoldierBonus", _soldierBonus, error);
+}
+
+/**
+ * Returns the list of soldier bonus types.
+ * @return The list of soldier bonus types.
+ */
+const std::vector<std::string> &Mod::getSoldierBonusList() const
+{
+	return _soldierBonusIndex;
+}
+
+/**
+ * Returns the rules for the specified soldier transformation project.
+ * @param id Soldier transformation project type.
+ * @return Rules for the soldier transformation project.
+ */
+RuleSoldierTransformation *Mod::getSoldierTransformation (const std::string &id, bool error) const
+{
+	return getRule(id, "SoldierTransformation", _soldierTransformation, error);
+}
+
+/**
+ * Returns the list of soldier transformation projects.
+ * @return The list of soldier transformation projects.
+ */
+const std::vector<std::string> &Mod::getSoldierTransformationList() const
+{
+	return _soldierTransformationIndex;
+}
 
 /**
  * Generates and returns a list of facilities for custom bases.
@@ -1823,14 +4426,15 @@ const std::vector<std::string> &Mod::getManufactureList() const
  * part of the ruleset.
  * @return The list of facilities for custom bases.
  */
-std::vector<OpenXcom::RuleBaseFacility*> Mod::getCustomBaseFacilities() const
+std::vector<RuleBaseFacility*> Mod::getCustomBaseFacilities(GameDifficulty diff) const
 {
-	std::vector<OpenXcom::RuleBaseFacility*> placeList;
+	std::vector<RuleBaseFacility*> placeList;
 
-	for (YAML::const_iterator i = _startingBase["facilities"].begin(); i != _startingBase["facilities"].end(); ++i)
+	const YAML::Node &startingBaseByDiff = getStartingBase(diff);
+	for (YAML::const_iterator i = startingBaseByDiff["facilities"].begin(); i != startingBaseByDiff["facilities"].end(); ++i)
 	{
 		std::string type = (*i)["type"].as<std::string>();
-		RuleBaseFacility *facility = getBaseFacility(type);
+		RuleBaseFacility *facility = getBaseFacility(type, true);
 		if (!facility->isLift())
 		{
 			placeList.push_back(facility);
@@ -1844,10 +4448,9 @@ std::vector<OpenXcom::RuleBaseFacility*> Mod::getCustomBaseFacilities() const
  * @param id Ufo trajectory id.
  * @return A pointer to the data for the specified ufo trajectory.
  */
-const UfoTrajectory *Mod::getUfoTrajectory(const std::string &id) const
+const UfoTrajectory *Mod::getUfoTrajectory(const std::string &id, bool error) const
 {
-	std::map<std::string, UfoTrajectory *>::const_iterator i = _ufoTrajectories.find(id);
-	if (_ufoTrajectories.end() != i) return i->second; else return 0;
+	return getRule(id, "Trajectory", _ufoTrajectories, error);
 }
 
 /**
@@ -1855,10 +4458,9 @@ const UfoTrajectory *Mod::getUfoTrajectory(const std::string &id) const
  * @param id Alien mission type.
  * @return Rules for the alien mission.
  */
-const RuleAlienMission *Mod::getAlienMission(const std::string &id) const
+const RuleAlienMission *Mod::getAlienMission(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleAlienMission *>::const_iterator i = _alienMissions.find(id);
-	if (_alienMissions.end() != i) return i->second; else return 0;
+	return getRule(id, "Alien Mission", _alienMissions, error);
 }
 
 /**
@@ -1870,20 +4472,23 @@ const RuleAlienMission *Mod::getRandomMission(MissionObjective objective, size_t
 {
 	int totalWeight = 0;
 	std::map<int, RuleAlienMission*> possibilities;
-	for (std::map<std::string, RuleAlienMission *>::const_iterator i = _alienMissions.begin(); i != _alienMissions.end(); ++i)
+	for (auto& pair : _alienMissions)
 	{
-		if (i->second->getObjective() == objective && i->second->getWeight(monthsPassed) > 0)
+		if (pair.second->getObjective() == objective && pair.second->getWeight(monthsPassed) > 0)
 		{
-			totalWeight += i->second->getWeight(monthsPassed);
-			possibilities[totalWeight] = i->second;
+			totalWeight += pair.second->getWeight(monthsPassed);
+			possibilities[totalWeight] = pair.second;
 		}
 	}
-	int pick = RNG::generate(1, totalWeight);
-	for (std::map<int, RuleAlienMission*>::const_iterator i = possibilities.begin(); i != possibilities.end(); ++i)
+	if (totalWeight > 0)
 	{
-		if (pick <= i->first)
+		int pick = RNG::generate(1, totalWeight);
+		for (auto& pair : possibilities)
 		{
-			return i->second;
+			if (pick <= pair.first)
+			{
+				return pair.second;
+			}
 		}
 	}
 	return 0;
@@ -1908,12 +4513,42 @@ const std::vector<std::vector<int> > &Mod::getAlienItemLevels() const
 }
 
 /**
- * Gets the defined starting base.
+ * Gets the default starting base.
  * @return The starting base definition.
  */
-const YAML::Node &Mod::getStartingBase() const
+const YAML::Node &Mod::getDefaultStartingBase() const
 {
-	return _startingBase;
+	return _startingBaseDefault;
+}
+
+/**
+ * Gets the custom starting base (by game difficulty).
+ * @return The starting base definition.
+ */
+const YAML::Node &Mod::getStartingBase(GameDifficulty diff) const
+{
+	if (diff == DIFF_BEGINNER && _startingBaseBeginner && !_startingBaseBeginner.IsNull())
+	{
+		return _startingBaseBeginner;
+	}
+	else if (diff == DIFF_EXPERIENCED && _startingBaseExperienced && !_startingBaseExperienced.IsNull())
+	{
+		return _startingBaseExperienced;
+	}
+	else if (diff == DIFF_VETERAN && _startingBaseVeteran && !_startingBaseVeteran.IsNull())
+	{
+		return _startingBaseVeteran;
+	}
+	else if (diff == DIFF_GENIUS && _startingBaseGenius && !_startingBaseGenius.IsNull())
+	{
+		return _startingBaseGenius;
+	}
+	else if (diff == DIFF_SUPERHUMAN && _startingBaseSuperhuman && !_startingBaseSuperhuman.IsNull())
+	{
+		return _startingBaseSuperhuman;
+	}
+
+	return _startingBaseDefault;
 }
 
 /**
@@ -1932,7 +4567,7 @@ const GameTime &Mod::getStartingTime() const
  */
 MCDPatch *Mod::getMCDPatch(const std::string &id) const
 {
-	std::map<std::string, MCDPatch*>::const_iterator i = _MCDPatches.find(id);
+	auto i = _MCDPatches.find(id);
 	if (_MCDPatches.end() != i) return i->second; else return 0;
 }
 
@@ -1940,24 +4575,34 @@ MCDPatch *Mod::getMCDPatch(const std::string &id) const
  * Gets the list of external sprites.
  * @return The list of external sprites.
  */
-std::vector<std::pair<std::string, ExtraSprites *> > Mod::getExtraSprites() const
+const std::map<std::string, std::vector<ExtraSprites *> > &Mod::getExtraSprites() const
 {
 	return _extraSprites;
+}
+
+/**
+ * Gets the list of custom palettes.
+ * @return The list of custom palettes.
+ */
+const std::vector<std::string> &Mod::getCustomPalettes() const
+{
+	return _customPalettesIndex;
 }
 
 /**
  * Gets the list of external sounds.
  * @return The list of external sounds.
  */
-std::vector<std::pair<std::string, ExtraSounds *> > Mod::getExtraSounds() const
+const std::vector<std::pair<std::string, ExtraSounds *> > &Mod::getExtraSounds() const
 {
 	return _extraSounds;
 }
+
 /**
  * Gets the list of external strings.
  * @return The list of external strings.
  */
-std::map<std::string, ExtraStrings *> Mod::getExtraStrings() const
+const std::map<std::string, ExtraStrings *> &Mod::getExtraStrings() const
 {
 	return _extraStrings;
 }
@@ -1966,7 +4611,7 @@ std::map<std::string, ExtraStrings *> Mod::getExtraStrings() const
  * Gets the list of StatStrings.
  * @return The list of StatStrings.
  */
-std::vector<StatString *> Mod::getStatStrings() const
+const std::vector<StatString *> &Mod::getStatStrings() const
 {
 	return _statStrings;
 }
@@ -1975,10 +4620,14 @@ std::vector<StatString *> Mod::getStatStrings() const
  * Compares rules based on their list orders.
  */
 template <typename T>
-struct compareRule : public std::binary_function<const std::string&, const std::string&, bool>
+struct compareRule
 {
+	typedef const std::string& first_argument_type;
+	typedef const std::string& second_argument_type;
+	typedef bool result_type;
+
 	Mod *_mod;
-	typedef T*(Mod::*RuleLookup)(const std::string &id);
+	typedef T*(Mod::*RuleLookup)(const std::string &id, bool error) const;
 	RuleLookup _lookup;
 
 	compareRule(Mod *mod, RuleLookup lookup) : _mod(mod), _lookup(lookup)
@@ -1987,8 +4636,8 @@ struct compareRule : public std::binary_function<const std::string&, const std::
 
 	bool operator()(const std::string &r1, const std::string &r2) const
 	{
-		T *rule1 = (_mod->*_lookup)(r1);
-		T *rule2 = (_mod->*_lookup)(r2);
+		T *rule1 = (_mod->*_lookup)(r1, true);
+		T *rule2 = (_mod->*_lookup)(r2, true);
 		return (rule1->getListOrder() < rule2->getListOrder());
 	}
 };
@@ -1997,8 +4646,12 @@ struct compareRule : public std::binary_function<const std::string&, const std::
  * Craft weapons use the list order of their launcher item.
  */
 template <>
-struct compareRule<RuleCraftWeapon> : public std::binary_function<const std::string&, const std::string&, bool>
+struct compareRule<RuleCraftWeapon>
 {
+	typedef const std::string& first_argument_type;
+	typedef const std::string& second_argument_type;
+	typedef bool result_type;
+
 	Mod *_mod;
 
 	compareRule(Mod *mod) : _mod(mod)
@@ -2007,8 +4660,8 @@ struct compareRule<RuleCraftWeapon> : public std::binary_function<const std::str
 
 	bool operator()(const std::string &r1, const std::string &r2) const
 	{
-		RuleItem *rule1 = _mod->getItem(_mod->getCraftWeapon(r1)->getLauncherItem());
-		RuleItem *rule2 = _mod->getItem(_mod->getCraftWeapon(r2)->getLauncherItem());
+		auto *rule1 = _mod->getCraftWeapon(r1)->getLauncherItem();
+		auto *rule2 = _mod->getCraftWeapon(r2)->getLauncherItem();
 		return (rule1->getListOrder() < rule2->getListOrder());
 	}
 };
@@ -2018,8 +4671,12 @@ struct compareRule<RuleCraftWeapon> : public std::binary_function<const std::str
  * Itemless armor comes before all else.
  */
 template <>
-struct compareRule<Armor> : public std::binary_function<const std::string&, const std::string&, bool>
+struct compareRule<Armor>
 {
+	typedef const std::string& first_argument_type;
+	typedef const std::string& second_argument_type;
+	typedef bool result_type;
+
 	Mod *_mod;
 
 	compareRule(Mod *mod) : _mod(mod)
@@ -2030,8 +4687,13 @@ struct compareRule<Armor> : public std::binary_function<const std::string&, cons
 	{
 		Armor* armor1 = _mod->getArmor(r1);
 		Armor* armor2 = _mod->getArmor(r2);
-		RuleItem *rule1 = _mod->getItem(armor1->getStoreItem());
-		RuleItem *rule2 = _mod->getItem(armor2->getStoreItem());
+		return operator()(armor1, armor2);
+	}
+
+	bool operator()(const Armor* armor1, const Armor* armor2) const
+	{
+		const RuleItem *rule1 = armor1->getStoreItem();
+		const RuleItem *rule2 = armor2->getStoreItem();
 		if (!rule1 && !rule2)
 			return (armor1 < armor2); // tiebreaker, don't care about order, pointers are as good as any
 		else if (!rule1)
@@ -2047,58 +4709,96 @@ struct compareRule<Armor> : public std::binary_function<const std::string&, cons
  * Ufopaedia articles use section and list order.
  */
 template <>
-struct compareRule<ArticleDefinition> : public std::binary_function<const std::string&, const std::string&, bool>
+struct compareRule<ArticleDefinition>
 {
-	Mod *_mod;
-	static std::map<std::string, int> _sections;
+	typedef const std::string& first_argument_type;
+	typedef const std::string& second_argument_type;
+	typedef bool result_type;
 
-	compareRule(Mod *mod) : _mod(mod)
+	Mod *_mod;
+	const std::map<std::string, int> &_sections;
+
+	compareRule(Mod *mod) : _mod(mod), _sections(mod->getUfopaediaSections())
 	{
-		_sections[UFOPAEDIA_XCOM_CRAFT_ARMAMENT] = 0;
-		_sections[UFOPAEDIA_HEAVY_WEAPONS_PLATFORMS] = 1;
-		_sections[UFOPAEDIA_WEAPONS_AND_EQUIPMENT] = 2;
-		_sections[UFOPAEDIA_ALIEN_ARTIFACTS] = 3;
-		_sections[UFOPAEDIA_BASE_FACILITIES] = 4;
-		_sections[UFOPAEDIA_ALIEN_LIFE_FORMS] = 5;
-		_sections[UFOPAEDIA_ALIEN_RESEARCH] = 6;
-		_sections[UFOPAEDIA_UFO_COMPONENTS] = 7;
-		_sections[UFOPAEDIA_UFOS] = 8;
-		_sections[UFOPAEDIA_NOT_AVAILABLE] = 9;
 	}
 
 	bool operator()(const std::string &r1, const std::string &r2) const
 	{
 		ArticleDefinition *rule1 = _mod->getUfopaediaArticle(r1);
 		ArticleDefinition *rule2 = _mod->getUfopaediaArticle(r2);
-		if (_sections[rule1->section] == _sections[rule2->section])
+		if (rule1->section == rule2->section)
 			return (rule1->getListOrder() < rule2->getListOrder());
 		else
-			return (_sections[rule1->section] < _sections[rule2->section]);
+			return (_sections.at(rule1->section) < _sections.at(rule2->section));
 	}
 };
-std::map<std::string, int> compareRule<ArticleDefinition>::_sections;
+
+/**
+ * Ufopaedia sections use article list order.
+ */
+struct compareSection
+{
+	typedef const std::string& first_argument_type;
+	typedef const std::string& second_argument_type;
+	typedef bool result_type;
+
+	Mod *_mod;
+	const std::map<std::string, int> &_sections;
+
+	compareSection(Mod *mod) : _mod(mod), _sections(mod->getUfopaediaSections())
+	{
+	}
+
+	bool operator()(const std::string &r1, const std::string &r2) const
+	{
+		return _sections.at(r1) < _sections.at(r2);
+	}
+};
 
 /**
  * Sorts all our lists according to their weight.
  */
 void Mod::sortLists()
 {
+	for (auto rulePair : _ufopaediaArticles)
+	{
+		auto rule = rulePair.second;
+		if (rule->section != UFOPAEDIA_NOT_AVAILABLE)
+		{
+			if (_ufopaediaSections.find(rule->section) == _ufopaediaSections.end())
+			{
+				_ufopaediaSections[rule->section] = rule->getListOrder();
+				_ufopaediaCatIndex.push_back(rule->section);
+			}
+			else
+			{
+				_ufopaediaSections[rule->section] = std::min(_ufopaediaSections[rule->section], rule->getListOrder());
+			}
+		}
+	}
+
+	std::sort(_itemCategoriesIndex.begin(), _itemCategoriesIndex.end(), compareRule<RuleItemCategory>(this, (compareRule<RuleItemCategory>::RuleLookup)&Mod::getItemCategory));
 	std::sort(_itemsIndex.begin(), _itemsIndex.end(), compareRule<RuleItem>(this, (compareRule<RuleItem>::RuleLookup)&Mod::getItem));
 	std::sort(_craftsIndex.begin(), _craftsIndex.end(), compareRule<RuleCraft>(this, (compareRule<RuleCraft>::RuleLookup)&Mod::getCraft));
 	std::sort(_facilitiesIndex.begin(), _facilitiesIndex.end(), compareRule<RuleBaseFacility>(this, (compareRule<RuleBaseFacility>::RuleLookup)&Mod::getBaseFacility));
 	std::sort(_researchIndex.begin(), _researchIndex.end(), compareRule<RuleResearch>(this, (compareRule<RuleResearch>::RuleLookup)&Mod::getResearch));
 	std::sort(_manufactureIndex.begin(), _manufactureIndex.end(), compareRule<RuleManufacture>(this, (compareRule<RuleManufacture>::RuleLookup)&Mod::getManufacture));
+	std::sort(_soldierTransformationIndex.begin(), _soldierTransformationIndex.end(), compareRule<RuleSoldierTransformation>(this,  (compareRule<RuleSoldierTransformation>::RuleLookup)&Mod::getSoldierTransformation));
 	std::sort(_invsIndex.begin(), _invsIndex.end(), compareRule<RuleInventory>(this, (compareRule<RuleInventory>::RuleLookup)&Mod::getInventory));
 	// special cases
 	std::sort(_craftWeaponsIndex.begin(), _craftWeaponsIndex.end(), compareRule<RuleCraftWeapon>(this));
 	std::sort(_armorsIndex.begin(), _armorsIndex.end(), compareRule<Armor>(this));
+	std::sort(_armorsForSoldiersCache.begin(), _armorsForSoldiersCache.end(), compareRule<Armor>(this));
+	_ufopaediaSections[UFOPAEDIA_NOT_AVAILABLE] = 0;
 	std::sort(_ufopaediaIndex.begin(), _ufopaediaIndex.end(), compareRule<ArticleDefinition>(this));
+	std::sort(_ufopaediaCatIndex.begin(), _ufopaediaCatIndex.end(), compareSection(this));
+	std::sort(_soldiersIndex.begin(), _soldiersIndex.end(), compareRule<RuleSoldier>(this, (compareRule<RuleSoldier>::RuleLookup) & Mod::getSoldier));
 }
 
 /**
  * Gets the research-requirements for Psi-Lab (it's a cache for psiStrengthEval)
  */
-std::vector<std::string> Mod::getPsiRequirements() const
+const std::vector<std::string> &Mod::getPsiRequirements() const
 {
 	return _psiRequirements;
 }
@@ -2109,35 +4809,34 @@ std::vector<std::string> Mod::getPsiRequirements() const
  * @param type The soldier type to generate.
  * @return Newly generated soldier.
  */
-Soldier *Mod::genSoldier(SavedGame *save, std::string type) const
+Soldier *Mod::genSoldier(SavedGame *save, const RuleSoldier* ruleSoldier, int nationality) const
 {
 	Soldier *soldier = 0;
 	int newId = save->getId("STR_SOLDIER");
-	if (type.empty())
-	{
-		type = _soldiersIndex.front();
-	}
 
 	// Check for duplicates
 	// Original X-COM gives up after 10 tries so might as well do the same here
 	bool duplicate = true;
-	for (int i = 0; i < 10 && duplicate; i++)
+	for (int tries = 0; tries < 10 && duplicate; ++tries)
 	{
 		delete soldier;
-		soldier = new Soldier(getSoldier(type), getArmor(getSoldier(type)->getArmor()), newId);
+		soldier = new Soldier(const_cast<RuleSoldier*>(ruleSoldier), ruleSoldier->getDefaultArmor(), nationality, newId);
 		duplicate = false;
-		for (std::vector<Base*>::iterator i = save->getBases()->begin(); i != save->getBases()->end() && !duplicate; ++i)
+		for (auto* xbase : *save->getBases())
 		{
-			for (std::vector<Soldier*>::iterator j = (*i)->getSoldiers()->begin(); j != (*i)->getSoldiers()->end() && !duplicate; ++j)
+			if (duplicate) break; // loop finished
+			for (auto* xsoldier : *xbase->getSoldiers())
 			{
-				if ((*j)->getName() == soldier->getName())
+				if (duplicate) break; // loop finished
+				if (xsoldier->getName() == soldier->getName())
 				{
 					duplicate = true;
 				}
 			}
-			for (std::vector<Transfer*>::iterator k = (*i)->getTransfers()->begin(); k != (*i)->getTransfers()->end() && !duplicate; ++k)
+			for (auto* transfer : *xbase->getTransfers())
 			{
-				if ((*k)->getType() == TRANSFER_SOLDIER && (*k)->getSoldier()->getName() == soldier->getName())
+				if (duplicate) break; // loop finished
+				if (transfer->getType() == TRANSFER_SOLDIER && transfer->getSoldier()->getName() == soldier->getName())
 				{
 					duplicate = true;
 				}
@@ -2179,19 +4878,20 @@ std::string Mod::getFontName() const
 }
 
 /**
- * Returns the minimum facilitie's radar range.
- * @return The minimum range.
+ * Returns the maximum radar range still considered as short.
+ * @return The short radar range threshold.
  */
- int Mod::getMinRadarRange() const
+ int Mod::getShortRadarRange() const
  {
-	static int minRadarRange = -1;
+	if (_shortRadarRange > 0)
+		return _shortRadarRange;
 
-	if (minRadarRange < 0)
+	int minRadarRange = 0;
+
 	{
-		minRadarRange = 0;
-		for (std::vector<std::string>::const_iterator i = _facilitiesIndex.begin(); i != _facilitiesIndex.end(); ++i)
+		for (auto& facType : _facilitiesIndex)
 		{
-			RuleBaseFacility *f = getBaseFacility(*i);
+			RuleBaseFacility *f = getBaseFacility(facType);
 			if (f == 0) continue;
 
 			int radarRange = f->getRadarRange();
@@ -2206,14 +4906,23 @@ std::string Mod::getFontName() const
  }
 
 /**
+ * Returns what should be displayed in craft pedia articles for fuel capacity/range
+ * @return 0 = Max theoretical range, 1 = Min and max theoretical max range, 2 = average of the two
+ * Otherwise (default), just show the fuel capacity
+ */
+int Mod::getPediaReplaceCraftFuelWithRangeType() const
+{
+	return _pediaReplaceCraftFuelWithRangeType;
+}
+
+/**
  * Gets information on an interface.
  * @param id the interface we want info on.
  * @return the interface.
  */
-RuleInterface *Mod::getInterface(const std::string &id) const
+RuleInterface *Mod::getInterface(const std::string &id, bool error) const
 {
-	std::map<std::string, RuleInterface*>::const_iterator i = _interfaces.find(id);
-	if (_interfaces.end() != i) return i->second; else return 0;
+	return getRule(id, "Interface", _interfaces, error);
 }
 
 /**
@@ -2225,25 +4934,41 @@ RuleGlobe *Mod::getGlobe() const
 	return _globe;
 }
 
+/**
+* Gets the rules for the Save Converter.
+* @return Pointer to converter rules.
+*/
+RuleConverter *Mod::getConverter() const
+{
+	return _converter;
+}
+
 const std::map<std::string, SoundDefinition *> *Mod::getSoundDefinitions() const
 {
 	return &_soundDefs;
 }
 
-const std::vector<SDL_Color> *Mod::getTransparencies() const
+const std::vector<MapScript*> *Mod::getMapScript(const std::string& id) const
 {
-	return &_transparencies;
+	auto i = _mapScripts.find(id);
+	if (_mapScripts.end() != i)
+	{
+		return &i->second;
+	}
+	else
+	{
+		return 0;
+	}
 }
 
-const std::vector<MapScript*> *Mod::getMapScript(std::string id) const
+/**
+ * Returns the data for the specified video cutscene.
+ * @param id Video id.
+ * @return A pointer to the data for the specified video.
+ */
+RuleVideo *Mod::getVideo(const std::string &id, bool error) const
 {
-	std::map<std::string, std::vector<MapScript*> >::const_iterator i = _mapScripts.find(id);
-	if (_mapScripts.end() != i) return &i->second; else return 0;
-}
-
-const std::map<std::string, RuleVideo *> *Mod::getVideos() const
-{
-	return &_videos;
+	return getRule(id, "Video", _videos, error);
 }
 
 const std::map<std::string, RuleMusic *> *Mod::getMusic() const
@@ -2251,19 +4976,86 @@ const std::map<std::string, RuleMusic *> *Mod::getMusic() const
 	return &_musicDefs;
 }
 
+const std::vector<std::string>* Mod::getArcScriptList() const
+{
+	return &_arcScriptIndex;
+}
+
+RuleArcScript* Mod::getArcScript(const std::string& name, bool error) const
+{
+	return getRule(name, "Arc Script", _arcScripts, error);
+}
+
+const std::vector<std::string>* Mod::getEventScriptList() const
+{
+	return &_eventScriptIndex;
+}
+
+RuleEventScript* Mod::getEventScript(const std::string& name, bool error) const
+{
+	return getRule(name, "Event Script", _eventScripts, error);
+}
+
+const std::vector<std::string>* Mod::getEventList() const
+{
+	return &_eventIndex;
+}
+
+RuleEvent* Mod::getEvent(const std::string& name, bool error) const
+{
+	return getRule(name, "Event", _events, error);
+}
+
 const std::vector<std::string> *Mod::getMissionScriptList() const
 {
 	return &_missionScriptIndex;
 }
 
-RuleMissionScript *Mod::getMissionScript(const std::string &name) const
+RuleMissionScript *Mod::getMissionScript(const std::string &name, bool error) const
 {
-	std::map<std::string, RuleMissionScript*>::const_iterator i = _missionScripts.find(name);
-	if (_missionScripts.end() != i) return i->second; else return 0;
+	return getRule(name, "Mission Script", _missionScripts, error);
 }
-std::string Mod::getFinalResearch() const
+/// Get global script data.
+ScriptGlobal *Mod::getScriptGlobal() const
+{
+	return _scriptGlobal;
+}
+
+RuleResearch *Mod::getFinalResearch() const
 {
 	return _finalResearch;
+}
+
+RuleBaseFacility *Mod::getDestroyedFacility() const
+{
+	if (isEmptyRuleName(_destroyedFacility))
+		return 0;
+
+	auto temp = getBaseFacility(_destroyedFacility, true);
+	if (temp->getSize() != 1)
+	{
+		throw Exception("Destroyed base facility definition must have size: 1");
+	}
+	return temp;
+}
+
+const std::map<int, std::string> *Mod::getMissionRatings() const
+{
+	return &_missionRatings;
+}
+const std::map<int, std::string> *Mod::getMonthlyRatings() const
+{
+	return &_monthlyRatings;
+}
+
+const std::vector<std::string> &Mod::getHiddenMovementBackgrounds() const
+{
+	return _hiddenMovementBackgrounds;
+}
+
+const std::vector<int> &Mod::getFlagByKills() const
+{
+	return _flagByKills;
 }
 
 namespace
@@ -2372,19 +5164,27 @@ namespace
  */
 void Mod::loadVanillaResources()
 {
+	// Create Geoscape surface
+	_sets["GlobeMarkers"] = new SurfaceSet(3, 3);
+	// dummy resources, that need to be defined in order for mod loading to work correctly
+	_sets["CustomArmorPreviews"] = new SurfaceSet(12, 20);
+	_sets["CustomItemPreviews"] = new SurfaceSet(12, 20);
+	_sets["TinyRanks"] = new SurfaceSet(7, 7);
+	_sets["Touch"] = new SurfaceSet(32, 24);
+
 	// Load palettes
 	const char *pal[] = { "PAL_GEOSCAPE", "PAL_BASESCAPE", "PAL_GRAPHS", "PAL_UFOPAEDIA", "PAL_BATTLEPEDIA" };
-	for (size_t i = 0; i < sizeof(pal) / sizeof(pal[0]); ++i)
+	for (size_t i = 0; i < ARRAYLEN(pal); ++i)
 	{
 		std::string s = "GEODATA/PALETTES.DAT";
 		_palettes[pal[i]] = new Palette();
-		_palettes[pal[i]]->loadDat(FileMap::getFilePath(s), 256, Palette::palOffset(i));
+		_palettes[pal[i]]->loadDat(s, 256, Palette::palOffset(i));
 	}
 	{
 		std::string s1 = "GEODATA/BACKPALS.DAT";
 		std::string s2 = "BACKPALS.DAT";
 		_palettes[s2] = new Palette();
-		_palettes[s2]->loadDat(FileMap::getFilePath(s1), 128);
+		_palettes[s2]->loadDat(s1, 128);
 	}
 
 	// Correct Battlescape palette
@@ -2392,7 +5192,7 @@ void Mod::loadVanillaResources()
 		std::string s1 = "GEODATA/PALETTES.DAT";
 		std::string s2 = "PAL_BATTLESCAPE";
 		_palettes[s2] = new Palette();
-		_palettes[s2]->loadDat(FileMap::getFilePath(s1), 256, Palette::palOffset(4));
+		_palettes[s2]->loadDat(s1, 256, Palette::palOffset(4));
 
 		// Last 16 colors are a greyish gradient
 		SDL_Color gradient[] = { { 140, 152, 148, 255 },
@@ -2411,46 +5211,47 @@ void Mod::loadVanillaResources()
 		{ 8, 12, 16, 255 },
 		{ 3, 4, 8, 255 },
 		{ 3, 3, 6, 255 } };
-		for (size_t i = 0; i < sizeof(gradient) / sizeof(gradient[0]); ++i)
+		for (size_t i = 0; i < ARRAYLEN(gradient); ++i)
 		{
 			SDL_Color *color = _palettes[s2]->getColors(Palette::backPos + 16 + i);
 			*color = gradient[i];
 		}
+		//_palettes[s2]->savePalMod("../../../customPalettes.rul", "PAL_BATTLESCAPE_CUSTOM", "PAL_BATTLESCAPE");
 	}
 
 	// Load surfaces
 	{
-		std::ostringstream s;
-		s << "GEODATA/" << "INTERWIN.DAT";
-		_surfaces["INTERWIN.DAT"] = new Surface(160, 600);
-		_surfaces["INTERWIN.DAT"]->loadScr(FileMap::getFilePath(s.str()));
+		std::string s1 = "GEODATA/INTERWIN.DAT";
+		std::string s2 = "INTERWIN.DAT";
+		_surfaces[s2] = new Surface(160, 600);
+		_surfaces[s2]->loadScr(s1);
 	}
 
-	const std::set<std::string> &geographFiles(FileMap::getVFolderContents("GEOGRAPH"));
-	std::set<std::string> scrs = FileMap::filterFiles(geographFiles, "SCR");
-	for (std::set<std::string>::iterator i = scrs.begin(); i != scrs.end(); ++i)
+	const auto& geographFiles = FileMap::getVFolderContents("GEOGRAPH");
+	auto scrs = FileMap::filterFiles(geographFiles, "SCR");
+	for (const auto& name : scrs)
 	{
-		std::string fname = *i;
-		std::transform(i->begin(), i->end(), fname.begin(), toupper);
+		std::string fname = name;
+		std::transform(name.begin(), name.end(), fname.begin(), toupper);
 		_surfaces[fname] = new Surface(320, 200);
-		_surfaces[fname]->loadScr(FileMap::getFilePath("GEOGRAPH/" + fname));
+		_surfaces[fname]->loadScr("GEOGRAPH/" + fname);
 	}
-	std::set<std::string> bdys = FileMap::filterFiles(geographFiles, "BDY");
-	for (std::set<std::string>::iterator i = bdys.begin(); i != bdys.end(); ++i)
+	auto bdys = FileMap::filterFiles(geographFiles, "BDY");
+	for (const auto& name : bdys)
 	{
-		std::string fname = *i;
-		std::transform(i->begin(), i->end(), fname.begin(), toupper);
+		std::string fname = name;
+		std::transform(name.begin(), name.end(), fname.begin(), toupper);
 		_surfaces[fname] = new Surface(320, 200);
-		_surfaces[fname]->loadBdy(FileMap::getFilePath("GEOGRAPH/" + fname));
+		_surfaces[fname]->loadBdy("GEOGRAPH/" + fname);
 	}
 
-	std::set<std::string> spks = FileMap::filterFiles(geographFiles, "SPK");
-	for (std::set<std::string>::iterator i = spks.begin(); i != spks.end(); ++i)
+	auto spks = FileMap::filterFiles(geographFiles, "SPK");
+	for (const auto& name : spks)
 	{
-		std::string fname = *i;
-		std::transform(i->begin(), i->end(), fname.begin(), toupper);
+		std::string fname = name;
+		std::transform(name.begin(), name.end(), fname.begin(), toupper);
 		_surfaces[fname] = new Surface(320, 200);
-		_surfaces[fname]->loadSpk(FileMap::getFilePath("GEOGRAPH/" + fname));
+		_surfaces[fname]->loadSpk("GEOGRAPH/" + fname);
 	}
 
 	// Load surface sets
@@ -2458,7 +5259,7 @@ void Mod::loadVanillaResources()
 		"INTICON.PCK",
 		"TEXTURE.DAT" };
 
-	for (size_t i = 0; i < sizeof(sets) / sizeof(sets[0]); ++i)
+	for (size_t i = 0; i < ARRAYLEN(sets); ++i)
 	{
 		std::ostringstream s;
 		s << "GEOGRAPH/" << sets[i];
@@ -2470,24 +5271,33 @@ void Mod::loadVanillaResources()
 			std::ostringstream s2;
 			s2 << "GEOGRAPH/" << tab;
 			_sets[sets[i]] = new SurfaceSet(32, 40);
-			_sets[sets[i]]->loadPck(FileMap::getFilePath(s.str()), FileMap::getFilePath(s2.str()));
+			_sets[sets[i]]->loadPck(s.str(), s2.str());
 		}
 		else
 		{
 			_sets[sets[i]] = new SurfaceSet(32, 32);
-			_sets[sets[i]]->loadDat(FileMap::getFilePath(s.str()));
+			_sets[sets[i]]->loadDat(s.str());
 		}
 	}
-	_sets["SCANG.DAT"] = new SurfaceSet(4, 4);
-	std::ostringstream scang;
-	scang << "GEODATA/" << "SCANG.DAT";
-	_sets["SCANG.DAT"]->loadDat(FileMap::getFilePath(scang.str()));
+	{
+		std::string s1 = "GEODATA/SCANG.DAT";
+		std::string s2 = "SCANG.DAT";
+		_sets[s2] = new SurfaceSet(4, 4);
+		_sets[s2]->loadDat(s1);
+	}
 
-	if (!Options::mute)
+	// construct sound sets
+	_sounds["GEO.CAT"] = new SoundSet();
+	_sounds["BATTLE.CAT"] = new SoundSet();
+	_sounds["BATTLE2.CAT"] = new SoundSet();
+	_sounds["SAMPLE3.CAT"] = new SoundSet();
+	_sounds["INTRO.CAT"] = new SoundSet();
+
+	if (!Options::mute) // TBD: ain't it wrong? can Options::mute be reset without a reload?
 	{
 		// Load sounds
-		const std::set<std::string> &soundFiles(FileMap::getVFolderContents("SOUND"));
-
+		const auto& contents = FileMap::getVFolderContents("SOUND");
+		auto soundFiles = FileMap::filterFiles(contents, "CAT");
 		if (_soundDefs.empty())
 		{
 			std::string catsId[] = { "GEO.CAT", "BATTLE.CAT" };
@@ -2499,85 +5309,156 @@ void Mod::loadVanillaResources()
 			if (Options::preferredSound == SOUND_14)
 				cats[0] = catsWin;
 			else if (Options::preferredSound == SOUND_10)
-				cats[1] = catsDos;
+				cats[0] = catsDos;
 
 			Options::currentSound = SOUND_AUTO;
-			for (size_t i = 0; i < sizeof(catsId) / sizeof(catsId[0]); ++i)
+			for (size_t i = 0; i < ARRAYLEN(catsId); ++i)
 			{
-				SoundSet *sound = 0;
-				for (size_t j = 0; j < sizeof(cats) / sizeof(cats[0]) && sound == 0; ++j)
+				SoundSet *sound = _sounds[catsId[i]];
+				for (size_t j = 0; j < ARRAYLEN(cats); ++j)
 				{
 					bool wav = true;
 					if (cats[j] == 0)
 						continue;
 					else if (cats[j] == catsDos)
 						wav = false;
-					std::string fname = cats[j][i];
-					std::transform(fname.begin(), fname.end(), fname.begin(), tolower);
-					std::set<std::string>::iterator file = soundFiles.find(fname);
-					if (file != soundFiles.end())
+					std::string fname = "SOUND/" + cats[j][i];
+					if (FileMap::fileExists(fname))
 					{
-						sound = new SoundSet();
-						sound->loadCat(FileMap::getFilePath("SOUND/" + cats[j][i]), wav);
+						Log(LOG_VERBOSE) << catsId[i] << ": loading sound "<<fname;
+						CatFile catfile(fname);
+						sound->loadCat(catfile);
 						Options::currentSound = (wav) ? SOUND_14 : SOUND_10;
+						break;
+					} else {
+						Log(LOG_VERBOSE) << catsId[i] << ": sound file not found: "<<fname;
 					}
 				}
-				if (sound == 0)
+				if (sound->getTotalSounds() == 0)
 				{
-					throw Exception(catsWin[i] + " not found");
-				}
-				else
-				{
-					_sounds[catsId[i]] = sound;
+					Log(LOG_ERROR) << catsId[i] << " not found: " << catsWin[i] + " or " + catsDos[i] + " required";
 				}
 			}
 		}
 		else
 		{
-			for (std::map<std::string, SoundDefinition*>::const_iterator i = _soundDefs.begin(); i != _soundDefs.end(); ++i)
+			// we're here if and only if this is the first mod loading
+			// and it got soundDefs in the ruleset, which basically means it's xcom2.
+			for (auto i : _soundDefs)
 			{
-				std::string fname = i->second->getCATFile();
-				std::transform(fname.begin(), fname.end(), fname.begin(), tolower);
-				std::set<std::string>::iterator file = soundFiles.find(fname);
-				if (file != soundFiles.end())
+				if (_sounds.find(i.first) == _sounds.end())
 				{
-					if (_sounds.find((*i).first) == _sounds.end())
+					_sounds[i.first] = new SoundSet();
+					Log(LOG_VERBOSE) << "TFTD: adding soundset" << i.first;
+				}
+				std::string fname = "SOUND/" + i.second->getCATFile();
+				if (FileMap::fileExists(fname))
+				{
+					CatFile catfile(fname);
+					for (auto j : i.second->getSoundList())
 					{
-						_sounds[(*i).first] = new SoundSet();
-					}
-					for (std::vector<int>::const_iterator j = (*i).second->getSoundList().begin(); j != (*i).second->getSoundList().end(); ++j)
-					{
-						_sounds[(*i).first]->loadCatbyIndex(FileMap::getFilePath("SOUND/" + fname), *j);
+						_sounds[i.first]->loadCatByIndex(catfile, j, true);
+						Log(LOG_VERBOSE) << "TFTD: adding sound " << j << " to " << i.first;
 					}
 				}
 				else
 				{
-					throw Exception(fname + " not found");
+					Log(LOG_ERROR) << "TFTD sound file not found:" << fname;
 				}
 			}
 		}
 
-		std::set<std::string>::iterator file = soundFiles.find("intro.cat");
+		auto file = soundFiles.find("intro.cat");
 		if (file != soundFiles.end())
 		{
-			SoundSet *s = _sounds["INTRO.CAT"] = new SoundSet();
-			s->loadCat(FileMap::getFilePath("SOUND/INTRO.CAT"), false);
+			auto catfile = CatFile("SOUND/INTRO.CAT");
+			_sounds["INTRO.CAT"]->loadCat(catfile);
 		}
 
 		file = soundFiles.find("sample3.cat");
 		if (file != soundFiles.end())
 		{
-			SoundSet *s = _sounds["SAMPLE3.CAT"] = new SoundSet();
-			s->loadCat(FileMap::getFilePath("SOUND/SAMPLE3.CAT"), true);
+			auto catfile = CatFile("SOUND/SAMPLE3.CAT");
+			_sounds["SAMPLE3.CAT"]->loadCat(catfile);
 		}
 	}
 
-	TextButton::soundPress = getSound("GEO.CAT", Mod::BUTTON_PRESS);
-	Window::soundPopup[0] = getSound("GEO.CAT", Mod::WINDOW_POPUP[0]);
-	Window::soundPopup[1] = getSound("GEO.CAT", Mod::WINDOW_POPUP[1]);
-	Window::soundPopup[2] = getSound("GEO.CAT", Mod::WINDOW_POPUP[2]);
-
 	loadBattlescapeResources(); // TODO load this at battlescape start, unload at battlescape end?
+
+
+	//update number of shared indexes in surface sets and sound sets
+	{
+		std::string surfaceNames[] =
+		{
+			"BIGOBS.PCK",
+			"FLOOROB.PCK",
+			"HANDOB.PCK",
+			"SMOKE.PCK",
+			"HIT.PCK",
+			"BASEBITS.PCK",
+			"INTICON.PCK",
+			"CustomArmorPreviews",
+			"CustomItemPreviews",
+		};
+
+		for (size_t i = 0; i < ARRAYLEN(surfaceNames); ++i)
+		{
+			SurfaceSet* s = _sets[surfaceNames[i]];
+			if (s)
+			{
+				s->setMaxSharedFrames((int)s->getTotalFrames());
+			}
+			else
+			{
+				Log(LOG_ERROR) << "Surface set " << surfaceNames[i] << " not found.";
+				throw Exception("Surface set " + surfaceNames[i] + " not found.");
+			}
+		}
+		//special case for surface set that is loaded later
+		{
+			SurfaceSet* s = _sets["Projectiles"];
+			s->setMaxSharedFrames(385);
+		}
+		{
+			SurfaceSet* s = _sets["UnderwaterProjectiles"];
+			s->setMaxSharedFrames(385);
+		}
+		{
+			SurfaceSet* s = _sets["GlobeMarkers"];
+			s->setMaxSharedFrames(9);
+		}
+		//HACK: because of value "hitAnimation" from item that is used as offset in "X1.PCK", this set need have same number of shared frames as "SMOKE.PCK".
+		{
+			SurfaceSet* s = _sets["X1.PCK"];
+			s->setMaxSharedFrames((int)_sets["SMOKE.PCK"]->getMaxSharedFrames());
+		}
+		{
+			SurfaceSet* s = _sets["TinyRanks"];
+			s->setMaxSharedFrames(6);
+		}
+		{
+			SurfaceSet* s = _sets["Touch"];
+			s->setMaxSharedFrames(10);
+		}
+	}
+	{
+		std::string soundNames[] =
+		{
+			"BATTLE.CAT",
+			"GEO.CAT",
+		};
+
+		for (size_t i = 0; i < ARRAYLEN(soundNames); ++i)
+		{
+			SoundSet* s = _sounds[soundNames[i]];
+			s->setMaxSharedSounds((int)s->getTotalSounds());
+		}
+		//HACK: case for underwater surface, it should share same offsets as "BATTLE.CAT"
+		{
+			SoundSet* s = _sounds["BATTLE2.CAT"];
+			s->setMaxSharedSounds((int)_sounds["BATTLE.CAT"]->getTotalSounds());
+		}
+	}
 }
 
 /**
@@ -2587,38 +5468,38 @@ void Mod::loadBattlescapeResources()
 {
 	// Load Battlescape ICONS
 	_sets["SPICONS.DAT"] = new SurfaceSet(32, 24);
-	_sets["SPICONS.DAT"]->loadDat(FileMap::getFilePath("UFOGRAPH/SPICONS.DAT"));
+	_sets["SPICONS.DAT"]->loadDat("UFOGRAPH/SPICONS.DAT");
 	_sets["CURSOR.PCK"] = new SurfaceSet(32, 40);
-	_sets["CURSOR.PCK"]->loadPck(FileMap::getFilePath("UFOGRAPH/CURSOR.PCK"), FileMap::getFilePath("UFOGRAPH/CURSOR.TAB"));
+	_sets["CURSOR.PCK"]->loadPck("UFOGRAPH/CURSOR.PCK", "UFOGRAPH/CURSOR.TAB");
 	_sets["SMOKE.PCK"] = new SurfaceSet(32, 40);
-	_sets["SMOKE.PCK"]->loadPck(FileMap::getFilePath("UFOGRAPH/SMOKE.PCK"), FileMap::getFilePath("UFOGRAPH/SMOKE.TAB"));
+	_sets["SMOKE.PCK"]->loadPck("UFOGRAPH/SMOKE.PCK", "UFOGRAPH/SMOKE.TAB");
 	_sets["HIT.PCK"] = new SurfaceSet(32, 40);
-	_sets["HIT.PCK"]->loadPck(FileMap::getFilePath("UFOGRAPH/HIT.PCK"), FileMap::getFilePath("UFOGRAPH/HIT.TAB"));
+	_sets["HIT.PCK"]->loadPck("UFOGRAPH/HIT.PCK", "UFOGRAPH/HIT.TAB");
 	_sets["X1.PCK"] = new SurfaceSet(128, 64);
-	_sets["X1.PCK"]->loadPck(FileMap::getFilePath("UFOGRAPH/X1.PCK"), FileMap::getFilePath("UFOGRAPH/X1.TAB"));
+	_sets["X1.PCK"]->loadPck("UFOGRAPH/X1.PCK", "UFOGRAPH/X1.TAB");
 	_sets["MEDIBITS.DAT"] = new SurfaceSet(52, 58);
-	_sets["MEDIBITS.DAT"]->loadDat(FileMap::getFilePath("UFOGRAPH/MEDIBITS.DAT"));
+	_sets["MEDIBITS.DAT"]->loadDat("UFOGRAPH/MEDIBITS.DAT");
 	_sets["DETBLOB.DAT"] = new SurfaceSet(16, 16);
-	_sets["DETBLOB.DAT"]->loadDat(FileMap::getFilePath("UFOGRAPH/DETBLOB.DAT"));
+	_sets["DETBLOB.DAT"]->loadDat("UFOGRAPH/DETBLOB.DAT");
+	_sets["Projectiles"] = new SurfaceSet(3, 3);
+	_sets["UnderwaterProjectiles"] = new SurfaceSet(3, 3);
 
 	// Load Battlescape Terrain (only blanks are loaded, others are loaded just in time)
 	_sets["BLANKS.PCK"] = new SurfaceSet(32, 40);
-	_sets["BLANKS.PCK"]->loadPck(FileMap::getFilePath("TERRAIN/BLANKS.PCK"), FileMap::getFilePath("TERRAIN/BLANKS.TAB"));
+	_sets["BLANKS.PCK"]->loadPck("TERRAIN/BLANKS.PCK", "TERRAIN/BLANKS.TAB");
 
 	// Load Battlescape units
-	std::set<std::string> unitsContents = FileMap::getVFolderContents("UNITS");
-	std::set<std::string> usets = FileMap::filterFiles(unitsContents, "PCK");
-	for (std::set<std::string>::iterator i = usets.begin(); i != usets.end(); ++i)
+	const auto& unitsContents = FileMap::getVFolderContents("UNITS");
+	auto usets = FileMap::filterFiles(unitsContents, "PCK");
+	for (const auto& name : usets)
 	{
-		std::string path = FileMap::getFilePath("UNITS/" + *i);
-		std::string tab = FileMap::getFilePath("UNITS/" + CrossPlatform::noExt(*i) + ".TAB");
-		std::string fname = *i;
-		std::transform(i->begin(), i->end(), fname.begin(), toupper);
+		std::string fname = name;
+		std::transform(name.begin(), name.end(), fname.begin(), toupper);
 		if (fname != "BIGOBS.PCK")
 			_sets[fname] = new SurfaceSet(32, 40);
 		else
 			_sets[fname] = new SurfaceSet(32, 48);
-		_sets[fname]->loadPck(path, tab);
+		_sets[fname]->loadPck("UNITS/" + name, "UNITS/" + CrossPlatform::noExt(name) + ".TAB");
 	}
 	// incomplete chryssalid set: 1.0 data: stop loading.
 	if (_sets.find("CHRYS.PCK") != _sets.end() && !_sets["CHRYS.PCK"]->getFrame(225))
@@ -2627,22 +5508,22 @@ void Mod::loadBattlescapeResources()
 		throw Exception("Invalid CHRYS.PCK, please patch your X-COM data to the latest version");
 	}
 	// TFTD uses the loftemps dat from the terrain folder, but still has enemy unknown's version in the geodata folder, which is short by 2 entries.
-	std::set<std::string> terrainContents = FileMap::getVFolderContents("TERRAIN");
+	const auto& terrainContents = FileMap::getVFolderContents("TERRAIN");
 	if (terrainContents.find("loftemps.dat") != terrainContents.end())
 	{
-		MapDataSet::loadLOFTEMPS(FileMap::getFilePath("TERRAIN/LOFTEMPS.DAT"), &_voxelData);
+		MapDataSet::loadLOFTEMPS("TERRAIN/LOFTEMPS.DAT", &_voxelData);
 	}
 	else
 	{
-		MapDataSet::loadLOFTEMPS(FileMap::getFilePath("GEODATA/LOFTEMPS.DAT"), &_voxelData);
+		MapDataSet::loadLOFTEMPS("GEODATA/LOFTEMPS.DAT", &_voxelData);
 	}
 
 	std::string scrs[] = { "TAC00.SCR" };
 
-	for (size_t i = 0; i < sizeof(scrs) / sizeof(scrs[0]); ++i)
+	for (size_t i = 0; i < ARRAYLEN(scrs); ++i)
 	{
 		_surfaces[scrs[i]] = new Surface(320, 200);
-		_surfaces[scrs[i]]->loadScr(FileMap::getFilePath("UFOGRAPH/" + scrs[i]));
+		_surfaces[scrs[i]]->loadScr("UFOGRAPH/" + scrs[i]);
 	}
 
 	// lower case so we can find them in the contents map
@@ -2660,8 +5541,8 @@ void Mod::loadBattlescapeResources()
 	{ 2, 9, 24, 255 },
 	{ 2, 0, 24, 255 } };
 
-	std::set<std::string> ufographContents = FileMap::getVFolderContents("UFOGRAPH");
-	for (size_t i = 0; i < sizeof(lbms) / sizeof(lbms[0]); ++i)
+	const auto& ufographContents = FileMap::getVFolderContents("UFOGRAPH");
+	for (size_t i = 0; i < ARRAYLEN(lbms); ++i)
 	{
 		if (ufographContents.find(lbms[i]) == ufographContents.end())
 		{
@@ -2672,9 +5553,9 @@ void Mod::loadBattlescapeResources()
 		{
 			delete _palettes["PAL_BATTLESCAPE"];
 		}
-
+		// TODO: if we need only the palette, say so.
 		Surface *tempSurface = new Surface(1, 1);
-		tempSurface->loadImage(FileMap::getFilePath("UFOGRAPH/" + lbms[i]));
+		tempSurface->loadImage("UFOGRAPH/" + lbms[i]);
 		_palettes[pals[i]] = new Palette();
 		SDL_Color *colors = tempSurface->getPalette();
 		colors[255] = backPal[i];
@@ -2691,7 +5572,7 @@ void Mod::loadBattlescapeResources()
 		"SCANBORD.PCK",
 		"UNIBORD.PCK" };
 
-	for (size_t i = 0; i < sizeof(spks) / sizeof(spks[0]); ++i)
+	for (size_t i = 0; i < ARRAYLEN(spks); ++i)
 	{
 		std::string fname = spks[i];
 		std::transform(fname.begin(), fname.end(), fname.begin(), tolower);
@@ -2701,15 +5582,14 @@ void Mod::loadBattlescapeResources()
 		}
 
 		_surfaces[spks[i]] = new Surface(320, 200);
-		_surfaces[spks[i]]->loadSpk(FileMap::getFilePath("UFOGRAPH/" + spks[i]));
+		_surfaces[spks[i]]->loadSpk("UFOGRAPH/" + spks[i]);
 	}
 
-
-	std::set<std::string> bdys = FileMap::filterFiles(ufographContents, "BDY");
-	for (std::set<std::string>::iterator i = bdys.begin(); i != bdys.end(); ++i)
+	auto bdys = FileMap::filterFiles(ufographContents, "BDY");
+	for (const auto& name : bdys)
 	{
-		std::string idxName = *i;
-		std::transform(i->begin(), i->end(), idxName.begin(), toupper);
+		std::string idxName = name;
+		std::transform(name.begin(), name.end(), idxName.begin(), toupper);
 		idxName = idxName.substr(0, idxName.length() - 3);
 		if (idxName.substr(0, 3) == "MAN")
 		{
@@ -2724,17 +5604,17 @@ void Mod::loadBattlescapeResources()
 			idxName = idxName + "PCK";
 		}
 		_surfaces[idxName] = new Surface(320, 200);
-		_surfaces[idxName]->loadBdy(FileMap::getFilePath("UFOGRAPH/" + *i));
+		_surfaces[idxName]->loadBdy("UFOGRAPH/" + name);
 	}
 
 	// Load Battlescape inventory
-	std::set<std::string> invs = FileMap::filterFiles(ufographContents, "SPK");
-	for (std::set<std::string>::iterator i = invs.begin(); i != invs.end(); ++i)
+	auto invs = FileMap::filterFiles(ufographContents, "SPK");
+	for (const auto& name : invs)
 	{
-		std::string fname = *i;
-		std::transform(i->begin(), i->end(), fname.begin(), toupper);
+		std::string fname = name;
+		std::transform(name.begin(), name.end(), fname.begin(), toupper);
 		_surfaces[fname] = new Surface(320, 200);
-		_surfaces[fname]->loadSpk(FileMap::getFilePath("UFOGRAPH/" + fname));
+		_surfaces[fname]->loadSpk("UFOGRAPH/" + fname);
 	}
 
 	//"fix" of color index in original solders sprites
@@ -2877,9 +5757,8 @@ void Mod::loadBattlescapeResources()
 void Mod::loadExtraResources()
 {
 	// Load fonts
-	YAML::Node doc = YAML::LoadFile(FileMap::getFilePath("Language/" + _fontName));
-	Log(LOG_INFO) << "Loading font... " << _fontName;
-	Font::setIndex(Language::utf8ToWstr(doc["chars"].as<std::string>()));
+	YAML::Node doc = FileMap::getYAML("Language/" + _fontName);
+	Log(LOG_INFO) << "Loading fonts... " << _fontName;
 	for (YAML::const_iterator i = doc["fonts"].begin(); i != doc["fonts"].end(); ++i)
 	{
 		std::string id = (*i)["id"].as<std::string>();
@@ -2892,40 +5771,40 @@ void Mod::loadExtraResources()
 	// Load musics
 	if (!Options::mute)
 	{
-		const std::set<std::string> &soundFiles(FileMap::getVFolderContents("SOUND"));
+		const auto& soundFiles = FileMap::getVFolderContents("SOUND");
 
 		// Check which music version is available
 		CatFile *adlibcat = 0, *aintrocat = 0;
 		GMCatFile *gmcat = 0;
 
-		for (std::set<std::string>::iterator i = soundFiles.begin(); i != soundFiles.end(); ++i)
+		for (const auto& name : soundFiles)
 		{
-			if (0 == i->compare("adlib.cat"))
+			if (0 == name.compare("adlib.cat"))
 			{
-				adlibcat = new CatFile(FileMap::getFilePath("SOUND/" + *i).c_str());
+				adlibcat = new CatFile("SOUND/" + name);
 			}
-			else if (0 == i->compare("aintro.cat"))
+			else if (0 == name.compare("aintro.cat"))
 			{
-				aintrocat = new CatFile(FileMap::getFilePath("SOUND/" + *i).c_str());
+				aintrocat = new CatFile("SOUND/" + name);
 			}
-			else if (0 == i->compare("gm.cat"))
+			else if (0 == name.compare("gm.cat"))
 			{
-				gmcat = new GMCatFile(FileMap::getFilePath("SOUND/" + *i).c_str());
+				gmcat = new GMCatFile("SOUND/" + name);
 			}
 		}
 
 		// Try the preferred format first, otherwise use the default priority
-		MusicFormat priority[] = { Options::preferredMusic, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_MIDI };
-		for (std::map<std::string, RuleMusic *>::const_iterator i = _musicDefs.begin(); i != _musicDefs.end(); ++i)
+		MusicFormat priority[] = { Options::preferredMusic, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_GM, MUSIC_MIDI };
+		for (auto& pair : _musicDefs)
 		{
 			Music *music = 0;
-			for (size_t j = 0; j < sizeof(priority) / sizeof(priority[0]) && music == 0; ++j)
+			for (size_t j = 0; j < ARRAYLEN(priority) && music == 0; ++j)
 			{
-				music = loadMusic(priority[j], (*i).first, (*i).second->getCatPos(), (*i).second->getNormalization(), adlibcat, aintrocat, gmcat);
+				music = loadMusic(priority[j], pair.second, adlibcat, aintrocat, gmcat);
 			}
 			if (music)
 			{
-				_musics[(*i).first] = music;
+				_musics[pair.first] = music;
 			}
 
 		}
@@ -2936,207 +5815,159 @@ void Mod::loadExtraResources()
 	}
 #endif
 
-	Log(LOG_INFO) << "Loading extra resources from ruleset...";
-	for (std::vector< std::pair<std::string, ExtraSprites *> >::const_iterator i = _extraSprites.begin(); i != _extraSprites.end(); ++i)
+	Log(LOG_INFO) << "Lazy loading: " << Options::lazyLoadResources;
+	if (!Options::lazyLoadResources)
 	{
-		std::string sheetName = i->first;
-		ExtraSprites *spritePack = i->second;
-		bool subdivision = (spritePack->getSubX() != 0 && spritePack->getSubY() != 0);
-		if (spritePack->getSingleImage())
+		Log(LOG_INFO) << "Loading extra resources from ruleset...";
+		for (auto& pair : _extraSprites)
 		{
-			if (_surfaces.find(sheetName) == _surfaces.end())
+			for (auto* extraSprites : pair.second)
 			{
-				Log(LOG_VERBOSE) << "Creating new single image: " << sheetName;
-				_surfaces[sheetName] = new Surface(spritePack->getWidth(), spritePack->getHeight());
-			}
-			else
-			{
-				Log(LOG_VERBOSE) << "Adding/Replacing single image: " << sheetName;
-				delete _surfaces[sheetName];
-				_surfaces[sheetName] = new Surface(spritePack->getWidth(), spritePack->getHeight());
-			}
-			_surfaces[sheetName]->loadImage(FileMap::getFilePath((*spritePack->getSprites())[0]));
-		}
-		else
-		{
-			bool adding = false;
-			if (_sets.find(sheetName) == _sets.end())
-			{
-				Log(LOG_VERBOSE) << "Creating new surface set: " << sheetName;
-				adding = true;
-				if (subdivision)
-				{
-					_sets[sheetName] = new SurfaceSet(spritePack->getSubX(), spritePack->getSubY());
-				}
-				else
-				{
-					_sets[sheetName] = new SurfaceSet(spritePack->getWidth(), spritePack->getHeight());
-				}
-			}
-			else
-			{
-				Log(LOG_VERBOSE) << "Adding/Replacing items in surface set: " << sheetName;
-			}
-
-			if (subdivision)
-			{
-				int frames = (spritePack->getWidth() / spritePack->getSubX())*(spritePack->getHeight() / spritePack->getSubY());
-				Log(LOG_VERBOSE) << "Subdividing into " << frames << " frames.";
-			}
-
-			for (std::map<int, std::string>::iterator j = spritePack->getSprites()->begin(); j != spritePack->getSprites()->end(); ++j)
-			{
-				int startFrame = j->first;
-				std::string fileName = j->second;
-				if (fileName.substr(fileName.length() - 1, 1) == "/")
-				{
-					Log(LOG_VERBOSE) << "Loading surface set from folder: " << fileName << " starting at frame: " << startFrame;
-					int offset = startFrame;
-					std::set<std::string> contents = FileMap::getVFolderContents(fileName);
-					for (std::set<std::string>::iterator k = contents.begin(); k != contents.end(); ++k)
-					{
-						if (!isImageFile((*k).substr((*k).length() - 4, (*k).length())))
-							continue;
-						try
-						{
-							std::string fullPath = FileMap::getFilePath(fileName + *k);
-							if (_sets[sheetName]->getFrame(offset))
-							{
-								Log(LOG_VERBOSE) << "Replacing frame: " << offset;
-								_sets[sheetName]->getFrame(offset)->loadImage(fullPath);
-							}
-							else
-							{
-								if (adding)
-								{
-									_sets[sheetName]->addFrame(offset)->loadImage(fullPath);
-								}
-								else
-								{
-									Log(LOG_VERBOSE) << "Adding frame: " << offset + spritePack->getModIndex();
-									_sets[sheetName]->addFrame(offset + spritePack->getModIndex())->loadImage(fullPath);
-								}
-							}
-							offset++;
-						}
-						catch (Exception &e)
-						{
-							Log(LOG_WARNING) << e.what();
-						}
-					}
-				}
-				else
-				{
-					if (spritePack->getSubX() == 0 && spritePack->getSubY() == 0)
-					{
-						std::string fullPath = FileMap::getFilePath(fileName);
-						if (_sets[sheetName]->getFrame(startFrame))
-						{
-							Log(LOG_VERBOSE) << "Replacing frame: " << startFrame;
-							_sets[sheetName]->getFrame(startFrame)->loadImage(fullPath);
-						}
-						else
-						{
-							Log(LOG_VERBOSE) << "Adding frame: " << startFrame << ", using index: " << startFrame + spritePack->getModIndex();
-							_sets[sheetName]->addFrame(startFrame + spritePack->getModIndex())->loadImage(fullPath);
-						}
-					}
-					else
-					{
-						Surface *temp = new Surface(spritePack->getWidth(), spritePack->getHeight());
-						temp->loadImage(FileMap::getFilePath((*spritePack->getSprites())[startFrame]));
-						int xDivision = spritePack->getWidth() / spritePack->getSubX();
-						int yDivision = spritePack->getHeight() / spritePack->getSubY();
-						int offset = startFrame;
-
-						for (int y = 0; y != yDivision; ++y)
-						{
-							for (int x = 0; x != xDivision; ++x)
-							{
-								if (_sets[sheetName]->getFrame(offset))
-								{
-									Log(LOG_VERBOSE) << "Replacing frame: " << offset;
-									_sets[sheetName]->getFrame(offset)->clear();
-									// for some reason regular blit() doesn't work here how i want it, so i use this function instead.
-									temp->blitNShade(_sets[sheetName]->getFrame(offset), 0 - (x * spritePack->getSubX()), 0 - (y * spritePack->getSubY()), 0);
-								}
-								else
-								{
-									if (adding)
-									{
-										// for some reason regular blit() doesn't work here how i want it, so i use this function instead.
-										temp->blitNShade(_sets[sheetName]->addFrame(offset), 0 - (x * spritePack->getSubX()), 0 - (y * spritePack->getSubY()), 0);
-									}
-									else
-									{
-										Log(LOG_VERBOSE) << "Adding frame: " << offset + spritePack->getModIndex();
-										// for some reason regular blit() doesn't work here how i want it, so i use this function instead.
-										temp->blitNShade(_sets[sheetName]->addFrame(offset + spritePack->getModIndex()), 0 - (x * spritePack->getSubX()), 0 - (y * spritePack->getSubY()), 0);
-									}
-								}
-								++offset;
-							}
-						}
-						delete temp;
-					}
-				}
+				loadExtraSprite(extraSprites);
 			}
 		}
 	}
 
-	for (std::vector< std::pair<std::string, ExtraSounds *> >::const_iterator i = _extraSounds.begin(); i != _extraSounds.end(); ++i)
+	if (!Options::mute)
 	{
-		std::string setName = i->first;
-		ExtraSounds *soundPack = i->second;
-		if (_sounds.find(setName) == _sounds.end())
+		for (const auto& pair : _extraSounds)
 		{
-			Log(LOG_VERBOSE) << "Creating new sound set: " << setName << ", this will likely have no in-game use.";
-			_sounds[setName] = new SoundSet();
-		}
-		else Log(LOG_VERBOSE) << "Adding/Replacing items in sound set: " << setName;
-		for (std::map<int, std::string>::iterator j = soundPack->getSounds()->begin(); j != soundPack->getSounds()->end(); ++j)
-		{
-			int startSound = j->first;
-			std::string fileName = j->second;
-			if (fileName.substr(fileName.length() - 1, 1) == "/")
+			const auto& setName = pair.first;
+			ExtraSounds *soundPack = pair.second;
+			SoundSet *set = 0;
+
+			auto search = _sounds.find(setName);
+			if (search != _sounds.end())
 			{
-				Log(LOG_VERBOSE) << "Loading sound set from folder: " << fileName << " starting at index: " << startSound;
-				int offset = startSound;
-				std::set<std::string> contents = FileMap::getVFolderContents(fileName);
-				for (std::set<std::string>::iterator k = contents.begin(); k != contents.end(); ++k)
-				{
-					try
-					{
-						std::string fullPath = FileMap::getFilePath(fileName + *k);
-						if (_sounds[setName]->getSound(offset))
-						{
-							_sounds[setName]->getSound(offset)->load(fullPath);
-						}
-						else
-						{
-							_sounds[setName]->addSound(offset + soundPack->getModIndex())->load(fullPath);
-						}
-						offset++;
-					}
-					catch (Exception &e)
-					{
-						Log(LOG_WARNING) << e.what();
-					}
-				}
+				set = search->second;
 			}
-			else
+			_sounds[setName] = soundPack->loadSoundSet(set);
+		}
+	}
+
+	Log(LOG_INFO) << "Loading custom palettes from ruleset...";
+	for (const auto& pair : _customPalettes)
+	{
+		CustomPalettes *palDef = pair.second;
+		const auto& palTargetName = palDef->getTarget();
+		if (_palettes.find(palTargetName) == _palettes.end())
+		{
+			Log(LOG_INFO) << "Creating a new palette: " << palTargetName;
+			_palettes[palTargetName] = new Palette();
+			_palettes[palTargetName]->initBlack();
+		}
+		else
+		{
+			Log(LOG_VERBOSE) << "Replacing items in target palette: " << palTargetName;
+		}
+
+		Palette *target = _palettes[palTargetName];
+		const auto& fileName = palDef->getFile();
+		if (fileName.empty())
+		{
+			for (const auto& def : *palDef->getPalette())
 			{
-				std::string fullPath = FileMap::getFilePath(fileName);
-				if (_sounds[setName]->getSound(startSound))
-				{
-					Log(LOG_VERBOSE) << "Replacing index: " << startSound;
-					_sounds[setName]->getSound(startSound)->load(fullPath);
-				}
-				else
-				{
-					Log(LOG_VERBOSE) << "Adding index: " << startSound;
-					_sounds[setName]->addSound(startSound + soundPack->getModIndex())->load(fullPath);
-				}
+				target->setColor(def.first, def.second.x, def.second.y, def.second.z);
+			}
+		}
+		else
+		{
+			// Load from JASC file
+			auto palFile = FileMap::getIStream(fileName);
+			std::string line;
+			std::getline(*palFile, line); // header
+			std::getline(*palFile, line); // file format
+			std::getline(*palFile, line); // number of colors
+			int r = 0, g = 0, b = 0;
+			for (int j = 0; j < 256; ++j)
+			{
+				std::getline(*palFile, line); // j-th color index
+				std::stringstream ss(line);
+				ss >> r;
+				ss >> g;
+				ss >> b;
+				target->setColor(j, r, g, b);
+			}
+		}
+	}
+
+	bool backup_logged = false;
+	for (auto pal : _palettes)
+	{
+		if (pal.first.find("PAL_") == 0)
+		{
+			if (!backup_logged) { Log(LOG_INFO) << "Making palette backups..."; backup_logged = true; }
+			Log(LOG_VERBOSE) << "Creating a backup for palette: " << pal.first;
+			std::string newName = "BACKUP_" + pal.first;
+			_palettes[newName] = new Palette();
+			_palettes[newName]->initBlack();
+			_palettes[newName]->copyFrom(pal.second);
+		}
+	}
+
+	// Support for UFO-based mods and hybrid mods
+	if (_transparencyLUTs.empty() && !_transparencies.empty())
+	{
+		if (_palettes["PAL_BATTLESCAPE"])
+		{
+			Log(LOG_INFO) << "Creating transparency LUTs for PAL_BATTLESCAPE...";
+			createTransparencyLUT(_palettes["PAL_BATTLESCAPE"]);
+		}
+		if (_palettes["PAL_BATTLESCAPE_1"] &&
+			_palettes["PAL_BATTLESCAPE_2"] &&
+			_palettes["PAL_BATTLESCAPE_3"])
+		{
+			Log(LOG_INFO) << "Creating transparency LUTs for hybrid custom palettes...";
+			createTransparencyLUT(_palettes["PAL_BATTLESCAPE_1"]);
+			createTransparencyLUT(_palettes["PAL_BATTLESCAPE_2"]);
+			createTransparencyLUT(_palettes["PAL_BATTLESCAPE_3"]);
+		}
+	}
+
+	TextButton::soundPress = getSound("GEO.CAT", Mod::BUTTON_PRESS);
+	Window::soundPopup[0] = getSound("GEO.CAT", Mod::WINDOW_POPUP[0]);
+	Window::soundPopup[1] = getSound("GEO.CAT", Mod::WINDOW_POPUP[1]);
+	Window::soundPopup[2] = getSound("GEO.CAT", Mod::WINDOW_POPUP[2]);
+}
+
+void Mod::loadExtraSprite(ExtraSprites *spritePack)
+{
+	if (spritePack->isLoaded())
+		return;
+
+	if (spritePack->getSingleImage())
+	{
+		Surface *surface = 0;
+		auto i = _surfaces.find(spritePack->getType());
+		if (i != _surfaces.end())
+		{
+			surface = i->second;
+		}
+
+		_surfaces[spritePack->getType()] = spritePack->loadSurface(surface);
+		if (_statePalette)
+		{
+			if (spritePack->getType().find("_CPAL") == std::string::npos)
+			{
+				_surfaces[spritePack->getType()]->setPalette(_statePalette);
+			}
+		}
+	}
+	else
+	{
+		SurfaceSet *set = 0;
+		auto i = _sets.find(spritePack->getType());
+		if (i != _sets.end())
+		{
+			set = i->second;
+		}
+
+		_sets[spritePack->getType()] = spritePack->loadSurfaceSet(set);
+		if (_statePalette)
+		{
+			if (spritePack->getType().find("_CPAL") == std::string::npos)
+			{
+				_sets[spritePack->getType()]->setPalette(_statePalette);
 			}
 		}
 	}
@@ -3147,44 +5978,63 @@ void Mod::loadExtraResources()
  */
 void Mod::modResources()
 {
-	// bigger geoscape background
-	int newWidth = 320 - 64, newHeight = 200;
-	Surface *newGeo = new Surface(newWidth * 3, newHeight * 3);
-	Surface *oldGeo = _surfaces["GEOBORD.SCR"];
-	for (int x = 0; x < newWidth; ++x)
+	// we're gonna need these
+	getSurface("GEOBORD.SCR");
+	getSurface("ALTGEOBORD.SCR", false);
+	getSurface("BACK07.SCR");
+	getSurface("ALTBACK07.SCR", false);
+	getSurface("BACK06.SCR");
+	getSurface("UNIBORD.PCK");
+	getSurfaceSet("HANDOB.PCK");
+	getSurfaceSet("FLOOROB.PCK");
+	getSurfaceSet("BIGOBS.PCK");
+
+	// embiggen the geoscape background by mirroring the contents
+	// modders can provide their own backgrounds via ALTGEOBORD.SCR
+	if (_surfaces.find("ALTGEOBORD.SCR") == _surfaces.end())
 	{
-		for (int y = 0; y < newHeight; ++y)
+		int newWidth = 320 - 64, newHeight = 200;
+		Surface *newGeo = new Surface(newWidth * 3, newHeight * 3);
+		Surface *oldGeo = _surfaces["GEOBORD.SCR"];
+		for (int x = 0; x < newWidth; ++x)
 		{
-			newGeo->setPixel(newWidth + x, newHeight + y, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth - x - 1, newHeight + y, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth * 3 - x - 1, newHeight + y, oldGeo->getPixel(x, y));
+			for (int y = 0; y < newHeight; ++y)
+			{
+				newGeo->setPixel(newWidth + x, newHeight + y, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth - x - 1, newHeight + y, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth * 3 - x - 1, newHeight + y, oldGeo->getPixel(x, y));
 
-			newGeo->setPixel(newWidth + x, newHeight - y - 1, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth - x - 1, newHeight - y - 1, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth * 3 - x - 1, newHeight - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth + x, newHeight - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth - x - 1, newHeight - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth * 3 - x - 1, newHeight - y - 1, oldGeo->getPixel(x, y));
 
-			newGeo->setPixel(newWidth + x, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth - x - 1, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
-			newGeo->setPixel(newWidth * 3 - x - 1, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth + x, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth - x - 1, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
+				newGeo->setPixel(newWidth * 3 - x - 1, newHeight * 3 - y - 1, oldGeo->getPixel(x, y));
+			}
 		}
+		_surfaces["ALTGEOBORD.SCR"] = newGeo;
 	}
-	_surfaces["ALTGEOBORD.SCR"] = newGeo;
 
 	// here we create an "alternate" background surface for the base info screen.
-	_surfaces["ALTBACK07.SCR"] = new Surface(320, 200);
-	_surfaces["ALTBACK07.SCR"]->loadScr(FileMap::getFilePath("GEOGRAPH/BACK07.SCR"));
-	for (int y = 172; y >= 152; --y)
-		for (int x = 5; x <= 314; ++x)
-			_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 4, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
-	for (int y = 147; y >= 134; --y)
-		for (int x = 5; x <= 314; ++x)
-			_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 9, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
-	for (int y = 132; y >= 109; --y)
-		for (int x = 5; x <= 314; ++x)
-			_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 10, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
+	if (_surfaces.find("ALTBACK07.SCR") == _surfaces.end())
+	{
+		_surfaces["ALTBACK07.SCR"] = new Surface(320, 200);
+		_surfaces["ALTBACK07.SCR"]->loadScr("GEOGRAPH/BACK07.SCR");
+		for (int y = 172; y >= 152; --y)
+			for (int x = 5; x <= 314; ++x)
+				_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 4, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
+		for (int y = 147; y >= 134; --y)
+			for (int x = 5; x <= 314; ++x)
+				_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 9, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
+		for (int y = 132; y >= 109; --y)
+			for (int x = 5; x <= 314; ++x)
+				_surfaces["ALTBACK07.SCR"]->setPixel(x, y + 10, _surfaces["ALTBACK07.SCR"]->getPixel(x, y));
+	}
 
-	// we create extra rows on the soldier stat screens by shrinking them all down one pixel.
-	// this is done after loading them, but BEFORE loading the extraSprites, in case a modder wants to replace them.
+	// we create extra rows on the soldier stat screens by shrinking them all down one pixel/two pixels.
+	int rowHeight = _manaEnabled ? 10 : 11;
+	bool moveOnePixelUp = _manaEnabled ? false : true;
 
 	// first, let's do the base info screen
 	// erase the old lines, copying from a +2 offset to account for the dithering
@@ -3192,111 +6042,86 @@ void Mod::modResources()
 		for (int x = 0; x < 149; ++x)
 			_surfaces["BACK06.SCR"]->setPixel(x, y, _surfaces["BACK06.SCR"]->getPixel(x, y + 2));
 	// drawn new lines, use the bottom row of pixels as a basis
-	for (int y = 89; y < 199; y += 11)
+	for (int y = 89; y < 199; y += rowHeight)
 		for (int x = 0; x < 149; ++x)
 			_surfaces["BACK06.SCR"]->setPixel(x, y, _surfaces["BACK06.SCR"]->getPixel(x, 199));
 	// finally, move the top of the graph up by one pixel, offset for the last iteration again due to dithering.
-	for (int y = 72; y < 80; ++y)
-		for (int x = 0; x < 320; ++x)
-		{
-			_surfaces["BACK06.SCR"]->setPixel(x, y, _surfaces["BACK06.SCR"]->getPixel(x, y + (y == 79 ? 2 : 1)));
-		}
+	if (moveOnePixelUp)
+	{
+		for (int y = 72; y < 80; ++y)
+			for (int x = 0; x < 320; ++x)
+			{
+				_surfaces["BACK06.SCR"]->setPixel(x, y, _surfaces["BACK06.SCR"]->getPixel(x, y + (y == 79 ? 2 : 1)));
+			}
+	}
 
 	// now, let's adjust the battlescape info screen.
+	int startHere = _manaEnabled ? 191 : 190;
+	int stopHere = _manaEnabled ? 28 : 37;
+	bool moveDown = _manaEnabled ? false : true;
+
 	// erase the old lines, no need to worry about dithering on this one.
 	for (int y = 39; y < 199; y += 10)
 		for (int x = 0; x < 169; ++x)
 			_surfaces["UNIBORD.PCK"]->setPixel(x, y, _surfaces["UNIBORD.PCK"]->getPixel(x, 30));
 	// drawn new lines, use the bottom row of pixels as a basis
-	for (int y = 190; y > 37; y -= 9)
+	for (int y = startHere; y > stopHere; y -= 9)
 		for (int x = 0; x < 169; ++x)
 			_surfaces["UNIBORD.PCK"]->setPixel(x, y, _surfaces["UNIBORD.PCK"]->getPixel(x, 199));
 	// move the top of the graph down by eight pixels to erase the row we don't need (we actually created ~1.8 extra rows earlier)
-	for (int y = 37; y > 29; --y)
+	if (moveDown)
+	{
+		for (int y = 37; y > 29; --y)
+			for (int x = 0; x < 320; ++x)
+			{
+				_surfaces["UNIBORD.PCK"]->setPixel(x, y, _surfaces["UNIBORD.PCK"]->getPixel(x, y - 8));
+				_surfaces["UNIBORD.PCK"]->setPixel(x, y - 8, 0);
+			}
+	}
+	else
+	{
+		// remove bottom line of the (entire) last row
 		for (int x = 0; x < 320; ++x)
-		{
-			_surfaces["UNIBORD.PCK"]->setPixel(x, y, _surfaces["UNIBORD.PCK"]->getPixel(x, y - 8));
-			_surfaces["UNIBORD.PCK"]->setPixel(x, y - 8, 0);
-		}
-
-	// handob2 is used for all the left handed sprites.
-	_sets["HANDOB2.PCK"] = new SurfaceSet(*_sets["HANDOB.PCK"]);
-}
-
-/**
- * Determines if an image file is an acceptable format for the game.
- * @param extension Image file extension.
- * @return True/false
- */
-bool Mod::isImageFile(std::string extension) const
-{
-	std::transform(extension.begin(), extension.end(), extension.begin(), toupper);
-
-	return (
-		// arbitrary limitation: let's not use these ones (although they're officially supported by sdl)
-		/*
-		extension == ".ICO" ||
-		extension == ".CUR" ||
-		extension == ".PNM" ||
-		extension == ".PPM" ||
-		extension == ".PGM" ||
-		extension == ".PBM" ||
-		extension == ".XPM" ||
-		extension == "ILBM" ||
-		// excluding jpeg to avoid inevitable issues due to compression
-		extension == ".JPG" ||
-		extension == "JPEG" ||
-		*/
-		extension == ".BMP" ||
-		extension == ".LBM" ||
-		extension == ".IFF" ||
-		extension == ".PCX" ||
-		extension == ".GIF" ||
-		extension == ".PNG" ||
-		extension == ".TGA" ||
-		extension == ".TIF" ||
-		extension == "TIFF");
+			_surfaces["UNIBORD.PCK"]->setPixel(x, 199, _surfaces["UNIBORD.PCK"]->getPixel(x, 30));
+	}
 }
 
 /**
  * Loads the specified music file format.
  * @param fmt Format of the music.
- * @param file Filename of the music.
- * @param track Track number of the music, if stored in a CAT.
- * @param volume Volume modifier of the music, if stored in a CAT.
+ * @param rule Parameters of the music.
  * @param adlibcat Pointer to ADLIB.CAT if available.
  * @param aintrocat Pointer to AINTRO.CAT if available.
  * @param gmcat Pointer to GM.CAT if available.
  * @return Pointer to the music file, or NULL if it couldn't be loaded.
  */
-Music *Mod::loadMusic(MusicFormat fmt, const std::string &file, int track, float volume, CatFile *adlibcat, CatFile *aintrocat, GMCatFile *gmcat) const
+Music* Mod::loadMusic(MusicFormat fmt, RuleMusic* rule, CatFile* adlibcat, CatFile* aintrocat, GMCatFile* gmcat) const
 {
-	/* MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_MIDI */
-	static const std::string exts[] = { "", ".flac", ".ogg", ".mp3", ".mod", ".wav", "", ".mid" };
+	/* MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_GM, MUSIC_MIDI */
+	static const std::string exts[] = { "", ".flac", ".ogg", ".mp3", ".mod", ".wav", "", "", ".mid" };
 	Music *music = 0;
-	std::set<std::string> soundContents = FileMap::getVFolderContents("SOUND");
+	const auto& soundContents = FileMap::getVFolderContents("SOUND");
+	size_t track = rule->getCatPos();
 	try
 	{
-		std::string fname = file + exts[fmt];
-		std::transform(fname.begin(), fname.end(), fname.begin(), tolower);
-
 		// Try Adlib music
 		if (fmt == MUSIC_ADLIB)
 		{
 			if (adlibcat && Options::audioBitDepth == 16)
 			{
-				music = new AdlibMusic(volume);
-				if (track < adlibcat->getAmount())
+				if (track < adlibcat->size())
 				{
-					music->load(adlibcat->load(track, true), adlibcat->getObjectSize(track));
+					music = new AdlibMusic(rule->getNormalization());
+					music->load(adlibcat->getRWops(track));
 				}
 				// separate intro music
 				else if (aintrocat)
 				{
-					track -= adlibcat->getAmount();
-					if (track < aintrocat->getAmount())
+					track -= adlibcat->size();
+					if (track < aintrocat->size())
 					{
-						music->load(aintrocat->load(track, true), aintrocat->getObjectSize(track));
+						music = new AdlibMusic(rule->getNormalization());
+						music->load(aintrocat->getRWops(track));
 					}
 					else
 					{
@@ -3306,31 +6131,25 @@ Music *Mod::loadMusic(MusicFormat fmt, const std::string &file, int track, float
 				}
 			}
 		}
-		// Try MIDI music
-		else if (fmt == MUSIC_MIDI)
+		// Try MIDI music (from GM.CAT)
+		else if (fmt == MUSIC_GM)
 		{
 			// DOS MIDI
-			if (gmcat && track < gmcat->getAmount())
+			if (gmcat && track < gmcat->size())
 			{
 				music = gmcat->loadMIDI(track);
-			}
-			// Windows MIDI
-			else
-			{
-				if (soundContents.find(fname) != soundContents.end())
-				{
-					music = new Music();
-					music->load(FileMap::getFilePath("SOUND/" + fname));
-				}
 			}
 		}
 		// Try digital tracks
 		else
 		{
+			std::string fname = rule->getName() + exts[fmt];
+			std::transform(fname.begin(), fname.end(), fname.begin(), ::tolower);
+
 			if (soundContents.find(fname) != soundContents.end())
 			{
 				music = new Music();
-				music->load(FileMap::getFilePath("SOUND/" + fname));
+				music->load("SOUND/" + fname);
 			}
 		}
 	}
@@ -3354,45 +6173,241 @@ Music *Mod::loadMusic(MusicFormat fmt, const std::string &file, int track, float
  */
 void Mod::createTransparencyLUT(Palette *pal)
 {
-	SDL_Color desiredColor;
+	const SDL_Color* palColors = pal->getColors(0);
 	std::vector<Uint8> lookUpTable;
 	// start with the color sets
-	for (std::vector<SDL_Color>::const_iterator tint = _transparencies.begin(); tint != _transparencies.end(); ++tint)
+	lookUpTable.reserve(_transparencies.size() * TransparenciesPaletteColors * TransparenciesOpacityLevels);
+	for (const auto& tintLevels : _transparencies)
 	{
 		// then the opacity levels, using the alpha channel as the step
-		for (int opacity = 1; opacity < 1 + tint->unused * 4; opacity += tint->unused)
+		for (const SDL_Color& tint : tintLevels)
 		{
 			// then the palette itself
-			for (int currentColor = 0; currentColor < 256; ++currentColor)
+			for (int currentColor = 0; currentColor < TransparenciesPaletteColors; ++currentColor)
 			{
-				// add the RGB values from the ruleset to those of the colors contained in the palette
-				// in order to determine the desired color
-				// yes all this casting and clamping is required, we're dealing with Uint8s here, and there's
-				// a lot of potential for values to wrap around, which would be very bad indeed.
-				desiredColor.r = std::min(255, (int)(pal->getColors(currentColor)->r) + (tint->r * opacity));
-				desiredColor.g = std::min(255, (int)(pal->getColors(currentColor)->g) + (tint->g * opacity));
-				desiredColor.b = std::min(255, (int)(pal->getColors(currentColor)->b) + (tint->b * opacity));
+				SDL_Color desiredColor;
 
-				Uint8 closest = 0;
+				desiredColor.r = std::min(255, (palColors[currentColor].r * tint.unused / 255) + tint.r);
+				desiredColor.g = std::min(255, (palColors[currentColor].g * tint.unused / 255) + tint.g);
+				desiredColor.b = std::min(255, (palColors[currentColor].b * tint.unused / 255) + tint.b);
+
+				Uint8 closest = currentColor;
 				int lowestDifference = INT_MAX;
-				// now compare each color in the palette to find the closest match to our desired one
-				for (int comparator = 0; comparator < 256; ++comparator)
+				// if opacity is zero then we stay with current color, transparent color will stay same too
+				if (tint.unused != 0 && currentColor != 0)
 				{
-					int currentDifference = Sqr(desiredColor.r - pal->getColors(comparator)->r) +
-						Sqr(desiredColor.g - pal->getColors(comparator)->g) +
-						Sqr(desiredColor.b - pal->getColors(comparator)->b);
-
-					if (currentDifference < lowestDifference)
+					// now compare each color in the palette to find the closest match to our desired one
+					for (int comparator = 1; comparator < TransparenciesPaletteColors; ++comparator)
 					{
-						closest = comparator;
-						lowestDifference = currentDifference;
+						int currentDifference = Sqr(desiredColor.r - palColors[comparator].r) +
+							Sqr(desiredColor.g - palColors[comparator].g) +
+							Sqr(desiredColor.b - palColors[comparator].b);
+
+						if (currentDifference < lowestDifference)
+						{
+							closest = comparator;
+							lowestDifference = currentDifference;
+						}
 					}
 				}
 				lookUpTable.push_back(closest);
 			}
 		}
 	}
-	_transparencyLUTs.push_back(lookUpTable);
+	_transparencyLUTs.push_back(std::move(lookUpTable));
+}
+
+StatAdjustment *Mod::getStatAdjustment(int difficulty)
+{
+	if ((size_t)difficulty >= MaxDifficultyLevels)
+	{
+		return &_statAdjustment[MaxDifficultyLevels - 1];
+	}
+	return &_statAdjustment[difficulty];
+}
+
+/**
+ * Returns the minimum amount of score the player can have,
+ * otherwise they are defeated. Changes based on difficulty.
+ * @return Score.
+ */
+int Mod::getDefeatScore() const
+{
+	return _defeatScore;
+}
+
+/**
+ * Returns the minimum amount of funds the player can have,
+ * otherwise they are defeated.
+ * @return Funds.
+ */
+int Mod::getDefeatFunds() const
+{
+	return _defeatFunds;
+}
+
+/**
+ * Enables non-vanilla difficulty features.
+ * Dehumanize yourself and face the Warboy.
+ * @return Is the player screwed?
+*/
+bool Mod::isDemigod() const
+{
+	return _difficultyDemigod;
+}
+
+
+////////////////////////////////////////////////////////////
+//					Script binding
+////////////////////////////////////////////////////////////
+
+namespace
+{
+
+template<size_t Mod::*f>
+void offset(const Mod *m, int &base, int modId)
+{
+	int baseMax = (m->*f);
+	if (base >= baseMax)
+	{
+		base += modId;
+	}
+}
+
+void getSmokeReduction(const Mod *m, int &smoke)
+{
+	// initial smoke "density" of a smoke grenade is around 15 per tile
+	// we do density/3 to get the decay of visibility
+	// so in fresh smoke we should only have 4 tiles of visibility
+	// this is traced in voxel space, with smoke affecting visibility every step of the way
+
+	// 3  - coefficient of calculation (see above).
+	// 20 - maximum view distance in vanilla Xcom.
+	// Even if MaxViewDistance will be increased via ruleset, smoke will keep effect.
+	smoke = smoke * m->getMaxViewDistance() / (3 * 20);
+}
+
+void getUnitScript(const Mod* mod, const Unit* &unit, const std::string &name)
+{
+	if (mod)
+	{
+		unit = mod->getUnit(name);
+	}
+	else
+	{
+		unit = nullptr;
+	}
+}
+void getArmorScript(const Mod* mod, const Armor* &armor, const std::string &name)
+{
+	if (mod)
+	{
+		armor = mod->getArmor(name);
+	}
+	else
+	{
+		armor = nullptr;
+	}
+}
+void getItemScript(const Mod* mod, const RuleItem* &item, const std::string &name)
+{
+	if (mod)
+	{
+		item = mod->getItem(name);
+	}
+	else
+	{
+		item = nullptr;
+	}
+}
+void getSkillScript(const Mod* mod, const RuleSkill* &skill, const std::string &name)
+{
+	if (mod)
+	{
+		skill = mod->getSkill(name);
+	}
+	else
+	{
+		skill = nullptr;
+	}
+}
+void getRuleResearch(const Mod* mod, const RuleResearch*& rule, const std::string& name)
+{
+	if (mod)
+	{
+		rule = mod->getResearch(name);
+	}
+	else
+	{
+		rule = nullptr;
+	}
+}
+void getSoldierScript(const Mod* mod, const RuleSoldier* &soldier, const std::string &name)
+{
+	if (mod)
+	{
+		soldier = mod->getSoldier(name);
+	}
+	else
+	{
+		soldier = nullptr;
+	}
+}
+void getInventoryScript(const Mod* mod, const RuleInventory* &inv, const std::string &name)
+{
+	if (mod)
+	{
+		inv = mod->getInventory(name);
+	}
+	else
+	{
+		inv = nullptr;
+	}
+}
+
+} // namespace
+
+/**
+ * Register all useful function used by script.
+ */
+void Mod::ScriptRegister(ScriptParserBase *parser)
+{
+	parser->registerPointerType<Unit>();
+	parser->registerPointerType<RuleItem>();
+	parser->registerPointerType<Armor>();
+	parser->registerPointerType<RuleSkill>();
+	parser->registerPointerType<RuleResearch>();
+	parser->registerPointerType<RuleSoldier>();
+	parser->registerPointerType<RuleInventory>();
+
+	Bind<Mod> mod = { parser };
+
+	mod.add<&offset<&Mod::_soundOffsetBattle>>("getSoundOffsetBattle", "convert mod sound index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_soundOffsetGeo>>("getSoundOffsetGeo", "convert mod sound index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetBasebits>>("getSpriteOffsetBasebits", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetBigobs>>("getSpriteOffsetBigobs", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetFloorob>>("getSpriteOffsetFloorob", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetHandob>>("getSpriteOffsetHandob", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetHit>>("getSpriteOffsetHit", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&offset<&Mod::_surfaceOffsetSmoke>>("getSpriteOffsetSmoke", "convert mod surface index in first argument to runtime index in given set, second argument is mod id");
+	mod.add<&Mod::getMaxDarknessToSeeUnits>("getMaxDarknessToSeeUnits");
+	mod.add<&Mod::getMaxViewDistance>("getMaxViewDistance");
+	mod.add<&getSmokeReduction>("getSmokeReduction");
+
+	mod.add<&getUnitScript>("getRuleUnit");
+	mod.add<&getItemScript>("getRuleItem");
+	mod.add<&getArmorScript>("getRuleArmor");
+	mod.add<&getSkillScript>("getRuleSkill");
+	mod.add<&getRuleResearch>("getRuleResearch");
+	mod.add<&getSoldierScript>("getRuleSoldier");
+	mod.add<&getInventoryScript>("getRuleInventory");
+	mod.add<&Mod::getInventoryRightHand>("getRuleInventoryRightHand");
+	mod.add<&Mod::getInventoryLeftHand>("getRuleInventoryLeftHand");
+	mod.add<&Mod::getInventoryBackpack>("getRuleInventoryBackpack");
+	mod.add<&Mod::getInventoryBelt>("getRuleInventoryBelt");
+	mod.add<&Mod::getInventoryGround>("getRuleInventoryGround");
+
+	mod.addScriptValue<&Mod::_scriptGlobal, &ModScriptGlobal::getScriptValues>();
 }
 
 }

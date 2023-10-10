@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,6 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "OptionsBattlescapeState.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/ToggleTextButton.h"
 #include "../Interface/Text.h"
@@ -59,7 +58,8 @@ OptionsBattlescapeState::OptionsBattlescapeState(OptionsOrigin origin) : Options
 
 	_txtPathPreview = new Text(114, 9, 94, 100);
 	_btnArrows = new ToggleTextButton(104, 16, 94, 110);
-	_btnTuCost = new ToggleTextButton(104, 16, 94, 128);
+	_btnTuCost = new ToggleTextButton(58, 16, 94, 128);
+	_btnEnergyCost = new ToggleTextButton(44, 16, 154, 128);
 
 	_txtOptions = new Text(114, 9, 206, 100);
 	_btnTooltips = new ToggleTextButton(104, 16, 206, 110);
@@ -83,6 +83,7 @@ OptionsBattlescapeState::OptionsBattlescapeState(OptionsOrigin origin) : Options
 	add(_txtPathPreview, "text", "battlescapeMenu");
 	add(_btnArrows, "button", "battlescapeMenu");
 	add(_btnTuCost, "button", "battlescapeMenu");
+	add(_btnEnergyCost, "button", "battlescapeMenu");
 
 	add(_txtOptions, "text", "battlescapeMenu");
 	add(_btnTooltips, "button", "battlescapeMenu");
@@ -93,13 +94,13 @@ OptionsBattlescapeState::OptionsBattlescapeState(OptionsOrigin origin) : Options
 
 	centerAllSurfaces();
 
-	// Set up objects	
+	// Set up objects
 	_txtEdgeScroll->setText(tr("STR_EDGE_SCROLL"));
 
 	std::vector<std::string> edgeScrolls;
-	edgeScrolls.push_back("STR_DISABLED");
-	edgeScrolls.push_back("STR_TRIGGER_SCROLL");
-	edgeScrolls.push_back("STR_AUTO_SCROLL");
+	edgeScrolls.push_back(tr("STR_DISABLED"));
+	edgeScrolls.push_back(tr("STR_TRIGGER_SCROLL"));
+	edgeScrolls.push_back(tr("STR_AUTO_SCROLL"));
 
 	_cbxEdgeScroll->setOptions(edgeScrolls);
 	_cbxEdgeScroll->setSelected(Options::battleEdgeScroll);
@@ -109,12 +110,12 @@ OptionsBattlescapeState::OptionsBattlescapeState(OptionsOrigin origin) : Options
 	_cbxEdgeScroll->onMouseOut((ActionHandler)&OptionsBattlescapeState::txtTooltipOut);
 
 	_txtDragScroll->setText(tr("STR_DRAG_SCROLL"));
-	
+
 	std::vector<std::string> dragScrolls;
-	dragScrolls.push_back("STR_DISABLED");
-	dragScrolls.push_back("STR_LEFT_MOUSE_BUTTON");
-	dragScrolls.push_back("STR_MIDDLE_MOUSE_BUTTON");
-	dragScrolls.push_back("STR_RIGHT_MOUSE_BUTTON");
+	dragScrolls.push_back(tr("STR_DISABLED"));
+	dragScrolls.push_back(tr("STR_LEFT_MOUSE_BUTTON"));
+	dragScrolls.push_back(tr("STR_MIDDLE_MOUSE_BUTTON"));
+	dragScrolls.push_back(tr("STR_RIGHT_MOUSE_BUTTON"));
 
 	_cbxDragScroll->setOptions(dragScrolls);
 	_cbxDragScroll->setSelected(Options::battleDragScrollButton);
@@ -175,8 +176,15 @@ OptionsBattlescapeState::OptionsBattlescapeState(OptionsOrigin origin) : Options
 	_btnTuCost->onMouseIn((ActionHandler)&OptionsBattlescapeState::txtTooltipIn);
 	_btnTuCost->onMouseOut((ActionHandler)&OptionsBattlescapeState::txtTooltipOut);
 
+	_btnEnergyCost->setText(tr("STR_PATH_ENERGY_COST"));
+	_btnEnergyCost->setPressed((Options::battleNewPreviewPath & PATH_ENERGY_COST) != 0);
+	_btnEnergyCost->onMouseClick((ActionHandler)&OptionsBattlescapeState::btnPathPreviewClick);
+	_btnEnergyCost->setTooltip("STR_PATH_ENERGY_COST_DESC");
+	_btnEnergyCost->onMouseIn((ActionHandler)&OptionsBattlescapeState::txtTooltipIn);
+	_btnEnergyCost->onMouseOut((ActionHandler)&OptionsBattlescapeState::txtTooltipOut);
+
 	_txtOptions->setText(tr("STR_USER_INTERFACE_OPTIONS"));
-	
+
 	_btnTooltips->setText(tr("STR_TOOLTIPS"));
 	_btnTooltips->setPressed(Options::battleTooltips);
 	_btnTooltips->onMouseClick((ActionHandler)&OptionsBattlescapeState::btnTooltipsClick);
@@ -268,6 +276,10 @@ void OptionsBattlescapeState::btnPathPreviewClick(Action *)
 	if (_btnTuCost->getPressed())
 	{
 		mode |= PATH_TU_COST;
+	}
+	if (_btnEnergyCost->getPressed())
+	{
+		mode |= PATH_ENERGY_COST;
 	}
 	Options::battleNewPreviewPath = (PathPreview)mode;
 }

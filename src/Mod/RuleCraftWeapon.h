@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULECRAFTWEAPON_H
-#define OPENXCOM_RULECRAFTWEAPON_H
-
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include "RuleCraft.h"
@@ -28,6 +26,9 @@ namespace OpenXcom
 {
 
 class Mod;
+class RuleItem;
+
+enum CraftWeaponCategory { CWC_WEAPON, CWC_TRACTOR_BEAM, CWC_EQUIPMENT };
 
 /**
  * Represents a specific type of craft weapon.
@@ -39,11 +40,16 @@ class RuleCraftWeapon
 {
 private:
 	std::string _type;
-	int _sprite, _sound, _damage, _range, _accuracy, _reloadCautious, _reloadStandard, _reloadAggressive, _ammoMax, _rearmRate, _projectileSpeed, _weaponType;
+	int _sprite, _sound, _damage, _shieldDamageModifier, _range, _accuracy, _reloadCautious, _reloadStandard, _reloadAggressive, _ammoMax, _rearmRate, _projectileSpeed, _weaponType;
 	CraftWeaponProjectileType _projectileType;
-	std::string _launcher, _clip;
+	std::string _launcherName, _clipName;
+	const RuleItem* _launcher;
+	const RuleItem* _clip;
 	RuleCraftStats _stats;
 	bool _underwaterOnly;
+	int _tractorBeamPower;
+	bool _hidePediaInfo;
+	bool _statisticalBulletSaving;
 public:
 	/// Creates a blank craft weapon ruleset.
 	RuleCraftWeapon(const std::string &type);
@@ -51,14 +57,23 @@ public:
 	~RuleCraftWeapon();
 	/// Loads craft weapon data from YAML.
 	void load(const YAML::Node& node, Mod *mod);
+	/// Cross link with other rules.
+	void afterLoad(const Mod* mod);
+
 	/// Gets the craft weapon's type.
-	std::string getType() const;
+	const std::string& getType() const;
 	/// Gets the craft weapon's sprite.
 	int getSprite() const;
 	/// Gets the craft weapon's sound.
 	int getSound() const;
 	/// Gets the craft weapon's damage.
 	int getDamage() const;
+	/// Should the weapon's stats be displayed in Ufopedia or not?
+	bool getHidePediaInfo() const { return _hidePediaInfo; }
+	/// Should the statistical bullet saving be used or not?
+	bool useStatisticalBulletSaving() const { return _statisticalBulletSaving; }
+	/// Gets the craft weapon's effectiveness against shields.
+	int getShieldDamageModifier() const;
 	/// Gets the craft weapon's range.
 	int getRange() const;
 	/// Gets the craft weapon's accuracy.
@@ -74,9 +89,9 @@ public:
 	/// Gets the craft weapon's rearm rate.
 	int getRearmRate() const;
 	/// Gets the craft weapon's launcher item.
-	std::string getLauncherItem() const;
+	const RuleItem* getLauncherItem() const;
 	/// Gets the craft weapon's clip item.
-	std::string getClipItem() const;
+	const RuleItem* getClipItem() const;
 	/// Gets the craft weapon's projectile's type.
 	CraftWeaponProjectileType getProjectileType() const;
 	/// Gets the craft weapon's projectile speed.
@@ -87,8 +102,8 @@ public:
 	const RuleCraftStats& getBonusStats() const;
 	/// Is this item restricted to use underwater?
 	bool isWaterOnly() const;
+	/// Get the craft weapon's tractor beam power
+	int getTractorBeamPower() const;
 };
 
 }
-
-#endif

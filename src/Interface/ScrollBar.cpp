@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,7 +18,6 @@
  */
 #include "ScrollBar.h"
 #include "../fmath.h"
-#include <algorithm>
 #include "../Engine/Action.h"
 #include "TextList.h"
 #include "../Engine/Palette.h"
@@ -139,7 +138,7 @@ void ScrollBar::setBackground(Surface *bg)
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void ScrollBar::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void ScrollBar::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_track->setPalette(colors, firstcolor, ncolors);
@@ -158,8 +157,8 @@ void ScrollBar::handle(Action *action, State *state)
 	if (_pressed && (action->getDetails()->type == SDL_MOUSEMOTION || action->getDetails()->type == SDL_MOUSEBUTTONDOWN))
 	{
 		int cursorY = action->getAbsoluteYMouse() - getY();
-		int y = std::min(std::max(cursorY + _offset, 0), getHeight() - _thumbRect.h + 1);
-		double scale = (double)_list->getRows() / getHeight();
+		int y = Clamp(cursorY + _offset, 0, getHeight() - _thumbRect.h + 1);
+		double scale = (double)_list->getRowsDoNotUse() / getHeight();
 		int scroll = (int)Round(y * scale);
 		_list->scrollTo(scroll);
 	}
@@ -169,7 +168,7 @@ void ScrollBar::handle(Action *action, State *state)
  * Blits the scrollbar contents.
  * @param surface Pointer to surface to blit onto.
  */
-void ScrollBar::blit(Surface *surface)
+void ScrollBar::blit(SDL_Surface *surface)
 {
 	Surface::blit(surface);
 	if (_visible && !_hidden)
@@ -199,7 +198,7 @@ void ScrollBar::mousePress(Action *action, State *state)
 		{
 			_offset = -_thumbRect.h / 2;
 		}
-		_pressed = true;		
+		_pressed = true;
 	}
 	else if (action->getDetails()->button.button == SDL_BUTTON_WHEELUP)
 	{
@@ -244,17 +243,13 @@ void ScrollBar::drawTrack()
 	if (_bg)
 	{
 		_track->copy(_bg);
-		if (_contrast)
-		{
-			_track->offset(-5, 1);
-		}
-		else if (_list->getComboBox())
+		if (_list->getComboBox())
 		{
 			_track->offset(+1, Palette::backPos);
 		}
 		else
 		{
-			_track->offset(-5, Palette::backPos);
+			_track->offsetBlock(-5);
 		}
 	}
 }
@@ -264,12 +259,12 @@ void ScrollBar::drawTrack()
  */
 void ScrollBar::drawThumb()
 {
-	double scale = (double)getHeight() / _list->getRows();
+	double scale = (double)getHeight() / _list->getRowsDoNotUse();
 	_thumbRect.x = 0;
 	_thumbRect.y = (int)floor(_list->getScroll() * scale);
 	_thumbRect.w = _thumb->getWidth();
 	_thumbRect.h = (int)ceil(_list->getVisibleRows() * scale);
-	
+
 	// Draw base button
 	_thumb->clear();
 	_thumb->lock();

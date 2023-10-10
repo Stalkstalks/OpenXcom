@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RESEARCHPROJECT_H
-#define OPENXCOM_RESEARCHPROJECT_H
-
 #include <yaml-cpp/yaml.h>
 
 namespace OpenXcom
 {
+
 class RuleResearch;
 class Mod;
 
@@ -40,6 +39,8 @@ public:
 	ResearchProject(RuleResearch * p, int c = 0);
 	/// Game logic. Called every new day to compute time spent.
 	bool step();
+	/// gets state of project.
+	bool isFinished();
 	/// set the number of scientist assigned to this ResearchProject
 	void setAssigned (int nb);
 	/// get the number of scientist assigned to this ResearchProject
@@ -61,5 +62,5 @@ public:
 	/// Get a string describing current progress.
 	std::string getResearchProgress() const;
 };
+
 }
-#endif

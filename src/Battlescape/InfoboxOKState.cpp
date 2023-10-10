@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,7 +18,6 @@
  */
 #include "InfoboxOKState.h"
 #include "../Engine/Game.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Frame.h"
 #include "../Interface/Text.h"
@@ -35,7 +34,7 @@ namespace OpenXcom
  * @param game Pointer to the core game.
  * @param msg Message string.
  */
-InfoboxOKState::InfoboxOKState(const std::wstring &msg)
+InfoboxOKState::InfoboxOKState(const std::string &msg)
 {
 	_screen = false;
 

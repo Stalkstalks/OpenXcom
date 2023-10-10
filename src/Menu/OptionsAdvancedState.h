@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONSADVANCEDSTATE_H
-#define OPENXCOM_OPTIONSADVANCEDSTATE_H
-
 #include "OptionsBaseState.h"
 #include "../Engine/OptionInfo.h"
 #include <vector>
-#include <string>
 
 namespace OpenXcom
 {
@@ -37,8 +34,9 @@ class OptionsAdvancedState : public OptionsBaseState
 {
 private:
 	TextList *_lstOptions;
-	Uint8 _colorGroup;
-	std::vector<OptionInfo> _settingsGeneral, _settingsGeo, _settingsBattle;
+	bool _isTFTD;
+	Uint8 _colorGroup, _greyedOutColor;
+	std::vector<OptionInfo> _settingsGeneral, _settingsGeo, _settingsBattle, _settingsOxce, _settingsAI;
 
 	void addSettings(const std::vector<OptionInfo> &settings);
 	OptionInfo *getSetting(size_t sel);
@@ -48,7 +46,7 @@ public:
 	/// Cleans up the Advanced state.
 	~OptionsAdvancedState();
 	/// Fills settings list.
-	void init();
+	void init() override;
 	/// Handler for clicking a setting on the list.
 	void lstOptionsClick(Action *action);
 	/// Handler for moving the mouse over a setting.
@@ -59,5 +57,3 @@ public:
 };
 
 }
-
-#endif

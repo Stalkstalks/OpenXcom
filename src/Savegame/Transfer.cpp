@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -23,7 +23,7 @@
 #include "ItemContainer.h"
 #include "../Engine/Language.h"
 #include "../Mod/Mod.h"
-#include "../Mod/RuleSoldier.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -64,11 +64,12 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Mod *mod, SavedGam
 		std::string type = soldier["type"].as<std::string>(mod->getSoldiersList().front());
 		if (mod->getSoldier(type) != 0)
 		{
-			_soldier = new Soldier(mod->getSoldier(type), 0);
-			_soldier->load(soldier, mod, save);
+			_soldier = new Soldier(mod->getSoldier(type), nullptr, 0 /*nationality*/);
+			_soldier->load(soldier, mod, save, mod->getScriptGlobal());
 		}
 		else
 		{
+			Log(LOG_ERROR) << "Failed to load soldier " << type;
 			delete this;
 			return false;
 		}
@@ -79,10 +80,11 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Mod *mod, SavedGam
 		if (mod->getCraft(type) != 0)
 		{
 			_craft = new Craft(mod->getCraft(type), base);
-			_craft->load(craft, mod, 0);
+			_craft->load(craft, mod->getScriptGlobal(), mod, 0);
 		}
 		else
 		{
+			Log(LOG_ERROR) << "Failed to load craft " << type;
 			delete this;
 			return false;
 		}
@@ -93,6 +95,7 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Mod *mod, SavedGam
 		_itemId = item.as<std::string>(_itemId);
 		if (mod->getItem(_itemId) == 0)
 		{
+			Log(LOG_ERROR) << "Failed to load item " << _itemId;
 			delete this;
 			return false;
 		}
@@ -108,17 +111,17 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Mod *mod, SavedGam
  * Saves the transfer to a YAML file.
  * @return YAML node.
  */
-YAML::Node Transfer::save() const
+YAML::Node Transfer::save(const Base *b, const Mod *mod) const
 {
 	YAML::Node node;
 	node["hours"] = _hours;
 	if (_soldier != 0)
 	{
-		node["soldier"] = _soldier->save();
+		node["soldier"] = _soldier->save(mod->getScriptGlobal());
 	}
 	else if (_craft != 0)
 	{
-		node["craft"] = _craft->save();
+		node["craft"] = _craft->save(mod->getScriptGlobal());
 	}
 	else if (_itemQty != 0)
 	{
@@ -210,7 +213,7 @@ void Transfer::setEngineers(int engineers)
  * @param lang Language to get strings from.
  * @return Name string.
  */
-std::wstring Transfer::getName(Language *lang) const
+std::string Transfer::getName(Language *lang) const
 {
 	if (_soldier != 0)
 	{
@@ -295,7 +298,7 @@ TransferType Transfer::getType() const
 void Transfer::advance(Base *base)
 {
 	_hours--;
-	if (_hours == 0)
+	if (_hours <= 0)
 	{
 		if (_soldier != 0)
 		{
@@ -331,4 +334,5 @@ Soldier *Transfer::getSoldier()
 {
 	return _soldier;
 }
+
 }

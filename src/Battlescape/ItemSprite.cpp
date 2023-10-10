@@ -16,20 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
-#include <cmath>
 #include "ItemSprite.h"
-#include "../Engine/SurfaceSet.h"
-#include "../Mod/RuleSoldier.h"
-#include "../Mod/Unit.h"
-#include "../Mod/RuleItem.h"
-#include "../Mod/Armor.h"
-#include "../Mod/RuleInventory.h"
 #include "../Mod/Mod.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
-#include "../Savegame/Soldier.h"
-#include "../Battlescape/Position.h"
+#include "../Savegame/SavedBattleGame.h"
 
 namespace OpenXcom
 {
@@ -41,10 +32,11 @@ namespace OpenXcom
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-ItemSprite::ItemSprite(Surface* dest, Mod* mod, int frame) :
-	_itemSurface(mod->getSurfaceSet("FLOOROB.PCK")), _mod(mod),
+ItemSprite::ItemSprite(Surface* dest, const Mod* mod, const SavedBattleGame* save, int frame) :
+	_itemSurface(const_cast<Mod*>(mod)->getSurfaceSet("FLOOROB.PCK")),
 	_animationFrame(frame),
-	_dest(dest), _scriptWorkRef()
+	_dest(dest),
+	_save(save)
 {
 
 }
@@ -58,16 +50,29 @@ ItemSprite::~ItemSprite()
 }
 
 /**
- * Draws a item, using the drawing rules of the unit.
- * This function is called by Map, for each unit on the screen.
+ * Draws a item, using the drawing rules of the item or unit if it's corpse.
+ * This function is called by Map, for each item on the screen.
  */
-void ItemSprite::draw(BattleItem* item, int x, int y, int shade, bool half)
+void ItemSprite::draw(const BattleItem* item, int x, int y, int shade)
 {
-	int sprite = item->getFloorSprite();
-	if (sprite != -1)
+	const Surface* sprite = item->getFloorSprite(_itemSurface, _save, _animationFrame, shade);
+	if (sprite)
 	{
-		BattleItem::ScriptFill(&_scriptWorkRef, item, false, _animationFrame, shade);
-		_scriptWorkRef.executeBlit(_itemSurface->getFrame(sprite), _dest, x, y, half);
+		ScriptWorkerBlit work;
+		BattleItem::ScriptFill(&work, item, _save, BODYPART_ITEM_FLOOR, _animationFrame, shade);
+		work.executeBlit(sprite, _dest, x, y, shade);
+	}
+}
+
+/**
+ * Draws shadow of item.
+ */
+void ItemSprite::drawShadow(const BattleItem* item, int x, int y)
+{
+	const Surface* sprite = item->getFloorSprite(_itemSurface, _save, _animationFrame, 16);
+	if (sprite)
+	{
+		sprite->blitNShade(_dest, x, y, 16);
 	}
 }
 

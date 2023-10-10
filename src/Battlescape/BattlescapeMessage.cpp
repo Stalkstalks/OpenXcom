@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -88,7 +88,7 @@ void BattlescapeMessage::setBackground(Surface *background)
  * Changes the message text.
  * @param message Message string.
  */
-void BattlescapeMessage::setText(const std::wstring &message)
+void BattlescapeMessage::setText(const std::string &message)
 {
 	_text->setText(message);
 }
@@ -114,7 +114,7 @@ void BattlescapeMessage::initText(Font *big, Font *small, Language *lang)
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void BattlescapeMessage::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void BattlescapeMessage::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_window->setPalette(colors, firstcolor, ncolors);
@@ -124,7 +124,7 @@ void BattlescapeMessage::setPalette(SDL_Color *colors, int firstcolor, int ncolo
 /**
  * Blits the warning message.
  */
-void BattlescapeMessage::blit(Surface *surface)
+void BattlescapeMessage::blit(SDL_Surface *surface)
 {
 	Surface::blit(surface);
 	_window->blit(surface);

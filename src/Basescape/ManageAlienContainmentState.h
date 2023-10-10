@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MANAGEALIENCONTAINMENTSTATE_H
-#define OPENXCOM_MANAGEALIENCONTAINMENTSTATE_H
-
 #include "../Engine/State.h"
 #include "../Menu/OptionsBaseState.h"
 #include <vector>
@@ -42,29 +40,47 @@ class ManageAlienContainmentState : public State
 {
 private:
 	Base *_base;
+	int _prisonType;
 	OptionsOrigin _origin;
-	TextButton *_btnOk, *_btnCancel;
+	TextButton *_btnOk, *_btnSell, *_btnCancel, *_btnTransfer, *_btnCleanup;
 	Window *_window;
-	Text *_txtTitle, *_txtUsed, *_txtAvailable, *_txtItem, *_txtLiveAliens, *_txtDeadAliens, *_txtInterrogatedAliens;
+	Text *_txtTitle, *_txtUsed, *_txtAvailable, *_txtValueOfSales, *_txtItem, *_txtLiveAliens, *_txtDeadAliens, *_txtInterrogatedAliens;
 	TextList *_lstAliens;
 	Timer *_timerInc, *_timerDec;
 	std::vector<int> _qtys;
 	std::vector<std::string> _aliens;
 	size_t _sel;
 	int _aliensSold;
+	int64_t _total;
+	bool _doNotReset, _threeButtons;
+
 	/// Gets selected quantity.
 	int getQuantity();
+	/// Deals with the selected aliens.
+	void dealWithSelectedAliens(bool sell);
 public:
 	/// Creates the ManageAlienContainment state.
-	ManageAlienContainmentState(Base *base, OptionsOrigin origin);
+	ManageAlienContainmentState(Base *base, int prisonType, OptionsOrigin origin);
 	/// Cleans up the ManageAlienContainment state.
 	~ManageAlienContainmentState();
+	/// Resets state.
+	void init() override;
+	/// Resets the list and the totals, updates button visibility.
+	void resetListAndTotals();
 	/// Runs the timers.
-	void think();
+	void think() override;
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handler for opening the Global Alien Containment UI.
+	void onGlobalAlienContainmentClick(Action *action);
+	/// Handler for clicking the Sell button.
+	void btnSellClick(Action *action);
 	/// Handler for clicking the Cancel button.
 	void btnCancelClick(Action *action);
+	/// Handler for clicking the Transfer button.
+	void btnTransferClick(Action *action);
+	/// Handler for clicking the Cleanup button.
+	void btnCleanupClick(Action *action);
 	/// Handler for pressing an Increase arrow in the list.
 	void lstItemsLeftArrowPress(Action *action);
 	/// Handler for releasing an Increase arrow in the list.
@@ -92,5 +108,3 @@ public:
 };
 
 }
-
-#endif

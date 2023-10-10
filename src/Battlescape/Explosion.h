@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_EXPLOSION_H
-#define OPENXCOM_EXPLOSION_H
-
 #include "Position.h"
 
 namespace OpenXcom
@@ -34,12 +32,13 @@ private:
 	Position _position;
 	int _currentFrame, _startFrame, _frameDelay;
 	bool _big, _hit;
+	int _frames;
 public:
 	static const int HIT_FRAMES;
 	static const int EXPLODE_FRAMES;
 	static const int BULLET_FRAMES;
 	/// Creates a new Explosion.
-	Explosion(Position _position, int startFrame, int frameDelay = 0, bool big = false, bool hit = false);
+	Explosion(Position _position, int startFrame, int frameDelay = 0, bool big = false, bool hit = false, int frames = -1);
 	/// Cleans up the Explosion.
 	~Explosion();
 	/// Moves the Explosion on one frame.
@@ -55,5 +54,3 @@ public:
 };
 
 }
-
-#endif

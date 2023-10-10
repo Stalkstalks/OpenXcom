@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,10 +17,12 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "TextEdit.h"
+#include <cmath>
 #include "../Engine/Action.h"
 #include "../Engine/Font.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Options.h"
+#include "../fallthrough.h"
 
 namespace OpenXcom
 {
@@ -33,14 +35,14 @@ namespace OpenXcom
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-TextEdit::TextEdit(State *state, int width, int height, int x, int y) : InteractiveSurface(width, height, x, y), _blink(true), _modal(true), _ascii(L'A'), _caretPos(0), _numerical(false), _change(0), _state(state)
+TextEdit::TextEdit(State *state, int width, int height, int x, int y) : InteractiveSurface(width, height, x, y), _blink(true), _modal(true), _char('A'), _caretPos(0), _textEditConstraint(TEC_NONE), _change(0), _enter(0), _state(state)
 {
 	_isFocused = false;
 	_text = new Text(width, height, 0, 0);
 	_timer = new Timer(100);
 	_timer->onTimer((SurfaceHandler)&TextEdit::blink);
 	_caret = new Text(16, 17, 0, 0);
-	_caret->setText(L"|");
+	_caret->setText("|");
 }
 
 /**
@@ -141,9 +143,9 @@ void TextEdit::initText(Font *big, Font *small, Language *lang)
  * Changes the string displayed on screen.
  * @param text Text string.
  */
-void TextEdit::setText(const std::wstring &text)
+void TextEdit::setText(const std::string &text)
 {
-	_value = text;
+	_value = Unicode::convUtf8ToUtf32(text);
 	_caretPos = _value.length();
 	_redraw = true;
 }
@@ -152,9 +154,9 @@ void TextEdit::setText(const std::wstring &text)
  * Returns the string displayed on screen.
  * @return Text string.
  */
-std::wstring TextEdit::getText() const
+std::string TextEdit::getText() const
 {
-	return _value;
+	return Unicode::convUtf32ToUtf8(_value);
 }
 
 /**
@@ -211,12 +213,12 @@ void TextEdit::setVerticalAlign(TextVAlign valign)
 }
 
 /**
- * Restricts the text to only numerical input.
- * @param numerical Numerical restriction.
+ * Restricts the text to only numerical input or signed numerical input.
+ * @param constraint TextEditConstraint to be applied.
  */
-void TextEdit::setNumerical(bool numerical)
+void TextEdit::setConstraint(TextEditConstraint constraint)
 {
-	_numerical = numerical;
+	_textEditConstraint = constraint;
 }
 
 /**
@@ -266,7 +268,7 @@ Uint8 TextEdit::getSecondaryColor() const
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void TextEdit::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void TextEdit::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_text->setPalette(colors, firstcolor, ncolors);
@@ -298,18 +300,28 @@ void TextEdit::blink()
 void TextEdit::draw()
 {
 	Surface::draw();
-	_text->setText(_value);
+	UString newValue = _value;
 	if (Options::keyboardMode == KEYBOARD_OFF)
 	{
-		std::wstring newValue = _value;
 		if (_isFocused && _blink)
 		{
-			newValue += _ascii;
-			_text->setText(newValue);
+			newValue += _char;
 		}
 	}
+	_text->setText(Unicode::convUtf32ToUtf8(_value));
 	clear();
-	_text->blit(this);
+
+	if (_enter)
+	{
+		SDL_Rect square;
+		square.x = 0;
+		square.y = 0;
+		square.w = getWidth();
+		square.h = getHeight();
+		drawRect(&square, getColor());
+	}
+
+	_text->blit(this->getSurface());
 	if (Options::keyboardMode == KEYBOARD_ON)
 	{
 		if (_isFocused && _blink)
@@ -332,7 +344,21 @@ void TextEdit::draw()
 				x += _text->getFont()->getCharSize(_value[i]).w;
 			}
 			_caret->setX(x);
-			_caret->blit(this);
+			int y = 0;
+			switch (_text->getVerticalAlign())
+			{
+			case ALIGN_TOP:
+				y = 0;
+				break;
+			case ALIGN_MIDDLE:
+				y = (int)ceil((getHeight() - _text->getTextHeight()) / 2.0);
+				break;
+			case ALIGN_BOTTOM:
+				y = getHeight() - _text->getTextHeight();
+				break;
+			}
+			_caret->setY(y);
+			_caret->blit(this->getSurface());
 		}
 	}
 }
@@ -344,18 +370,54 @@ void TextEdit::draw()
  * @param c Character to add.
  * @return True if it exceeds, False if it doesn't.
  */
-bool TextEdit::exceedsMaxWidth(wchar_t c)
+bool TextEdit::exceedsMaxWidth(UCode c) const
 {
 	int w = 0;
-	std::wstring s = _value;
+	UString s = _value;
 
 	s += c;
-	for (std::wstring::iterator i = s.begin(); i < s.end(); ++i)
+	for (UString::const_iterator i = s.begin(); i < s.end(); ++i)
 	{
 		w += _text->getFont()->getCharSize(*i).w;
 	}
 
 	return (w > getWidth());
+}
+
+/**
+ * Checks if input key character is valid to
+ * be inserted at caret position in the text edit
+ * without breaking the text edit constraint.
+ * @param c Character to validate.
+ * @return True if character can be inserted, False if it cannot.
+ */
+bool TextEdit::isValidChar(UCode c) const
+{
+	switch (_textEditConstraint)
+	{
+	case TEC_NUMERIC_POSITIVE:
+		return c >= '0' && c <= '9';
+
+	// If constraint is "(signed) numeric", need to check:
+	// - user does not input a character before '-' or '+'
+	// - user enter either figure anywhere, or a sign at first position
+	case TEC_NUMERIC:
+		if (_caretPos > 0)
+		{
+			return c >= '0' && c <= '9';
+		}
+		else
+		{
+			return ((c >= '0' && c <= '9') || c == '+' || c == '-') &&
+					(_value.empty() || (_value[0] != '+' && _value[0] != '-'));
+		}
+
+	case TEC_NONE:
+		return (c >= ' ' && c <= '~') || c >= 160;
+
+	default:
+		return false;
+	}
 }
 
 /**
@@ -377,7 +439,7 @@ void TextEdit::mousePress(Action *action, State *state)
 			double scaleX = action->getXScale();
 			double w = 0;
 			int c = 0;
-			for (std::wstring::iterator i = _value.begin(); i < _value.end(); ++i)
+			for (UString::iterator i = _value.begin(); i < _value.end(); ++i)
 			{
 				if (mouseX <= w)
 				{
@@ -405,37 +467,39 @@ void TextEdit::mousePress(Action *action, State *state)
  */
 void TextEdit::keyboardPress(Action *action, State *state)
 {
+	bool enterPressed = false;
 	if (Options::keyboardMode == KEYBOARD_OFF)
 	{
 		switch (action->getDetails()->key.keysym.sym)
 		{
 		case SDLK_UP:
-			_ascii++;
-			if (_ascii > L'~')
+			_char++;
+			if (_char > '~')
 			{
-				_ascii = L' ';
+				_char = ' ';
 			}
 			break;
 		case SDLK_DOWN:
-			_ascii--;
-			if (_ascii < L' ')
+			_char--;
+			if (_char < ' ')
 			{
-				_ascii = L'~';
+				_char = '~';
 			}
 			break;
 		case SDLK_LEFT:
-			if (_value.length() > 0)
+			if (!_value.empty())
 			{
 				_value.resize(_value.length() - 1);
 			}
 			break;
 		case SDLK_RIGHT:
-			if (!exceedsMaxWidth(_ascii))
+			if (!exceedsMaxWidth(_char))
 			{
-				_value += _ascii;
+				_value += _char;
 			}
 			break;
-		default: break;
+		default:
+			break;
 		}
 	}
 	else if (Options::keyboardMode == KEYBOARD_ON)
@@ -473,28 +537,39 @@ void TextEdit::keyboardPress(Action *action, State *state)
 				_value.erase(_caretPos, 1);
 			}
 			break;
+		case SDLK_ESCAPE:
+			{
+				_value = Unicode::convUtf8ToUtf32("");
+				_caretPos = 0;
+			}
+			FALLTHROUGH;
+			// no break; do the ENTER action too
 		case SDLK_RETURN:
 		case SDLK_KP_ENTER:
-			if (!_value.empty())
+			if (!_value.empty() || _enter != 0)
 			{
+				enterPressed = true;
 				setFocus(false);
 			}
 			break;
 		default:
-			Uint16 key = action->getDetails()->key.keysym.unicode;
-			if (((_numerical && key >= L'0' && key <= L'9') ||
-				(!_numerical && ((key >= L' ' && key <= L'~') || key >= 160))) &&
-				!exceedsMaxWidth((wchar_t)key))
+			UCode c = action->getDetails()->key.keysym.unicode;
+			if (isValidChar(c) && !exceedsMaxWidth(c))
 			{
-				_value.insert(_caretPos, 1, (wchar_t)action->getDetails()->key.keysym.unicode);
+				_value.insert(_caretPos, 1, c);
 				_caretPos++;
 			}
+			break;
 		}
 	}
 	_redraw = true;
 	if (_change)
 	{
 		(state->*_change)(action);
+	}
+	if (_enter && enterPressed)
+	{
+		(state->*_enter)(action);
 	}
 
 	InteractiveSurface::keyboardPress(action, state);
@@ -507,6 +582,15 @@ void TextEdit::keyboardPress(Action *action, State *state)
 void TextEdit::onChange(ActionHandler handler)
 {
 	_change = handler;
+}
+
+/**
+* Sets a function to be called every time ENTER is pressed.
+* @param handler Action handler.
+*/
+void TextEdit::onEnter(ActionHandler handler)
+{
+	_enter = handler;
 }
 
 }

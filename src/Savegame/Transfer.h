@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,25 +17,34 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TRANSFER_H
-#define OPENXCOM_TRANSFER_H
-
 #include <string>
 #include <yaml-cpp/yaml.h>
 
 namespace OpenXcom
 {
 
+enum class TransferSortDirection : int
+{
+	BY_LIST_ORDER,
+	BY_UNIT_SIZE,
+	BY_TOTAL_SIZE,
+	BY_UNIT_COST,
+	BY_TOTAL_COST
+};
+
 enum TransferType { TRANSFER_ITEM, TRANSFER_CRAFT, TRANSFER_SOLDIER, TRANSFER_SCIENTIST, TRANSFER_ENGINEER };
 
 struct TransferRow
 {
 	TransferType type;
-	void *rule;
-	std::wstring name;
+	const void *rule;
+	std::string name;
 	int cost;
 	int qtySrc, qtyDst;
 	int amount;
+	int listOrder;
+	double size, totalSize;
+	int64_t totalCost;
 };
 
 class Soldier;
@@ -66,7 +76,7 @@ public:
 	/// Loads the transfer from YAML.
 	bool load(const YAML::Node& node, Base *base, const Mod *mod, SavedGame *save);
 	/// Saves the transfer to YAML.
-	YAML::Node save() const;
+	YAML::Node save(const Base *b, const Mod *mod) const;
 	/// Sets the soldier of the transfer.
 	void setSoldier(Soldier *soldier);
 	/// Sets the craft of the transfer.
@@ -82,7 +92,7 @@ public:
 	/// Sets the engineers of the transfer.
 	void setEngineers(int engineers);
 	/// Gets the name of the transfer.
-	std::wstring getName(Language *lang) const;
+	std::string getName(Language *lang) const;
 	/// Gets the hours remaining of the transfer.
 	int getHours() const;
 	/// Gets the quantity of the transfer.
@@ -97,5 +107,3 @@ public:
 };
 
 }
-
-#endif

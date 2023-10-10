@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -74,6 +74,9 @@ void Action::setMouseAction(int mouseX, int mouseY, int surfaceX, int surfaceY)
 	_surfaceY = surfaceY;
 }
 
+/**
+ * Gets if the action is a mouse action.
+ */
 bool Action::isMouseAction() const
 {
 	return (_mouseX != -1);
@@ -138,7 +141,7 @@ double Action::getAbsoluteXMouse() const
  * Returns the absolute Y position of the
  * mouse cursor relative to the game window,
  * corrected for screen scaling.
- * @return Mouse's absolute X position.
+ * @return Mouse's absolute Y position.
  */
 double Action::getAbsoluteYMouse() const
 {
@@ -161,10 +164,10 @@ double Action::getRelativeXMouse() const
 }
 
 /**
- * Returns the relative X position of the
+ * Returns the relative Y position of the
  * mouse cursor relative to the surface that
  * triggered the action, corrected for screen scaling.
- * @return Mouse's relative X position.
+ * @return Mouse's relative Y position.
  */
 double Action::getRelativeYMouse() const
 {

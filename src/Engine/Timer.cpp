@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -22,10 +22,10 @@
 
 namespace OpenXcom
 {
-	
+
 namespace
 {
-	
+
 const Uint32 accurate = 4;
 Uint32 slowTick()
 {
@@ -40,7 +40,7 @@ Uint32 slowTick()
 }//namespace
 
 Uint32 Timer::gameSlowSpeed = 1;
-int Timer::maxFrameSkip = 8; // this is a pretty good default at 60FPS. 
+int Timer::maxFrameSkip = 8; // this is a pretty good default at 60FPS.
 
 
 /**
@@ -48,7 +48,7 @@ int Timer::maxFrameSkip = 8; // this is a pretty good default at 60FPS.
  * @param interval Time interval in milliseconds.
  * @param frameSkipping Use frameskipping.
  */
-Timer::Timer(Uint32 interval, bool frameSkipping) : _start(0), _interval(interval), _running(false), _frameSkipping(frameSkipping), _state(0), _surface(0)
+Timer::Timer(Uint32 interval, bool frameSkipping) : _start(0), _frameSkipStart(0), _interval(interval), _running(false), _frameSkipping(frameSkipping), _state(0), _surface(0)
 {
 	Timer::maxFrameSkip = Options::maxFrameSkip;
 }
@@ -126,7 +126,7 @@ void Timer::think(State* state, Surface* surface)
 				// breaking here after one iteration effectively returns this function to its old functionality:
 				if (!game || !_frameSkipping || !game->isState(state)) break; // if game isn't set, we can't verify *state
 			}
-			
+
 			if (_running && surface != 0 && _surface != 0)
 			{
 				(surface->*_surface)();
@@ -162,15 +162,6 @@ void Timer::onTimer(StateHandler handler)
 void Timer::onTimer(SurfaceHandler handler)
 {
 	_surface = handler;
-}
-
-/**
- * Sets frame skipping on or off
- * @param skip Enable frameskipping.
- */
-void Timer::setFrameSkipping(bool skip)
-{
-	_frameSkipping = skip;
 }
 
 }

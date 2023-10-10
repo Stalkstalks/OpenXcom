@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +16,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include "RuleGlobe.h"
 #include <SDL_endian.h>
-#include <cmath>
-#include <fstream>
 #include "../Engine/Exception.h"
 #include "Polygon.h"
 #include "Polyline.h"
@@ -28,6 +25,7 @@
 #include "../Engine/Palette.h"
 #include "../Geoscape/Globe.h"
 #include "../Engine/FileMap.h"
+#include "../fmath.h"
 
 namespace OpenXcom
 {
@@ -44,17 +42,17 @@ RuleGlobe::RuleGlobe()
  */
 RuleGlobe::~RuleGlobe()
 {
-	for (std::list<Polygon*>::iterator i = _polygons.begin(); i != _polygons.end(); ++i)
+	for (auto* polygon : _polygons)
 	{
-		delete *i;
+		delete polygon;
 	}
-	for (std::list<Polyline*>::iterator i = _polylines.begin(); i != _polylines.end(); ++i)
+	for (auto* polyline : _polylines)
 	{
-		delete *i;
+		delete polyline;
 	}
-	for (std::map<int, Texture*>::iterator i = _textures.begin(); i != _textures.end(); ++i)
+	for (auto& pair : _textures)
 	{
-		delete i->second;
+		delete pair.second;
 	}
 }
 
@@ -66,18 +64,18 @@ void RuleGlobe::load(const YAML::Node &node)
 {
 	if (node["data"])
 	{
-		for (std::list<Polygon*>::iterator i = _polygons.begin(); i != _polygons.end(); ++i)
+		for (auto* polygon : _polygons)
 		{
-			delete *i;
+			delete polygon;
 		}
 		_polygons.clear();
-		loadDat(FileMap::getFilePath(node["data"].as<std::string>()));
+		loadDat(node["data"].as<std::string>());
 	}
 	if (node["polygons"])
 	{
-		for (std::list<Polygon*>::iterator i = _polygons.begin(); i != _polygons.end(); ++i)
+		for (auto* polygon : _polygons)
 		{
-			delete *i;
+			delete polygon;
 		}
 		_polygons.clear();
 		for (YAML::const_iterator i = node["polygons"].begin(); i != node["polygons"].end(); ++i)
@@ -89,9 +87,9 @@ void RuleGlobe::load(const YAML::Node &node)
 	}
 	if (node["polylines"])
 	{
-		for (std::list<Polyline*>::iterator i = _polylines.begin(); i != _polylines.end(); ++i)
+		for (auto* polyline : _polylines)
 		{
-			delete *i;
+			delete polyline;
 		}
 		_polylines.clear();
 		for (YAML::const_iterator i = node["polylines"].begin(); i != node["polylines"].end(); ++i)
@@ -101,30 +99,44 @@ void RuleGlobe::load(const YAML::Node &node)
 			_polylines.push_back(polyline);
 		}
 	}
-	if (node["textures"])
+	for (YAML::const_iterator i = node["textures"].begin(); i != node["textures"].end(); ++i)
 	{
-		for (std::map<int, Texture*>::iterator i = _textures.begin(); i != _textures.end(); ++i)
-		{
-			delete i->second;
-		}
-		_textures.clear();
-		for (YAML::const_iterator i = node["textures"].begin(); i != node["textures"].end(); ++i)
+		if ((*i)["id"])
 		{
 			int id = (*i)["id"].as<int>();
-			Texture *texture = new Texture(id);
+			auto j = _textures.find(id);
+			Texture *texture;
+			if (j != _textures.end())
+			{
+				texture = j->second;
+			}
+			else
+			{
+				texture = new Texture(id);
+				_textures[id] = texture;
+			}
 			texture->load(*i);
-			_textures[id] = texture;
+		}
+		else if ((*i)["delete"])
+		{
+			int id = (*i)["delete"].as<int>();
+			auto j = _textures.find(id);
+			if (j != _textures.end())
+			{
+				_textures.erase(j);
+			}
 		}
 	}
+
 	Globe::COUNTRY_LABEL_COLOR = node["countryColor"].as<int>(Globe::COUNTRY_LABEL_COLOR);
 	Globe::CITY_LABEL_COLOR = node["cityColor"].as<int>(Globe::CITY_LABEL_COLOR);
 	Globe::BASE_LABEL_COLOR = node["baseColor"].as<int>(Globe::BASE_LABEL_COLOR);
 	Globe::LINE_COLOR = node["lineColor"].as<int>(Globe::LINE_COLOR);
-	
 	if (node["oceanPalette"])
 	{
 		Globe::OCEAN_COLOR = Palette::blockOffset(node["oceanPalette"].as<int>(Globe::OCEAN_COLOR));
 	}
+	Globe::OCEAN_SHADING = node["oceanShading"].as<bool>(Globe::OCEAN_SHADING);
 }
 
 /**
@@ -153,20 +165,14 @@ std::list<Polyline*> *RuleGlobe::getPolylines()
  */
 void RuleGlobe::loadDat(const std::string &filename)
 {
-	// Load file
-	std::ifstream mapFile (filename.c_str(), std::ios::in | std::ios::binary);
-	if (!mapFile)
-	{
-		throw Exception(filename + " not found");
-	}
-
+	auto mapFile = FileMap::getIStream(filename);
 	short value[10];
 
-	while (mapFile.read((char*)&value, sizeof(value)))
+	while (mapFile->read((char*)&value, sizeof(value)))
 	{
 		Polygon* poly;
 		int points;
-		
+
 		for (int i = 0; i < 10; ++i)
 		{
 			value[i] = SDL_SwapLE16(value[i]);
@@ -185,8 +191,8 @@ void RuleGlobe::loadDat(const std::string &filename)
 		for (int i = 0, j = 0; i < points; ++i)
 		{
 			// Correct X-Com degrees and convert to radians
-			double lonRad = value[j++] * 0.125 * M_PI / 180;
-			double latRad = value[j++] * 0.125 * M_PI / 180;
+			double lonRad = Xcom2Rad(value[j++]);
+			double latRad = Xcom2Rad(value[j++]);
 
 			poly->setLongitude(i, lonRad);
 			poly->setLatitude(i, latRad);
@@ -196,12 +202,10 @@ void RuleGlobe::loadDat(const std::string &filename)
 		_polygons.push_back(poly);
 	}
 
-	if (!mapFile.eof())
+	if (!mapFile->eof())
 	{
 		throw Exception("Invalid globe map");
 	}
-
-	mapFile.close();
 }
 
 /**
@@ -211,7 +215,7 @@ void RuleGlobe::loadDat(const std::string &filename)
  */
 Texture *RuleGlobe::getTexture(int id) const
 {
-	std::map<int, Texture*>::const_iterator i = _textures.find(id);
+	auto i = _textures.find(id);
 	if (_textures.end() != i) return i->second; else return 0;
 }
 
@@ -223,13 +227,13 @@ Texture *RuleGlobe::getTexture(int id) const
 std::vector<std::string> RuleGlobe::getTerrains(const std::string &deployment) const
 {
 	std::vector<std::string> terrains;
-	for (std::map<int, Texture*>::const_iterator i = _textures.begin(); i != _textures.end(); ++i)
+	for (auto& pair : _textures)
 	{
-		if ((deployment == "" && i->second->getDeployments().empty()) || i->second->getDeployments().find(deployment) != i->second->getDeployments().end())
+		if ((deployment.empty() && pair.second->getDeployments().empty()) || pair.second->getDeployments().find(deployment) != pair.second->getDeployments().end())
 		{
-			for (std::vector<TerrainCriteria>::const_iterator j = i->second->getTerrain()->begin(); j != i->second->getTerrain()->end(); ++j)
+			for (const auto& tc : *pair.second->getTerrain())
 			{
-				terrains.push_back(j->name);
+				terrains.push_back(tc.name);
 			}
 		}
 	}

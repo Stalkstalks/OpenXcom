@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -49,6 +49,7 @@ void Frame::setColor(Uint8 color)
 	_color = color;
 	_redraw = true;
 }
+
 /**
  * Changes the color used to draw the shaded border.
  * only really to be used in conjunction with the State add()

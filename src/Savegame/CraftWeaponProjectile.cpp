@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,7 +20,7 @@
 
 namespace OpenXcom {
 
-CraftWeaponProjectile::CraftWeaponProjectile() : _type(CWPT_CANNON_ROUND), _globalType(CWPGT_MISSILE), _speed(0), _direction(D_NONE), _currentPosition(0), _horizontalPosition(0), _state(0), _accuracy(0), _damage(0), _range(0), _toBeRemoved(false), _missed(false), _distanceCovered(0)
+CraftWeaponProjectile::CraftWeaponProjectile() : _type(CWPT_CANNON_ROUND), _globalType(CWPGT_MISSILE), _speed(0), _direction(D_NONE), _currentPosition(0), _horizontalPosition(0), _state(0), _accuracy(0), _damage(0), _range(0), _toBeRemoved(false), _missed(false), _distanceCovered(0), _shieldDamageModifier(100)
 {
 }
 
@@ -96,10 +96,10 @@ void CraftWeaponProjectile::move()
 		if ((_distanceCovered / 8) < getRange() && ((_distanceCovered + _speed)/ 8) >= getRange())
 			positionChange = getRange() * 8 - _distanceCovered;
 
-		// Check if projectile passed its maximum range on previous tick. 
+		// Check if projectile passed its maximum range on previous tick.
 		if ((_distanceCovered / 8) >= getRange())
 			setMissed(true);
-		
+
 		if (_direction == D_UP)
 		{
 			_currentPosition += positionChange;
@@ -108,7 +108,7 @@ void CraftWeaponProjectile::move()
 		{
 			_currentPosition -= positionChange;
 		}
-		
+
 		_distanceCovered += positionChange;
 	}
 	else if (_globalType == CWPGT_BEAM)
@@ -251,6 +251,22 @@ int CraftWeaponProjectile::getRange() const
 void CraftWeaponProjectile::setSpeed(int speed)
 {
 	_speed = speed;
+}
+
+/*
+ * Sets how effective this projectile is against shields
+ */
+void CraftWeaponProjectile::setShieldDamageModifier(const int &shieldDamageModifier)
+{
+	_shieldDamageModifier = shieldDamageModifier;
+}
+
+/*
+ * Gets how effective this projectile is against shields
+ */
+int CraftWeaponProjectile::getShieldDamageModifier() const
+{
+	return _shieldDamageModifier;
 }
 
 }

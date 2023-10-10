@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,21 +17,19 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEVIDEO_H
-#define OPENXCOM_RULEVIDEO_H
-
 #include <yaml-cpp/yaml.h>
 #include <vector>
 #include <string>
-#include <map>
 #include "../Interface/Text.h"
 
 namespace OpenXcom
 {
+
 struct SlideshowHeader
 {
 	std::string musicId; // just the extension-less filename, like "GMWIN"
 	int transitionSeconds; // number of seconds to show each slide
+	SlideshowHeader() : transitionSeconds(0) { }
 };
 
 struct SlideshowSlide
@@ -39,7 +38,9 @@ struct SlideshowSlide
 	std::string caption; // STR id of caption text
 	int w, h, x, y, color; // caption rect and color info
 	TextHAlign align; // caption alignment
+	TextVAlign valign; // caption vertical alignment
 	int transitionSeconds; // number of seconds to show this slide
+	SlideshowSlide() : w(0), h(0), x(0), y(0), color(0), align(ALIGN_LEFT), valign(ALIGN_TOP), transitionSeconds(0) { }
 };
 
 class RuleVideo
@@ -47,7 +48,8 @@ class RuleVideo
 private:
 	std::string _id;
 	bool _useUfoAudioSequence;
-	std::vector<std::string> _videos;
+	bool _winGame, _loseGame;
+	std::vector<std::string> _videos, _audioTracks;
 	SlideshowHeader _slideshowHeader;
 	std::vector<SlideshowSlide> _slides;
 public:
@@ -60,7 +62,9 @@ public:
 	const std::vector<std::string> * getVideos() const;
 	const SlideshowHeader & getSlideshowHeader() const;
 	const std::vector<SlideshowSlide> * getSlides() const;
+	const std::vector<std::string> * getAudioTracks() const;
+	bool getWinGame() const { return _winGame; }
+	bool getLoseGame() const { return _loseGame; }
 };
 
 }
-#endif

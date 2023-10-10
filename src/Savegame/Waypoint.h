@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_WAYPOINT_H
-#define OPENXCOM_WAYPOINT_H
-
 #include "Target.h"
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -31,29 +29,15 @@ namespace OpenXcom
  */
 class Waypoint : public Target
 {
-private:
-	int _id;
 public:
 	/// Creates a waypoint.
 	Waypoint();
 	/// Cleans up the waypoint.
 	~Waypoint();
-	/// Loads the waypoint from YAML.
-	void load(const YAML::Node& node);
-	/// Saves the waypoint to YAML.
-	YAML::Node save() const;
-	/// Saves the waypoint's ID to YAML.
-	YAML::Node saveId() const;
-	/// Gets the waypoint's ID.
-	int getId() const;
-	/// Sets the waypoint's ID.
-	void setId(int id);
-	/// Gets the waypoint's name.
-	std::wstring getName(Language *lang) const;
-	/// Gets the waypoint's marker.
-	int getMarker() const;
+	/// Gets the waypoint's type.
+	std::string getType() const override;
+	/// Gets the waypoint's marker sprite.
+	int getMarker() const override;
 };
 
 }
-
-#endif

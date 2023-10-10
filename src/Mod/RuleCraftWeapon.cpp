@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,7 @@
  */
 #include "RuleCraftWeapon.h"
 #include "Mod.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -27,10 +28,11 @@ namespace OpenXcom
  * @param type String defining the type.
  */
 RuleCraftWeapon::RuleCraftWeapon(const std::string &type) :
-	_type(type), _sprite(-1), _sound(-1), _damage(0), _range(0), _accuracy(0),
+	_type(type), _sprite(-1), _sound(-1), _damage(0), _shieldDamageModifier(100), _range(0), _accuracy(0),
 	_reloadCautious(0), _reloadStandard(0), _reloadAggressive(0), _ammoMax(0),
 	_rearmRate(1), _projectileSpeed(0), _weaponType(0), _projectileType(CWPT_CANNON_ROUND),
-	_stats(), _underwaterOnly(false)
+	_stats(), _underwaterOnly(false),
+	_tractorBeamPower(0), _hidePediaInfo(false), _statisticalBulletSaving(false)
 {
 }
 
@@ -52,23 +54,24 @@ void RuleCraftWeapon::load(const YAML::Node &node, Mod *mod)
 	{
 		load(parent, mod);
 	}
+
 	if (node["stats"])
 	{
 		_stats.load(node["stats"]);
 	}
-	_type = node["type"].as<std::string>(_type);
 	if (node["sprite"])
 	{
-		_sprite = node["sprite"].as<int>(_sprite);
-		// this one is an offset within INTICONS.PCK
-		if (_sprite > 5)
-			_sprite += mod->getModOffset();
+		// used in
+		// Surface set (baseOffset):
+		//   BASEBITS.PCK (48)
+		//   INTICON.PCK (5)
+		//
+		// Final index in surfaceset is `baseOffset + sprite + (sprite > 5 ? modOffset : 0)`
+		_sprite = mod->getOffset(node["sprite"].as<int>(_sprite), 5);
 	}
-	if (node["sound"])
-	{
-		_sound = mod->getSoundOffset(node["sound"].as<int>(_sound), "GEO.CAT");
-	}
+	mod->loadSoundOffset(_type, _sound, node["sound"], "GEO.CAT");
 	_damage = node["damage"].as<int>(_damage);
+	_shieldDamageModifier = node["shieldDamageModifier"].as<int>(_shieldDamageModifier);
 	_range = node["range"].as<int>(_range);
 	_accuracy = node["accuracy"].as<int>(_accuracy);
 	_reloadCautious = node["reloadCautious"].as<int>(_reloadCautious);
@@ -78,18 +81,64 @@ void RuleCraftWeapon::load(const YAML::Node &node, Mod *mod)
 	_rearmRate = node["rearmRate"].as<int>(_rearmRate);
 	_projectileType = (CraftWeaponProjectileType)node["projectileType"].as<int>(_projectileType);
 	_projectileSpeed = node["projectileSpeed"].as<int>(_projectileSpeed);
-	_launcher = node["launcher"].as<std::string>(_launcher);
-	_clip = node["clip"].as<std::string>(_clip);
+	_launcherName = node["launcher"].as<std::string>(_launcherName);
+	_clipName = node["clip"].as<std::string>(_clipName);
 	_weaponType = node["weaponType"].as<int>(_weaponType);
 	_underwaterOnly = node["underwaterOnly"].as<bool>(_underwaterOnly);
+	_tractorBeamPower = node["tractorBeamPower"].as<int>(_tractorBeamPower);
+	_hidePediaInfo = node["hidePediaInfo"].as<bool>(_hidePediaInfo);
+	_statisticalBulletSaving = node["bulletSaving"].as<bool>(_statisticalBulletSaving);
 }
+
+
+/**
+ * Cross link with other rules.
+ */
+void RuleCraftWeapon::afterLoad(const Mod* mod)
+{
+	mod->linkRule(_launcher, _launcherName);
+	mod->linkRule(_clip, _clipName);
+
+
+	if (_projectileType < CWPT_LASER_BEAM && _damage > 0)
+	{
+		if (_projectileSpeed <= 0)
+		{
+			throw Exception("Missile-like craft weapons (with 'damage' > 0) must have a positive 'projectileSpeed'.");
+		}
+		else if (_projectileSpeed <= 4 && _range > 10)
+		{
+			Log(LOG_WARNING) << "Missile speed for " << _type << " is very low! Depending on craft approach speed, the missile may seem not moving, or even moving backwards. Speed: " << _projectileSpeed << "; range: " << _range;
+		}
+		else if (_projectileSpeed <= 5 && _range > 20)
+		{
+			Log(LOG_INFO) << "Missile speed for " << _type << " is quite low. Depending on craft approach speed, the missile may seem moving very slowly. Speed: " << _projectileSpeed << "; range: " << _range;
+		}
+	}
+	if (_launcher == nullptr)
+	{
+		throw Exception("Launcher item is required for a craft weapon");
+	}
+	if (_ammoMax)
+	{
+		if (_rearmRate <= 0)
+		{
+			throw Exception("Attribute 'rearmRate' must be positive when 'ammoMax' is set");
+		}
+		if (_clip && _clip->getClipSize() > _rearmRate)
+		{
+			throw Exception("Attribute 'clipSize' of the clip item is too big for the given 'rearmRate'");
+		}
+	}
+}
+
 
 /**
  * Gets the language string that names this craft weapon.
  * Each craft weapon type has a unique name.
  * @return The craft weapon's name.
  */
-std::string RuleCraftWeapon::getType() const
+const std::string& RuleCraftWeapon::getType() const
 {
 	return _type;
 }
@@ -122,6 +171,15 @@ int RuleCraftWeapon::getSound() const
 int RuleCraftWeapon::getDamage() const
 {
 	return _damage;
+}
+
+/**
+ * Gets the percent effectiveness of this craft weapon against shields
+ * @return modifier to damage against shields
+ */
+int RuleCraftWeapon::getShieldDamageModifier() const
+{
+	return _shieldDamageModifier;
 }
 
 /**
@@ -194,21 +252,21 @@ int RuleCraftWeapon::getRearmRate() const
 }
 
 /**
- * Gets the language string of the item used to
+ * Gets the rule of the item used to
  * equip this craft weapon.
- * @return The item name.
+ * @return The item rule.
  */
-std::string RuleCraftWeapon::getLauncherItem() const
+const RuleItem* RuleCraftWeapon::getLauncherItem() const
 {
 	return _launcher;
 }
 
 /**
- * Gets the language string of the item used to
+ * Gets the rule of the item used to
  * load this craft weapon with ammo.
- * @return The item name.
+ * @return The item rule.
  */
-std::string RuleCraftWeapon::getClipItem() const
+const RuleItem* RuleCraftWeapon::getClipItem() const
 {
 	return _clip;
 }
@@ -255,6 +313,15 @@ const RuleCraftStats& RuleCraftWeapon::getBonusStats() const
 bool RuleCraftWeapon::isWaterOnly() const
 {
 	return _underwaterOnly;
+}
+
+/**
+ * Get the craft weapon's tractor beam power
+ * @return The tractor beam power.
+ */
+int RuleCraftWeapon::getTractorBeamPower() const
+{
+	return _tractorBeamPower;
 }
 
 }

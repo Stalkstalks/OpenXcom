@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,16 +20,18 @@
 #include <vector>
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
 #include "../Engine/Action.h"
 #include "../Savegame/SavedBattleGame.h"
+#include "BattlescapeGame.h"
 #include "BattlescapeState.h"
 #include "../Engine/Options.h"
 #include "../Mod/AlienDeployment.h"
 #include "../Mod/MapScript.h"
+#include "../Mod/RuleCraft.h"
+#include "../Savegame/Craft.h"
 #include "../Savegame/Tile.h"
 
 namespace OpenXcom
@@ -69,14 +71,19 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 	AlienDeployment *deployment = _game->getMod()->getDeployment(_battleGame->getMissionType());
 	if (deployment != 0)
 	{
-		exit = !deployment->getNextStage().empty();
-		const std::vector<MapScript*> *scripts = _game->getMod()->getMapScript(deployment->getScript());
-		if (scripts != 0)
+		exit = !deployment->getNextStage().empty() || deployment->getEscapeType() == ESCAPE_EXIT || deployment->getEscapeType() == ESCAPE_EITHER;
+		std::string lastUsedMapScript = _battleGame->getLastUsedMapScript();
+		if (lastUsedMapScript.empty())
+		{
+			lastUsedMapScript = deployment->getRandomMapScript(); // don't crash on old saves
+		}
+		const std::vector<MapScript*> *mapScriptEntries = _game->getMod()->getMapScript(lastUsedMapScript);
+		if (mapScriptEntries != 0)
 		{
 			craft = false;
-			for (std::vector<MapScript*>::const_iterator i = scripts->begin(); i != scripts->end(); ++i)
+			for (const auto* mapScriptEntry : *mapScriptEntries)
 			{
-				if ((*i)->getType() == MSC_ADDCRAFT)
+				if (mapScriptEntry->getType() == MSC_ADDCRAFT)
 				{
 					craft = true;
 					break;
@@ -90,7 +97,7 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 		for (int i = 0; i < _battleGame->getMapSizeXYZ(); ++i)
 		{
 			Tile *tile = _battleGame->getTile(i);
-			if (tile && tile->getMapData(O_FLOOR) && tile->getMapData(O_FLOOR)->getSpecialType() == END_POINT)
+			if (tile && tile->getFloorSpecialTileType() == END_POINT)
 			{
 				exit = true;
 				break;
@@ -99,23 +106,15 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 	}
 
 	// Calculate values
-	for (std::vector<BattleUnit*>::iterator i = _battleGame->getUnits()->begin(); i != _battleGame->getUnits()->end(); ++i)
+	auto tally = _battleGame->isPreview() ? _battleGame->tallyUnitsForPreview() : _battleGame->getBattleGame()->tallyUnits();
+	_inEntrance = tally.inEntrance;
+	_inExit = tally.inExit;
+	_outside = tally.inField;
+
+	if (!exit && _inExit > 0)
 	{
-		if ((*i)->getOriginalFaction() == FACTION_PLAYER && !(*i)->isOut())
-		{
-			if ((*i)->isInExitArea(START_POINT))
-			{
-				_inEntrance++;
-			}
-			else if ((*i)->isInExitArea(END_POINT))
-			{
-				_inExit++;
-			}
-			else
-			{
-				_outside++;
-			}
-		}
+		// FIXME: better would be to correctly decide already at the top (how??), but for now this will do...
+		exit = true;
 	}
 
 	// Set up objects
@@ -126,20 +125,20 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 	_txtInEntrance->setHighContrast(true);
 	if (craft)
 	{
-		_txtInEntrance->setText(tr("STR_UNITS_IN_CRAFT", _inEntrance));		
+		_txtInEntrance->setText(tr("STR_UNITS_IN_CRAFT", _inEntrance + tally.vipInEntrance));
 	}
 	else
 	{
-		_txtInEntrance->setText(tr("STR_UNITS_IN_ENTRANCE", _inEntrance));		
+		_txtInEntrance->setText(tr("STR_UNITS_IN_ENTRANCE", _inEntrance + tally.vipInEntrance));
 	}
 
 	_txtInExit->setBig();
 	_txtInExit->setHighContrast(true);
-	_txtInExit->setText(tr("STR_UNITS_IN_EXIT", _inExit));
+	_txtInExit->setText(tr("STR_UNITS_IN_EXIT", _inExit + tally.vipInExit));
 
 	_txtOutside->setBig();
 	_txtOutside->setHighContrast(true);
-	_txtOutside->setText(tr("STR_UNITS_OUTSIDE", _outside));
+	_txtOutside->setText(tr("STR_UNITS_OUTSIDE", _outside + tally.vipInField));
 
 
 	if (_battleGame->getMissionType() == "STR_BASE_DEFENSE")
@@ -148,7 +147,7 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 		_txtInExit->setVisible(false);
 		_txtOutside->setVisible(false);
 	}
-	else if (!exit)
+	else if (!exit || _battleGame->isPreview())
 	{
 		_txtInEntrance->setY(26);
 		_txtOutside->setY(54);
@@ -159,12 +158,20 @@ AbortMissionState::AbortMissionState(SavedBattleGame *battleGame, BattlescapeSta
 	_txtAbort->setAlign(ALIGN_CENTER);
 	_txtAbort->setHighContrast(true);
 	_txtAbort->setText(tr("STR_ABORT_MISSION_QUESTION"));
+	if (_battleGame->isPreview())
+	{
+		_txtAbort->setText(tr("STR_CRAFT_DEPLOYMENT_QUESTION"));
+	}
 
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->setHighContrast(true);
 	_btnOk->onMouseClick((ActionHandler)&AbortMissionState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&AbortMissionState::btnOkClick, Options::keyOk);
+	if (_battleGame->isPreview() && (_outside > 0 || _inEntrance <= 0))
+	{
+		_btnOk->setVisible(false);
+	}
 
 
 	_btnCancel->setText(tr("STR_CANCEL_UC"));
@@ -190,6 +197,23 @@ AbortMissionState::~AbortMissionState()
  */
 void AbortMissionState::btnOkClick(Action *)
 {
+	if (_battleGame->isPreview())
+	{
+		if (_battleGame->getCraftForPreview()->getId() == RuleCraft::DUMMY_CRAFT_ID)
+		{
+			// dummy craft, generic deployment schema
+			_battleGame->saveDummyCraftDeployment();
+		}
+		else
+		{
+			// real craft, real unit deployment
+			_battleGame->saveCustomCraftDeployment();
+		}
+
+		_game->popState();
+		return;
+	}
+
 	_game->popState();
 	_battleGame->setAborted(true);
 	_state->finishBattle(true, _inExit);

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BATTLESCAPEBUTTON_H
-#define OPENXCOM_BATTLESCAPEBUTTON_H
-
 #include "../Engine/InteractiveSurface.h"
 
 namespace OpenXcom
 {
 
 enum InversionType {INVERT_NONE, INVERT_CLICK, INVERT_TOGGLE};
-	
+
 /**
  * Regular image that works like a button.
  * Unlike the TextButton, this button doesn't draw
@@ -47,15 +45,15 @@ public:
 	/// Cleans up the image button.
 	virtual ~BattlescapeButton();
 	/// Sets the image button's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the image button's color.
 	Uint8 getColor() const;
 	/// Sets the image button's group.
 	void setGroup(BattlescapeButton **group);
 	/// Special handling for mouse presses.
-	void mousePress(Action *action, State *state);
+	void mousePress(Action *action, State *state) override;
 	/// Special handling for mouse releases.
-	void mouseRelease(Action *action, State *state);
+	void mouseRelease(Action *action, State *state) override;
 	/// Invert a button explicitly either ON or OFF.
 	void toggle(bool invert);
 	/// Allows this button to be toggled on/off with a click.
@@ -63,16 +61,14 @@ public:
 	/// Allows this button to be toggled on when clicked, and off when released.
 	void allowClickInversion();
 	/// Sets up the "pressed" surface.
-	void initSurfaces();
+	void initSurfaces(Surface* custom = nullptr);
 	/// Blits this surface onto another one.
-	void blit(Surface *surface);
+	void blit(SDL_Surface *surface) override;
 	/// Alters both versions of the button's X pos.
-	void setX(int x);
+	void setX(int x) override;
 	/// Alters both versions of the button's Y pos.
-	void setY(int y);
+	void setY(int y) override;
 
 };
 
 }
-
-#endif

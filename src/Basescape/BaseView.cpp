@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,6 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "BaseView.h"
+#include <algorithm>
 #include <sstream>
 #include <cmath>
 #include "../Engine/SurfaceSet.h"
@@ -25,11 +26,10 @@
 #include "../Savegame/BaseFacility.h"
 #include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/Craft.h"
-#include "../Mod/RuleCraft.h"
 #include "../Interface/Text.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Options.h"
-#include <limits>
+#include <climits>
 
 namespace OpenXcom
 {
@@ -41,11 +41,16 @@ namespace OpenXcom
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-BaseView::BaseView(int width, int height, int x, int y) : InteractiveSurface(width, height, x, y), _base(0), _texture(0), _selFacility(0), _big(0), _small(0), _lang(0), _gridX(0), _gridY(0), _selSize(0), _selector(0), _blink(true)
+BaseView::BaseView(int width, int height, int x, int y) : InteractiveSurface(width, height, x, y), _base(0), _texture(0), _selFacility(0), _selCraft(0), _big(0), _small(0), _lang(0), _gridX(0), _gridY(0), _selSize(0), _selector(0), _blink(true), _cellColor(0), _selectorColor(0)
 {
-	for (int x = 0; x < BASE_SIZE; ++x)
-		for (int y = 0; y < BASE_SIZE; ++y)
-			_facilities[x][y] = 0;
+	// Clear grid
+	for (int i = 0; i < BASE_SIZE; ++i)
+	{
+		for (int j = 0; j < BASE_SIZE; ++j)
+		{
+			_facilities[i][j] = 0;
+		}
+	}
 
 	_timer = new Timer(100);
 	_timer->onTimer((SurfaceHandler)&BaseView::blink);
@@ -86,20 +91,25 @@ void BaseView::setBase(Base *base)
 {
 	_base = base;
 	_selFacility = 0;
+	_selCraft = 0;		
 
 	// Clear grid
 	for (int x = 0; x < BASE_SIZE; ++x)
+	{
 		for (int y = 0; y < BASE_SIZE; ++y)
+		{
 			_facilities[x][y] = 0;
+		}
+	}
 
 	// Fill grid with base facilities
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+	for (auto* fac : *_base->getFacilities())
 	{
-		for (int y = (*i)->getY(); y < (*i)->getY() + (*i)->getRules()->getSize(); ++y)
+		for (int y = fac->getY(); y < fac->getY() + fac->getRules()->getSize(); ++y)
 		{
-			for (int x = (*i)->getX(); x < (*i)->getX() + (*i)->getRules()->getSize(); ++x)
+			for (int x = fac->getX(); x < fac->getX() + fac->getRules()->getSize(); ++x)
 			{
-				_facilities[x][y] = *i;
+				_facilities[x][y] = fac;
 			}
 		}
 	}
@@ -124,6 +134,15 @@ void BaseView::setTexture(SurfaceSet *texture)
 BaseFacility *BaseView::getSelectedFacility() const
 {
 	return _selFacility;
+}
+
+/**
+ * Returns the craft the mouse is currently over.
+ * @return Pointer to Craft facility (0 if none).
+ */
+Craft *BaseView::getSelectedCraft() const
+{
+	return _selCraft;
 }
 
 /**
@@ -191,41 +210,128 @@ void BaseView::setSelectable(int size)
  * Returns if a certain facility can be successfully
  * placed on the currently selected square.
  * @param rule Facility type.
- * @return True if placeable, False otherwise.
+ * @param facilityBeingMoved Selected facility.
+ * @param isStartFacility Is this a start facility?
+ * @return 0 if placeable, otherwise error code for why we couldn't place it
+ * 1: not connected to lift or on top of another facility (standard OXC behavior)
+ * 2: trying to upgrade over existing facility, but it's in use
+ * 3: trying to upgrade over existing facility, but it's already being upgraded
+ * 4: trying to upgrade over existing facility, but size/placement mismatch
+ * 5: trying to upgrade over existing facility, but ruleset of new facility requires a specific existing facility
+ * 6: trying to upgrade over existing facility, but ruleset disallows it
+ * 7: trying to upgrade over existing facility, but all buildings next to it are under construction and build queue is off
  */
-bool BaseView::isPlaceable(RuleBaseFacility *rule) const
+BasePlacementErrors BaseView::getPlacementError(const RuleBaseFacility *rule, BaseFacility *facilityBeingMoved, bool isStartFacility) const
 {
-	// Check if square isn't occupied
-	for (int y = _gridY; y < _gridY + rule->getSize(); ++y)
+	// We'll need to know for the final check if we're upgrading an existing facility
+	bool buildingOverExisting = false;
+
+	// Area where we want to place a new building
+	const BaseAreaSubset placementArea = BaseAreaSubset(rule->getSize(), rule->getSize()).offset(_gridX, _gridY);
+	// Whole base
+	const BaseAreaSubset baseArea = BaseAreaSubset(BASE_SIZE, BASE_SIZE);
+
+	// Check if the facility fits inside the base boundaries
+	if (BaseAreaSubset::intersection(placementArea, baseArea) != placementArea)
 	{
-		for (int x = _gridX; x < _gridX + rule->getSize(); ++x)
+		return BPE_NotConnected;
+	}
+
+	// Check usage of facilites in the area that will be replaced by a new building
+	if (facilityBeingMoved == nullptr)
+	{
+		auto areaUseError = _base->isAreaInUse(placementArea, rule);
+		if (areaUseError != BPE_None)
 		{
-			if (x < 0 || x >= BASE_SIZE || y < 0 || y >= BASE_SIZE)
+			return areaUseError;
+		}
+	}
+
+	// Check if square isn't occupied
+	for (int y = placementArea.beg_y; y < placementArea.end_y; ++y)
+	{
+		for (int x = placementArea.beg_x; x < placementArea.end_x; ++x)
+		{
+			auto facility = _facilities[x][y];
+			if (facility != 0)
 			{
-				return false;
-			}
-			if (_facilities[x][y] != 0)
-			{
-				return false;
+				if (isStartFacility)
+				{
+					return BPE_NotConnected;
+				}
+				// when moving an existing facility, it should not block itself
+				if (facilityBeingMoved == nullptr)
+				{
+					// Further check to see if the facility already there can be built over and we're not removing an important base function
+					auto canBuildOverError = rule->getCanBuildOverOtherFacility(facility->getRules());
+					if (canBuildOverError != BPE_None)
+					{
+						return canBuildOverError;
+					}
+
+					// Make sure the facility we're building over is entirely within the size of the one we're checking
+					const auto removedArea = facility->getPlacement();
+					if (BaseAreaSubset::intersection(placementArea, removedArea) != removedArea)
+					{
+						return BPE_UpgradeSizeMismatch;
+					}
+
+					// Make sure this facility is not already being upgraded
+					if (facility->getIfHadPreviousFacility() && facility->getBuildTime() != 0)
+					{
+						return BPE_Upgrading;
+					}
+
+					buildingOverExisting = true;
+				}
+				else if (facility != facilityBeingMoved)
+				{
+					return BPE_NotConnected;
+				}
 			}
 		}
 	}
 
 	bool bq=Options::allowBuildingQueue;
+	bool hasConnectingFacility = false;
 
 	// Check for another facility to connect to
 	for (int i = 0; i < rule->getSize(); ++i)
 	{
-		if ((_gridX > 0 && _facilities[_gridX - 1][_gridY + i] != 0 && (bq || _facilities[_gridX - 1][_gridY + i]->getBuildTime() == 0)) ||
-			(_gridY > 0 && _facilities[_gridX + i][_gridY - 1] != 0 && (bq || _facilities[_gridX + i][_gridY - 1]->getBuildTime() == 0)) ||
-			(_gridX + rule->getSize() < BASE_SIZE && _facilities[_gridX + rule->getSize()][_gridY + i] != 0 && (bq || _facilities[_gridX + rule->getSize()][_gridY + i]->getBuildTime() == 0)) ||
-			(_gridY + rule->getSize() < BASE_SIZE && _facilities[_gridX + i][_gridY + rule->getSize()] != 0 && (bq || _facilities[_gridX + i][_gridY + rule->getSize()]->getBuildTime() == 0)))
+		if (_gridX > 0 && _facilities[_gridX - 1][_gridY + i] != 0)
 		{
-			return true;
+			hasConnectingFacility = true;
+			if ((!buildingOverExisting && bq) || _facilities[_gridX - 1][_gridY + i]->isBuiltOrHadPreviousFacility())
+				return BPE_None;
+		}
+
+		if (_gridY > 0 && _facilities[_gridX + i][_gridY - 1] != 0)
+		{
+			hasConnectingFacility = true;
+			if ((!buildingOverExisting && bq) || _facilities[_gridX + i][_gridY - 1]->isBuiltOrHadPreviousFacility())
+				return BPE_None;
+		}
+
+		if (_gridX + rule->getSize() < BASE_SIZE && _facilities[_gridX + rule->getSize()][_gridY + i] != 0)
+		{
+			hasConnectingFacility = true;
+			if ((!buildingOverExisting && bq) || _facilities[_gridX + rule->getSize()][_gridY + i]->isBuiltOrHadPreviousFacility())
+				return BPE_None;
+		}
+
+		if (_gridY + rule->getSize() < BASE_SIZE && _facilities[_gridX + i][_gridY + rule->getSize()] != 0)
+		{
+			hasConnectingFacility = true;
+			if ((!buildingOverExisting && bq) || _facilities[_gridX + i][_gridY + rule->getSize()]->isBuiltOrHadPreviousFacility())
+				return BPE_None;
 		}
 	}
 
-	return false;
+	// We can assume if we've reached this point that none of the connecting facilities are finished!
+	if (hasConnectingFacility && (!bq || buildingOverExisting))
+		return BPE_Queue;
+
+	return BPE_NotConnected;
 }
 
 /**
@@ -233,14 +339,14 @@ bool BaseView::isPlaceable(RuleBaseFacility *rule) const
  * @param rule Facility type.
  * @return True if queued, False otherwise.
  */
-bool BaseView::isQueuedBuilding(RuleBaseFacility *rule) const
+bool BaseView::isQueuedBuilding(const RuleBaseFacility *rule) const
 {
 	for (int i = 0; i < rule->getSize(); ++i)
 	{
-		if ((_gridX > 0 && _facilities[_gridX - 1][_gridY + i] != 0 && _facilities[_gridX - 1][_gridY + i]->getBuildTime() == 0) ||
-			(_gridY > 0 && _facilities[_gridX + i][_gridY - 1] != 0 && _facilities[_gridX + i][_gridY - 1]->getBuildTime() == 0) ||
-			(_gridX + rule->getSize() < BASE_SIZE && _facilities[_gridX + rule->getSize()][_gridY + i] != 0 && _facilities[_gridX + rule->getSize()][_gridY + i]->getBuildTime() == 0) ||
-			(_gridY + rule->getSize() < BASE_SIZE && _facilities[_gridX + i][_gridY + rule->getSize()] != 0 && _facilities[_gridX + i][_gridY + rule->getSize()]->getBuildTime() == 0))
+		if ((_gridX > 0 && _facilities[_gridX - 1][_gridY + i] != 0 && _facilities[_gridX - 1][_gridY + i]->isBuiltOrHadPreviousFacility()) ||
+			(_gridY > 0 && _facilities[_gridX + i][_gridY - 1] != 0 && _facilities[_gridX + i][_gridY - 1]->isBuiltOrHadPreviousFacility()) ||
+			(_gridX + rule->getSize() < BASE_SIZE && _facilities[_gridX + rule->getSize()][_gridY + i] != 0 && _facilities[_gridX + rule->getSize()][_gridY + i]->isBuiltOrHadPreviousFacility()) ||
+			(_gridY + rule->getSize() < BASE_SIZE && _facilities[_gridX + i][_gridY + rule->getSize()] != 0 && _facilities[_gridX + i][_gridY + rule->getSize()]->isBuiltOrHadPreviousFacility()))
 		{
 			return false;
 		}
@@ -255,23 +361,33 @@ void BaseView::reCalcQueuedBuildings()
 {
 	setBase(_base);
 	std::vector<BaseFacility*> facilities;
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
-		if ((*i)->getBuildTime() > 0)
+	for (auto* fac : *_base->getFacilities())
+	{
+		if (fac->getAdjustedBuildTime() > 0)
 		{
 			// Set all queued buildings to infinite.
-			if ((*i)->getBuildTime() > (*i)->getRules()->getBuildTime()) (*i)->setBuildTime(std::numeric_limits<int>::max());
-			facilities.push_back(*i);
+			if (fac->getAdjustedBuildTime() > fac->getRules()->getBuildTime())
+			{
+				fac->setBuildTime(INT_MAX);
+			}
+			facilities.push_back(fac);
 		}
+	}
 
 	// Applying a simple Dijkstra Algorithm
 	while (!facilities.empty())
 	{
-		std::vector<BaseFacility*>::iterator min = facilities.begin();
-		for (std::vector<BaseFacility*>::iterator i = facilities.begin(); i != facilities.end(); ++i)
-			if ((*i)->getBuildTime() < (*min)->getBuildTime()) min=i;
+		auto min = facilities.begin();
+		for (auto it = facilities.begin(); it != facilities.end(); ++it)
+		{
+			if ((*it)->getAdjustedBuildTime() < (*min)->getAdjustedBuildTime())
+			{
+				min = it;
+			}
+		}
 		BaseFacility* facility=(*min);
 		facilities.erase(min);
-		RuleBaseFacility *rule=facility->getRules();
+		const RuleBaseFacility *rule=facility->getRules();
 		int x=facility->getX(), y=facility->getY();
 		for (int i = 0; i < rule->getSize(); ++i)
 		{
@@ -291,9 +407,9 @@ void BaseView::reCalcQueuedBuildings()
 void BaseView::updateNeighborFacilityBuildTime(BaseFacility* facility, BaseFacility* neighbor)
 {
 	if (facility != 0 && neighbor != 0
-	&& neighbor->getBuildTime() > neighbor->getRules()->getBuildTime()
-	&& facility->getBuildTime() + neighbor->getRules()->getBuildTime() < neighbor->getBuildTime())
-		neighbor->setBuildTime(facility->getBuildTime() + neighbor->getRules()->getBuildTime());
+	&& neighbor->getAdjustedBuildTime() > neighbor->getRules()->getBuildTime()
+	&& facility->getAdjustedBuildTime() + neighbor->getRules()->getBuildTime() < neighbor->getAdjustedBuildTime())
+		neighbor->setBuildTime(facility->getAdjustedBuildTime() + neighbor->getRules()->getBuildTime());
 }
 
 /**
@@ -352,92 +468,97 @@ void BaseView::draw()
 		for (int y = 0; y < BASE_SIZE; ++y)
 		{
 			Surface *frame = _texture->getFrame(0);
-			frame->setX(x * GRID_SIZE);
-			frame->setY(y * GRID_SIZE);
-			frame->blit(this);
+			auto fx = (x * GRID_SIZE);
+			auto fy = (y * GRID_SIZE);
+			frame->blitNShade(this, fx, fy);
 		}
 	}
 
-	std::vector<Craft*>::iterator craft = _base->getCrafts()->begin();
+	for (auto *craft : *_base->getCrafts())  // Reset 'assigned state' to crafts at base
+	{
+		craft->setIsAssignedToSlot(false);	
+		craft->setBaseEscapePosition(Position(-1,-1,-1)); // -1,-1,-1 is "craft not assigned"			
+	}	
 
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+	for (const auto* fac : *_base->getFacilities())
 	{
 		// Draw facility shape
 		int num = 0;
-		for (int y = (*i)->getY(); y < (*i)->getY() + (*i)->getRules()->getSize(); ++y)
+		for (int y = fac->getY(); y < fac->getY() + fac->getRules()->getSize(); ++y)
 		{
-			for (int x = (*i)->getX(); x < (*i)->getX() + (*i)->getRules()->getSize(); ++x)
+			for (int x = fac->getX(); x < fac->getX() + fac->getRules()->getSize(); ++x)
 			{
 				Surface *frame;
 
-				int outline = std::max((*i)->getRules()->getSize() * (*i)->getRules()->getSize(), 3);
-				if ((*i)->getBuildTime() == 0)
-					frame = _texture->getFrame((*i)->getRules()->getSpriteShape() + num);
+				int outline = std::max(fac->getRules()->getSize() * fac->getRules()->getSize(), 3);
+				if (fac->getBuildTime() == 0)
+					frame = _texture->getFrame(fac->getRules()->getSpriteShape() + num);
 				else
-					frame = _texture->getFrame((*i)->getRules()->getSpriteShape() + num + outline);
+					frame = _texture->getFrame(fac->getRules()->getSpriteShape() + num + outline);
 
-				frame->setX(x * GRID_SIZE);
-				frame->setY(y * GRID_SIZE);
-				frame->blit(this);
+				auto fx = (x * GRID_SIZE);
+				auto fy = (y * GRID_SIZE);
+				frame->blitNShade(this, fx, fy);
 
 				num++;
 			}
 		}
 	}
 
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+	for (const auto* fac : *_base->getFacilities())
 	{
 		// Draw connectors
-		if ((*i)->getBuildTime() == 0)
+		if (fac->isBuiltOrHadPreviousFacility() && !fac->getRules()->connectorsDisabled())
 		{
 			// Facilities to the right
-			int x = (*i)->getX() + (*i)->getRules()->getSize();
+			int x = fac->getX() + fac->getRules()->getSize();
 			if (x < BASE_SIZE)
 			{
-				for (int y = (*i)->getY(); y < (*i)->getY() + (*i)->getRules()->getSize(); ++y)
+				for (int y = fac->getY(); y < fac->getY() + fac->getRules()->getSize(); ++y)
 				{
-					if (_facilities[x][y] != 0 && _facilities[x][y]->getBuildTime() == 0)
+					if (_facilities[x][y] != 0 && _facilities[x][y]->isBuiltOrHadPreviousFacility() && !_facilities[x][y]->getRules()->connectorsDisabled())
 					{
 						Surface *frame = _texture->getFrame(7);
-						frame->setX(x * GRID_SIZE - GRID_SIZE / 2);
-						frame->setY(y * GRID_SIZE);
-						frame->blit(this);
+						auto fx = (x * GRID_SIZE - GRID_SIZE / 2);
+						auto fy = (y * GRID_SIZE);
+						frame->blitNShade(this, fx, fy);
 					}
 				}
 			}
 
 			// Facilities to the bottom
-			int y = (*i)->getY() + (*i)->getRules()->getSize();
+			int y = fac->getY() + fac->getRules()->getSize();
 			if (y < BASE_SIZE)
 			{
-				for (int x = (*i)->getX(); x < (*i)->getX() + (*i)->getRules()->getSize(); ++x)
+				for (int subX = fac->getX(); subX < fac->getX() + fac->getRules()->getSize(); ++subX)
 				{
-					if (_facilities[x][y] != 0 && _facilities[x][y]->getBuildTime() == 0)
+					if (_facilities[subX][y] != 0 && _facilities[subX][y]->isBuiltOrHadPreviousFacility() && !_facilities[subX][y]->getRules()->connectorsDisabled())
 					{
 						Surface *frame = _texture->getFrame(8);
-						frame->setX(x * GRID_SIZE);
-						frame->setY(y * GRID_SIZE - GRID_SIZE / 2);
-						frame->blit(this);
+						auto fx = (subX * GRID_SIZE);
+						auto fy = (y * GRID_SIZE - GRID_SIZE / 2);
+						frame->blitNShade(this, fx, fy);
 					}
 				}
 			}
 		}
 	}
 
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+	// TODO: make const in the future
+	for (auto* fac : *_base->getFacilities())
 	{
 		// Draw facility graphic
 		int num = 0;
-		for (int y = (*i)->getY(); y < (*i)->getY() + (*i)->getRules()->getSize(); ++y)
+		for (int y = fac->getY(); y < fac->getY() + fac->getRules()->getSize(); ++y)
 		{
-			for (int x = (*i)->getX(); x < (*i)->getX() + (*i)->getRules()->getSize(); ++x)
+			for (int x = fac->getX(); x < fac->getX() + fac->getRules()->getSize(); ++x)
 			{
-				if ((*i)->getRules()->getSize() == 1)
+				if (fac->getRules()->getSpriteEnabled())
 				{
-					Surface *frame = _texture->getFrame((*i)->getRules()->getSpriteFacility() + num);
-					frame->setX(x * GRID_SIZE);
-					frame->setY(y * GRID_SIZE);
-					frame->blit(this);
+					Surface *frame = _texture->getFrame(fac->getRules()->getSpriteFacility() + num);
+					int fx = (x * GRID_SIZE);
+					int fy = (y * GRID_SIZE);
+					frame->blitNShade(this, fx, fy);
 				}
 
 				num++;
@@ -445,45 +566,51 @@ void BaseView::draw()
 		}
 
 		// Draw crafts
-		if ((*i)->getBuildTime() == 0 && (*i)->getRules()->getCrafts() > 0)
+		fac->clearCraftsForDrawing(); 
+		if (fac->getBuildTime() == 0 && fac->getRules()->getCrafts() > 0)
 		{
-			if (craft != _base->getCrafts()->end())
-			{
-				if ((*craft)->getStatus() != "STR_OUT")
+			auto craftIt = _base->getCrafts()->begin();
+			for (const auto &p : fac->getRules()->getCraftSlots())
+			{			
+				while((craftIt != _base->getCrafts()->end()) && (((*craftIt)->getStatus() == "STR_OUT") ||  (*craftIt)->getIsAssignedToSlot() || (fac->getRules()->getHangarType() !=  (*craftIt)->getRules()->getHangarType())))
+						++craftIt;	
+				if ((craftIt != _base->getCrafts()->end()))
 				{
-					Surface *frame = _texture->getFrame((*craft)->getRules()->getSprite() + 33);
-					frame->setX((*i)->getX() * GRID_SIZE + ((*i)->getRules()->getSize() - 1) * GRID_SIZE / 2 + 2);
-					frame->setY((*i)->getY() * GRID_SIZE + ((*i)->getRules()->getSize() - 1) * GRID_SIZE / 2 - 4);
-					frame->blit(this);
-					(*i)->setCraft(*craft);
+					Surface *frame = _texture->getFrame((*craftIt)->getSkinSprite() + 33);		
+					int spriteWidthOffset= frame->getWidth()/2;  
+					int spriteHeightOffset= frame->getHeight()/2;	
+					int fx = (fac->getX() * GRID_SIZE) + ((fac->getRules()->getSize()) * GRID_SIZE) / 2.0 - spriteWidthOffset + p.x;
+					int fy = (fac->getY() * GRID_SIZE) + ((fac->getRules()->getSize()) * GRID_SIZE) / 2.0 + - spriteHeightOffset + p.y;	
+					(*craftIt)->setBaseEscapePosition(Position(fx,fy,0));					
+					frame->blitNShade(this, fx, fy);
+					fac->addCraftForDrawing(*craftIt);
+					(*craftIt)->setIsAssignedToSlot(true);
 				}
 				else
-				{
-					(*i)->setCraft(0);
-				}
-				++craft;
-			}
-			else
-			{
-				(*i)->setCraft(0);
-			}
+					break;
+			}	
 		}
 
 		// Draw time remaining
-		if ((*i)->getBuildTime() > 0)
+		if (fac->getBuildTime() > 0 || fac->getDisabled())
 		{
-			Text *text = new Text(GRID_SIZE * (*i)->getRules()->getSize(), 16, 0, 0);
+			Text *text = new Text(GRID_SIZE * fac->getRules()->getSize(), 16, 0, 0);
 			text->setPalette(getPalette());
 			text->initText(_big, _small, _lang);
-			text->setX((*i)->getX() * GRID_SIZE);
-			text->setY((*i)->getY() * GRID_SIZE + (GRID_SIZE * (*i)->getRules()->getSize() - 16) / 2);
+			text->setX(fac->getX() * GRID_SIZE);
+			text->setY(fac->getY() * GRID_SIZE + (GRID_SIZE * fac->getRules()->getSize() - 16) / 2);
 			text->setBig();
-			std::wostringstream ss;
-			ss << (*i)->getBuildTime();
+			std::ostringstream ss;
+			if (fac->getDisabled())
+				ss << "X";
+			else
+				ss << fac->getBuildTime();
+			if (fac->getIfHadPreviousFacility()) // Indicate that this facility still counts for connectivity
+				ss << "*";
 			text->setAlign(ALIGN_CENTER);
 			text->setColor(_cellColor);
 			text->setText(ss.str());
-			text->blit(this);
+			text->blit(this->getSurface());
 			delete text;
 		}
 	}
@@ -493,7 +620,7 @@ void BaseView::draw()
  * Blits the base view and selector.
  * @param surface Pointer to surface to blit onto.
  */
-void BaseView::blit(Surface *surface)
+void BaseView::blit(SDL_Surface *surface)
 {
 	Surface::blit(surface);
 	if (_selector != 0)
@@ -514,6 +641,18 @@ void BaseView::mouseOver(Action *action, State *state)
 	if (_gridX >= 0 && _gridX < BASE_SIZE && _gridY >= 0 && _gridY < BASE_SIZE)
 	{
 		_selFacility = _facilities[_gridX][_gridY];
+		if ((_selFacility != 0)  && !(_selFacility->getCraftsForDrawing().empty())){
+			    Position mousePos(action->getRelativeXMouse()/action->getXScale(),action->getRelativeYMouse()/action->getYScale(),0);
+				int dist=-1, newDist;
+				for (auto *craft : _selFacility->getCraftsForDrawing())
+				{
+					newDist = Position::distance2dSq(mousePos,craft->getBaseEscapePosition());
+					if(dist<0 || newDist <dist){
+						dist = newDist;
+						_selCraft = craft;
+					}
+				}
+		} 					
 		if (_selSize > 0)
 		{
 			if (_gridX + _selSize - 1 < BASE_SIZE && _gridY + _selSize - 1 < BASE_SIZE)
@@ -564,4 +703,5 @@ void BaseView::setSecondaryColor(Uint8 color)
 {
 	_selectorColor = color;
 }
+
 }

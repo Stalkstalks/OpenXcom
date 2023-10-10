@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,7 +21,6 @@
 #include "../Engine/Game.h"
 #include "../Engine/Options.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -70,7 +69,7 @@ AbandonGameState::AbandonGameState(OptionsOrigin origin) : _origin(origin)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "geoscape");
 
 	_btnYes->setText(tr("STR_YES"));
 	_btnYes->onMouseClick((ActionHandler)&AbandonGameState::btnYesClick);
@@ -86,7 +85,7 @@ AbandonGameState::AbandonGameState(OptionsOrigin origin) : _origin(origin)
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("geoscape");
 	}
 }
 
@@ -104,11 +103,14 @@ AbandonGameState::~AbandonGameState()
  */
 void AbandonGameState::btnYesClick(Action *)
 {
-	if (_origin == OPT_BATTLESCAPE && _game->getSavedGame()->getSavedBattle()->getAmbientSound() != -1)
+	// Reset touch flags
+	_game->resetTouchButtonFlags();
+
+	if (_origin == OPT_BATTLESCAPE && _game->getSavedGame()->getSavedBattle()->getAmbientSound() != Mod::NO_SOUND)
 		_game->getMod()->getSoundByDepth(0, _game->getSavedGame()->getSavedBattle()->getAmbientSound())->stopLoop();
 	if (!_game->getSavedGame()->isIronman())
 	{
-		Screen::updateScale(Options::geoscapeScale, Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
+		Screen::updateScale(Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
 		_game->getScreen()->resetDisplay(false);
 
 		_game->setState(new MainMenuState);

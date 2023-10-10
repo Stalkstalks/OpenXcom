@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,11 +18,10 @@
  */
 #include "BaseInfoState.h"
 #include <sstream>
-#include <math.h>
+#include <cmath>
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/Bar.h"
 #include "../Interface/TextButton.h"
@@ -165,7 +164,7 @@ BaseInfoState::BaseInfoState(Base *base, BasescapeState *state) : _base(base), _
 		ss << "ALT";
 	}
 	ss << "BACK07.SCR";
-	_game->getMod()->getSurface(ss.str())->blit(_bg);
+	_game->getMod()->getSurface(ss.str())->blitNShade(_bg, 0, 0);
 
 	_mini->setTexture(_game->getMod()->getSurfaceSet("BASEBITS.PCK"));
 	_mini->setBases(_game->getSavedGame()->getBases());
@@ -270,21 +269,21 @@ void BaseInfoState::init()
 	State::init();
 	_edtBase->setText(_base->getName());
 
-	std::wostringstream ss;
+	std::ostringstream ss;
 	ss << _base->getAvailableSoldiers() << ":" << _base->getTotalSoldiers();
 	_numSoldiers->setText(ss.str());
 
 	_barSoldiers->setMax(_base->getTotalSoldiers());
 	_barSoldiers->setValue(_base->getAvailableSoldiers());
 
-	std::wostringstream ss2;
+	std::ostringstream ss2;
 	ss2 << _base->getAvailableEngineers() << ":" << _base->getTotalEngineers();
 	_numEngineers->setText(ss2.str());
 
 	_barEngineers->setMax(_base->getTotalEngineers());
 	_barEngineers->setValue(_base->getAvailableEngineers());
 
-	std::wostringstream ss3;
+	std::ostringstream ss3;
 	ss3 << _base->getAvailableScientists() << ":" << _base->getTotalScientists();
 	_numScientists->setText(ss3.str());
 
@@ -292,28 +291,28 @@ void BaseInfoState::init()
 	_barScientists->setValue(_base->getAvailableScientists());
 
 
-	std::wostringstream ss4;
+	std::ostringstream ss4;
 	ss4 << _base->getUsedQuarters() << ":" << _base->getAvailableQuarters();
 	_numQuarters->setText(ss4.str());
 
 	_barQuarters->setMax(_base->getAvailableQuarters());
 	_barQuarters->setValue(_base->getUsedQuarters());
 
-	std::wostringstream ss5;
+	std::ostringstream ss5;
 	ss5 << (int)floor(_base->getUsedStores() + 0.05) << ":" << _base->getAvailableStores();
 	_numStores->setText(ss5.str());
 
 	_barStores->setMax(_base->getAvailableStores());
 	_barStores->setValue((int)floor(_base->getUsedStores() + 0.05));
 
-	std::wostringstream ss6;
+	std::ostringstream ss6;
 	ss6 << _base->getUsedLaboratories() << ":" << _base->getAvailableLaboratories();
 	_numLaboratories->setText(ss6.str());
 
 	_barLaboratories->setMax(_base->getAvailableLaboratories());
 	_barLaboratories->setValue(_base->getUsedLaboratories());
 
-	std::wostringstream ss7;
+	std::ostringstream ss7;
 	ss7 << _base->getUsedWorkshops() << ":" << _base->getAvailableWorkshops();
 	_numWorkshops->setText(ss7.str());
 
@@ -322,15 +321,15 @@ void BaseInfoState::init()
 
 	if (Options::storageLimitsEnforced)
 	{
-		std::wostringstream ss72;
-		ss72 << _base->getUsedContainment() << ":" << _base->getAvailableContainment();
+		std::ostringstream ss72;
+		ss72 << _base->getUsedContainment(0) << ":" << _base->getAvailableContainment(0);
 		_numContainment->setText(ss72.str());
 
-		_barContainment->setMax(_base->getAvailableContainment());
-		_barContainment->setValue(_base->getUsedContainment());
+		_barContainment->setMax(_base->getAvailableContainment(0));
+		_barContainment->setValue(_base->getUsedContainment(0));
 	}
 
-	std::wostringstream ss8;
+	std::ostringstream ss8;
 	ss8 << _base->getUsedHangars() << ":" << _base->getAvailableHangars();
 	_numHangars->setText(ss8.str());
 
@@ -338,26 +337,28 @@ void BaseInfoState::init()
 	_barHangars->setValue(_base->getUsedHangars());
 
 
-	std::wostringstream ss9;
+	std::ostringstream ss9;
 	ss9 << _base->getDefenseValue();
 	_numDefense->setText(ss9.str());
 
 	_barDefense->setMax(_base->getDefenseValue());
 	_barDefense->setValue(_base->getDefenseValue());
 
-	std::wostringstream ss10;
-	ss10 << _base->getShortRangeDetection();
+	std::ostringstream ss10;
+	int shortRangeDetection = _base->getShortRangeDetection();
+	ss10 << shortRangeDetection;
 	_numShortRange->setText(ss10.str());
 
-	_barShortRange->setMax(_base->getShortRangeDetection());
-	_barShortRange->setValue(_base->getShortRangeDetection());
+	_barShortRange->setMax(shortRangeDetection);
+	_barShortRange->setValue(shortRangeDetection);
 
-	std::wostringstream ss11;
-	ss11 << _base->getLongRangeDetection();
+	std::ostringstream ss11;
+	int longRangeDetection = _base->getLongRangeDetection();
+	ss11 << longRangeDetection;
 	_numLongRange->setText(ss11.str());
 
-	_barLongRange->setMax(_base->getLongRangeDetection());
-	_barLongRange->setValue(_base->getLongRangeDetection());
+	_barLongRange->setMax(longRangeDetection);
+	_barLongRange->setValue(longRangeDetection);
 }
 
 /**
@@ -393,14 +394,16 @@ void BaseInfoState::handleKeyPress(Action *action)
 {
 	if (action->getDetails()->type == SDL_KEYDOWN)
 	{
-		SDLKey baseKeys[] = {Options::keyBaseSelect1,
-			                 Options::keyBaseSelect2,
-			                 Options::keyBaseSelect3,
-			                 Options::keyBaseSelect4,
-			                 Options::keyBaseSelect5,
-			                 Options::keyBaseSelect6,
-			                 Options::keyBaseSelect7,
-			                 Options::keyBaseSelect8};
+		SDLKey baseKeys[] = {
+			Options::keyBaseSelect1,
+			Options::keyBaseSelect2,
+			Options::keyBaseSelect3,
+			Options::keyBaseSelect4,
+			Options::keyBaseSelect5,
+			Options::keyBaseSelect6,
+			Options::keyBaseSelect7,
+			Options::keyBaseSelect8
+		};
 		int key = action->getDetails()->key.keysym.sym;
 		for (size_t i = 0; i < _game->getSavedGame()->getBases()->size(); ++i)
 		{

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_FPSCOUNTER_H
-#define OPENXCOM_FPSCOUNTER_H
-
 #include "../Engine/Surface.h"
 
 namespace OpenXcom
@@ -45,20 +42,18 @@ public:
 	/// Cleans up all the FPS counter resources.
 	~FpsCounter();
 	/// Sets the FPS counter's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Sets the FpsCounter's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Handles keyboard events.
 	void handle(Action *action);
 	/// Advances frame counter.
-	void think();
+	void think() override;
 	// Updates FPS counter.
 	void update();
 	/// Draws the FPS counter.
-	void draw();
+	void draw() override;
 	void addFrame();
 };
 
 }
-
-#endif

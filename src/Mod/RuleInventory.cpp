@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,6 +19,8 @@
 #include "RuleInventory.h"
 #include <cmath>
 #include "RuleItem.h"
+#include "../Engine/Screen.h"
+#include "../Engine/ScriptBind.h"
 
 namespace YAML
 {
@@ -53,7 +55,7 @@ namespace OpenXcom
  * type of inventory section.
  * @param id String defining the id.
  */
-RuleInventory::RuleInventory(const std::string &id): _id(id), _x(0), _y(0), _type(INV_SLOT), _listOrder(0)
+RuleInventory::RuleInventory(const std::string &id, int listOrder): _id(id), _x(0), _y(0), _type(INV_SLOT), _listOrder(listOrder), _hand(0)
 {
 }
 
@@ -66,19 +68,31 @@ RuleInventory::~RuleInventory()
  * @param node YAML node.
  * @param listOrder The list weight for this inventory.
  */
-void RuleInventory::load(const YAML::Node &node, int listOrder)
+void RuleInventory::load(const YAML::Node &node)
 {
 	if (const YAML::Node &parent = node["refNode"])
 	{
-		load(parent, listOrder);
+		load(parent);
 	}
-	_id = node["id"].as<std::string>(_id);
+
 	_x = node["x"].as<int>(_x);
 	_y = node["y"].as<int>(_y);
 	_type = (InventoryType)node["type"].as<int>(_type);
 	_slots = node["slots"].as< std::vector<RuleSlot> >(_slots);
 	_costs = node["costs"].as< std::map<std::string, int> >(_costs);
-	_listOrder = node["listOrder"].as<int>(listOrder);
+	_listOrder = node["listOrder"].as<int>(_listOrder);
+	if (_id == "STR_RIGHT_HAND")
+	{
+		_hand = 2;
+	}
+	else if (_id == "STR_LEFT_HAND")
+	{
+		_hand = 1;
+	}
+	else
+	{
+		_hand = 0;
+	}
 }
 
 /**
@@ -86,7 +100,7 @@ void RuleInventory::load(const YAML::Node &node, int listOrder)
  * this inventory section. Each section has a unique name.
  * @return The section name.
  */
-std::string RuleInventory::getId() const
+const std::string& RuleInventory::getId() const
 {
 	return _id;
 }
@@ -119,6 +133,24 @@ int RuleInventory::getY() const
 InventoryType RuleInventory::getType() const
 {
 	return _type;
+}
+
+/**
+ * Gets if this slot is right hand.
+ * @return This is right hand.
+ */
+bool RuleInventory::isRightHand() const
+{
+	return _hand == 2;
+}
+
+/**
+ * Gets if this slot is left hand.
+ * @return This is wrong hand.
+ */
+bool RuleInventory::isLeftHand() const
+{
+	return _hand == 1;
 }
 
 /**
@@ -157,7 +189,7 @@ bool RuleInventory::checkSlotInPosition(int *x, int *y) const
 	}
 	else if (_type == INV_GROUND)
 	{
-		if (mouseX >= _x && mouseX < 320 && mouseY >= _y && mouseY < 200)
+		if (mouseX >= _x && mouseX < Screen::ORIGINAL_WIDTH && mouseY >= _y && mouseY < Screen::ORIGINAL_HEIGHT)
 		{
 			*x = (int)floor(double(mouseX - _x) / SLOT_W);
 			*y = (int)floor(double(mouseY - _y) / SLOT_H);
@@ -166,13 +198,13 @@ bool RuleInventory::checkSlotInPosition(int *x, int *y) const
 	}
 	else
 	{
-		for (std::vector<RuleSlot>::const_iterator i = _slots.begin(); i != _slots.end(); ++i)
+		for (const auto& coord : _slots)
 		{
-			if (mouseX >= _x + i->x * SLOT_W && mouseX < _x + (i->x + 1) * SLOT_W &&
-				mouseY >= _y + i->y * SLOT_H && mouseY < _y + (i->y + 1) * SLOT_H)
+			if (mouseX >= _x + coord.x * SLOT_W && mouseX < _x + (coord.x + 1) * SLOT_W &&
+				mouseY >= _y + coord.y * SLOT_H && mouseY < _y + (coord.y + 1) * SLOT_H)
 			{
-				*x = i->x;
-				*y = i->y;
+				*x = coord.x;
+				*y = coord.y;
 				return true;
 			}
 		}
@@ -188,7 +220,7 @@ bool RuleInventory::checkSlotInPosition(int *x, int *y) const
  * @param y Slot Y position.
  * @return True if there's a slot there.
  */
-bool RuleInventory::fitItemInSlot(RuleItem *item, int x, int y) const
+bool RuleInventory::fitItemInSlot(const RuleItem *item, int x, int y) const
 {
 	if (_type == INV_HAND)
 	{
@@ -215,10 +247,14 @@ bool RuleInventory::fitItemInSlot(RuleItem *item, int x, int y) const
 	{
 		int totalSlots = item->getInventoryWidth() * item->getInventoryHeight();
 		int foundSlots = 0;
-		for (std::vector<RuleSlot>::const_iterator i = _slots.begin(); i != _slots.end() && foundSlots < totalSlots; ++i)
+		for (const auto& coord : _slots)
 		{
-			if (i->x >= x && i->x < x + item->getInventoryWidth() &&
-				i->y >= y && i->y < y + item->getInventoryHeight())
+			if (foundSlots >= totalSlots)
+			{
+				break; // loop finished
+			}
+			if (coord.x >= x && coord.x < x + item->getInventoryWidth() &&
+				coord.y >= y && coord.y < y + item->getInventoryHeight())
 			{
 				foundSlots++;
 			}
@@ -232,7 +268,7 @@ bool RuleInventory::fitItemInSlot(RuleItem *item, int x, int y) const
  * @param slot The new section id.
  * @return The time unit cost.
  */
-int RuleInventory::getCost(RuleInventory* slot) const
+int RuleInventory::getCost(const RuleInventory* slot) const
 {
 	if (slot == this)
 		return 0;
@@ -243,4 +279,80 @@ int RuleInventory::getListOrder() const
 {
 	return _listOrder;
 }
+
+
+////////////////////////////////////////////////////////////
+//					Script binding
+////////////////////////////////////////////////////////////
+
+namespace
+{
+
+void getIdScript(const RuleInventory* bu, ScriptText& txt)
+{
+	if (bu)
+	{
+		txt = { bu->getId().c_str() };
+		return;
+	}
+	else
+	{
+		txt = ScriptText::empty;
+	}
+}
+
+void getTypeScript(const RuleInventory* bu, int& type)
+{
+	if (bu)
+	{
+		type = (int)bu->getType();
+	}
+	else
+	{
+		type = 0;
+	}
+}
+
+std::string debugDisplayScript(const RuleInventory* bu)
+{
+	if (bu)
+	{
+		std::string s;
+		s += RuleInventory::ScriptName;
+		s += "(id: \"";
+		s += bu->getId();
+		s += "\")";
+		return s;
+	}
+	else
+	{
+		return "null";
+	}
+}
+
+} // namespace
+
+
+
+/**
+ * Register RuleInventory in script parser.
+ * @param parser Script parser.
+ */
+void RuleInventory::ScriptRegister(ScriptParserBase* parser)
+{
+	Bind<RuleInventory> bu = { parser };
+
+	bu.add<&getIdScript>("getId");
+	bu.add<&getTypeScript>("getType");
+	bu.add<&RuleInventory::isRightHand>("isRightHand");
+	bu.add<&RuleInventory::isLeftHand>("isLeftHand");
+	bu.add<&RuleInventory::getCost>("getMoveToCost", "Cost of moving item from slot in first arg to slot from last arg");
+
+	bu.addDebugDisplay<&debugDisplayScript>();
+
+	bu.addCustomConst("INV_GROUND", INV_GROUND);
+	bu.addCustomConst("INV_SLOT", INV_SLOT);
+	bu.addCustomConst("INV_HAND", INV_HAND);
+}
+
 }

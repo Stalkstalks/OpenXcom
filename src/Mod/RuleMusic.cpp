@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -30,7 +30,7 @@ namespace OpenXcom
  * also, 0.76 is roughly optimal for all the TFTD tracks.
  * @param type String defining the type.
  */
-RuleMusic::RuleMusic(const std::string &type) : _type(type), _catPos(INT_MAX), _normalization(0.76) 
+RuleMusic::RuleMusic(const std::string &type) : _type(type), _catPos(INT_MAX), _normalization(0.76f)
 {
 }
 
@@ -44,24 +44,36 @@ RuleMusic::~RuleMusic()
  */
 void RuleMusic::load(const YAML::Node& node)
 {
+	_name = node["name"].as<std::string>(_name);
 	_catPos = node["catPos"].as<int>(_catPos);
 	_normalization = node["normalization"].as<float>(_normalization);
+}
+
+/**
+ * Gets the track's filename in the SOUND folder.
+ * @return the track's filename (no extension).
+ */
+const std::string& RuleMusic::getName() const
+{
+	if (_name.empty())
+		return _type;
+	return _name;
 }
 
 /**
  * Gets the track's index in the catalog file.
  * @return the track's index in the file.
  */
-int RuleMusic::getCatPos()
+int RuleMusic::getCatPos() const
 {
 	return _catPos;
 }
 
 /**
- * Gets the track's normalization level.
+ * Gets the track's normalization level (Adlib only).
  * @return the track's normalization value.
  */
-float RuleMusic::getNormalization()
+float RuleMusic::getNormalization() const
 {
 	return _normalization;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,7 +20,6 @@
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextEdit.h"
@@ -28,6 +27,7 @@
 #include "../Savegame/Base.h"
 #include "../Basescape/PlaceLiftState.h"
 #include "../Engine/Options.h"
+#include "../Engine/RNG.h"
 
 namespace OpenXcom
 {
@@ -38,8 +38,9 @@ namespace OpenXcom
  * @param base Pointer to the base to name.
  * @param globe Pointer to the Geoscape globe.
  * @param first Is this the first base in the game?
+ * @param fixedLocation Is this the first base in the game on a fixed location?
  */
-BaseNameState::BaseNameState(Base *base, Globe *globe, bool first) : _base(base), _globe(globe), _first(first)
+BaseNameState::BaseNameState(Base *base, Globe *globe, bool first, bool fixedLocation) : _base(base), _globe(globe), _first(first), _fixedLocation(fixedLocation)
 {
 	_globe->onMouseOver(0);
 
@@ -62,7 +63,7 @@ BaseNameState::BaseNameState(Base *base, Globe *globe, bool first) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "baseNaming");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BaseNameState::btnOkClick);
@@ -75,6 +76,25 @@ BaseNameState::BaseNameState(Base *base, Globe *globe, bool first) : _base(base)
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setBig();
 	_txtTitle->setText(tr("STR_BASE_NAME"));
+
+	if (!_game->getMod()->getBaseNamesFirst().empty())
+	{
+		std::ostringstream ss;
+		int pickFirst = RNG::seedless(0, _game->getMod()->getBaseNamesFirst().size() - 1);
+		ss << _game->getMod()->getBaseNamesFirst().at(pickFirst);
+		if (!_game->getMod()->getBaseNamesMiddle().empty())
+		{
+			int pickMiddle = RNG::seedless(0, _game->getMod()->getBaseNamesMiddle().size() - 1);
+			ss << " " << _game->getMod()->getBaseNamesMiddle().at(pickMiddle);
+		}
+		if (!_game->getMod()->getBaseNamesLast().empty())
+		{
+			int pickLast = RNG::seedless(0, _game->getMod()->getBaseNamesLast().size() - 1);
+			ss << " " << _game->getMod()->getBaseNamesLast().at(pickLast);
+		}
+		_edtName->setText(ss.str());
+		_btnOk->setVisible(true);
+	}
 
 	_edtName->setBig();
 	_edtName->setFocus(true, false);
@@ -96,7 +116,6 @@ BaseNameState::~BaseNameState()
  */
 void BaseNameState::edtNameChange(Action *action)
 {
-	_base->setName(_edtName->getText());
 	if (action->getDetails()->key.keysym.sym == SDLK_RETURN ||
 		action->getDetails()->key.keysym.sym == SDLK_KP_ENTER)
 	{
@@ -119,14 +138,20 @@ void BaseNameState::btnOkClick(Action *)
 {
 	if (!_edtName->getText().empty())
 	{
-		_game->popState();
-		_game->popState();
-		if (!_first || Options::customInitialBase)
+		_base->setName(_edtName->getText());
+		_game->popState(); // pop BaseNameState
+
+		if (!_fixedLocation)
 		{
+			_game->popState(); // pop ConfirmNewBaseState or BuildNewBaseState
 			if (!_first)
 			{
-				_game->popState();
+				_game->popState(); // pop BuildNewBaseState
 			}
+		}
+
+		if (!_first || Options::customInitialBase)
+		{
 			_game->pushState(new PlaceLiftState(_base, _globe, _first));
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "CraftErrorState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -35,36 +34,47 @@ namespace OpenXcom
  * @param state Pointer to the Geoscape state.
  * @param msg Error message.
  */
-CraftErrorState::CraftErrorState(GeoscapeState *state, const std::wstring &msg) : _state(state)
+CraftErrorState::CraftErrorState(GeoscapeState *state, const std::string &msg, bool enableHotkeys) : _state(state)
 {
 	_screen = false;
 
 	// Create objects
 	_window = new Window(this, 256, 160, 32, 20, POPUP_BOTH);
-	_btnOk = new TextButton(100, 18, 48, 150);
+	_btnOk = new TextButton(100, 18, _state ? 48 : 110, 150);
 	_btnOk5Secs = new TextButton(100, 18, 172, 150);
 	_txtMessage = new Text(246, 96, 37, 42);
 
 	// Set palette
-	setInterface("geoCraftScreens");
+	setInterface("craftError");
 
-	add(_window, "window", "geoCraftScreens");
-	add(_btnOk, "button", "geoCraftScreens");
-	add(_btnOk5Secs, "button", "geoCraftScreens");
-	add(_txtMessage, "text1", "geoCraftScreens");
+	add(_window, "window", "craftError");
+	add(_btnOk, "button", "craftError");
+	add(_btnOk5Secs, "button", "craftError");
+	add(_txtMessage, "text1", "craftError");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK12.SCR"));
+	setWindowBackground(_window, "craftError");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftErrorState::btnOkClick);
-	_btnOk->onKeyboardPress((ActionHandler)&CraftErrorState::btnOkClick, Options::keyCancel);
+	if (enableHotkeys)
+	{
+		_btnOk->onKeyboardPress((ActionHandler)&CraftErrorState::btnOkClick, Options::keyCancel);
+		if (!_state)
+		{
+			_btnOk->onKeyboardPress((ActionHandler)&CraftErrorState::btnOkClick, Options::keyOk);
+		}
+	}
 
 	_btnOk5Secs->setText(tr("STR_OK_5_SECONDS"));
 	_btnOk5Secs->onMouseClick((ActionHandler)&CraftErrorState::btnOk5SecsClick);
-	_btnOk5Secs->onKeyboardPress((ActionHandler)&CraftErrorState::btnOk5SecsClick, Options::keyOk);
+	if (enableHotkeys && _state)
+	{
+		_btnOk5Secs->onKeyboardPress((ActionHandler)&CraftErrorState::btnOk5SecsClick, Options::keyOk);
+	}
+	_btnOk5Secs->setVisible(_state != 0);
 
 	_txtMessage->setAlign(ALIGN_CENTER);
 	_txtMessage->setVerticalAlign(ALIGN_MIDDLE);

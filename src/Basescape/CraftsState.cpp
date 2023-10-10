@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,7 @@
  */
 #include "CraftsState.h"
 #include <sstream>
+#include "../Engine/Action.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
 #include "../Engine/LocalizedText.h"
@@ -34,6 +35,7 @@
 #include "SellState.h"
 #include "../Savegame/SavedGame.h"
 #include "../Mod/RuleInterface.h"
+#include "../Ufopaedia/Ufopaedia.h"
 
 namespace OpenXcom
 {
@@ -74,7 +76,7 @@ CraftsState::CraftsState(Base *base) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK14.SCR"));
+	setWindowBackground(_window, "craftSelect");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftsState::btnOkClick);
@@ -101,6 +103,8 @@ CraftsState::CraftsState(Base *base) : _base(base)
 	_lstCrafts->setBackground(_window);
 	_lstCrafts->setMargin(8);
 	_lstCrafts->onMouseClick((ActionHandler)&CraftsState::lstCraftsClick);
+	_lstCrafts->onMouseClick((ActionHandler)&CraftsState::lstCraftsClick, SDL_BUTTON_RIGHT);
+	_lstCrafts->onMouseClick((ActionHandler)&CraftsState::lstCraftsClick, SDL_BUTTON_MIDDLE);
 }
 
 /**
@@ -119,13 +123,13 @@ void CraftsState::init()
 {
 	State::init();
 	_lstCrafts->clearList();
-	for (std::vector<Craft*>::iterator i = _base->getCrafts()->begin(); i != _base->getCrafts()->end(); ++i)
+	for (const auto* craft : *_base->getCrafts())
 	{
-		std::wostringstream ss, ss2, ss3;
-		ss << (*i)->getNumWeapons() << "/" << (*i)->getRules()->getWeapons();
-		ss2 << (*i)->getNumSoldiers();
-		ss3 << (*i)->getNumVehicles();
-		_lstCrafts->addRow(5, (*i)->getName(_game->getLanguage()).c_str(), tr((*i)->getStatus()).c_str(), ss.str().c_str(), ss2.str().c_str(), ss3.str().c_str());
+		std::ostringstream ss, ss2, ss3;
+		ss << craft->getNumWeapons() << "/" << craft->getRules()->getWeapons();
+		ss2 << craft->getNumTotalSoldiers();
+		ss3 << craft->getNumTotalVehicles();
+		_lstCrafts->addRow(5, craft->getName(_game->getLanguage()).c_str(), tr(craft->getStatus()).c_str(), ss.str().c_str(), ss2.str().c_str(), ss3.str().c_str());
 	}
 }
 
@@ -139,8 +143,8 @@ void CraftsState::btnOkClick(Action *)
 
 	if (_game->getSavedGame()->getMonthsPassed() > -1 && Options::storageLimitsEnforced && _base->storesOverfull())
 	{
-		_game->pushState(new SellState(_base));
-		_game->pushState(new ErrorMessageState(tr("STR_STORAGE_EXCEEDED").arg(_base->getName()).c_str(), _palette, _game->getMod()->getInterface("craftSelect")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("craftSelect")->getElement("errorPalette")->color));
+		_game->pushState(new SellState(_base, 0));
+		_game->pushState(new ErrorMessageState(tr("STR_STORAGE_EXCEEDED").arg(_base->getName()), _palette, _game->getMod()->getInterface("craftSelect")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("craftSelect")->getElement("errorPalette")->color));
 	}
 }
 
@@ -148,11 +152,39 @@ void CraftsState::btnOkClick(Action *)
  * Shows the selected craft's info.
  * @param action Pointer to an action.
  */
-void CraftsState::lstCraftsClick(Action *)
+void CraftsState::lstCraftsClick(Action *action)
 {
-	if (_base->getCrafts()->at(_lstCrafts->getSelectedRow())->getStatus() != "STR_OUT")
+	auto& crafts = *_base->getCrafts();
+	auto row = _lstCrafts->getSelectedRow();
+
+	if (_game->isLeftClick(action))
 	{
-		_game->pushState(new CraftInfoState(_base, _lstCrafts->getSelectedRow()));
+		if (crafts[row]->getStatus() != "STR_OUT")
+		{
+			_game->pushState(new CraftInfoState(_base, row));
+		}
+	}
+	else if (_game->isRightClick(action))
+	{
+		if (row > 0)
+		{
+			// move craft up in the list
+			std::swap(crafts[row], crafts[row - 1]);
+
+			// warp mouse
+			if (row != _lstCrafts->getScroll() && _lstCrafts->getScroll() == 0)
+			{
+				SDL_WarpMouse(action->getLeftBlackBand() + action->getXMouse(), action->getTopBlackBand() + action->getYMouse() - static_cast<Uint16>(8 * action->getYScale()));
+			}
+
+			// reload the UI
+			init();
+		}
+	}
+	else if (_game->isMiddleClick(action))
+	{
+		std::string articleId = crafts[row]->getRules()->getType();
+		Ufopaedia::openArticle(_game, articleId);
 	}
 }
 

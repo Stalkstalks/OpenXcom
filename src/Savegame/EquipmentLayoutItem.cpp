@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,6 +17,9 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "EquipmentLayoutItem.h"
+#include "../Mod/RuleInventory.h"
+#include "../Engine/Collections.h"
+#include "BattleItem.h"
 
 namespace OpenXcom
 {
@@ -27,6 +30,10 @@ namespace OpenXcom
  */
 EquipmentLayoutItem::EquipmentLayoutItem(const YAML::Node &node)
 {
+	for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+	{
+		_ammoItem[slot] = "NONE";
+	}
 	load(node);
 }
 
@@ -39,8 +46,24 @@ EquipmentLayoutItem::EquipmentLayoutItem(const YAML::Node &node)
  * @param ammoItem The ammo has to be loaded into the item. (it's type)
  * @param fuseTimer The turn until explosion of the item. (if it's an activated grenade-type)
  */
-EquipmentLayoutItem::EquipmentLayoutItem(const std::string &itemType, const std::string &slot, int slotX, int slotY, const std::string &ammoItem, int fuseTimer) : _itemType(itemType), _slot(slot), _slotX(slotX), _slotY(slotY), _ammoItem(ammoItem), _fuseTimer(fuseTimer)
+EquipmentLayoutItem::EquipmentLayoutItem(const BattleItem* item) :
+	_itemType(item->getRules()->getType()),
+	_slot(item->getSlot()->getId()),
+	_slotX(item->getSlotX()), _slotY(item->getSlotY()),
+	_ammoItem{}, _fuseTimer(item->getFuseTimer()),
+	_fixed(item->getRules()->isFixed())
 {
+	for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+	{
+		if (item->needsAmmoForSlot(slot) && item->getAmmoForSlot(slot))
+		{
+			_ammoItem[slot] = item->getAmmoForSlot(slot)->getRules()->getType();
+		}
+		else
+		{
+			_ammoItem[slot] = "NONE";
+		}
+	}
 }
 
 /**
@@ -54,7 +77,7 @@ EquipmentLayoutItem::~EquipmentLayoutItem()
  * Returns the item's type which has to be in a slot.
  * @return item type.
  */
-std::string EquipmentLayoutItem::getItemType() const
+const std::string& EquipmentLayoutItem::getItemType() const
 {
 	return _itemType;
 }
@@ -63,7 +86,7 @@ std::string EquipmentLayoutItem::getItemType() const
  * Returns the slot to be occupied.
  * @return slot name.
  */
-std::string EquipmentLayoutItem::getSlot() const
+const std::string& EquipmentLayoutItem::getSlot() const
 {
 	return _slot;
 }
@@ -90,9 +113,9 @@ int EquipmentLayoutItem::getSlotY() const
  * Returns the ammo has to be loaded into the item.
  * @return ammo type.
  */
-std::string EquipmentLayoutItem::getAmmoItem() const
+const std::string& EquipmentLayoutItem::getAmmoItemForSlot(int slot) const
 {
-	return _ammoItem;
+	return _ammoItem[slot];
 }
 
 /**
@@ -105,6 +128,15 @@ int EquipmentLayoutItem::getFuseTimer() const
 }
 
 /**
+ * Is this a fixed weapon entry?
+ * @return True, if this is a fixed weapon entry.
+ */
+bool EquipmentLayoutItem::isFixed() const
+{
+	return _fixed;
+}
+
+/**
  * Loads the soldier-equipment layout item from a YAML file.
  * @param node YAML node.
  */
@@ -114,8 +146,19 @@ void EquipmentLayoutItem::load(const YAML::Node &node)
 	_slot = node["slot"].as<std::string>(_slot);
 	_slotX = node["slotX"].as<int>(0);
 	_slotY = node["slotY"].as<int>(0);
-	_ammoItem = node["ammoItem"].as<std::string>("NONE");
+	_ammoItem[0] = node["ammoItem"].as<std::string>(_ammoItem[0]);
+	if (const YAML::Node &ammoSlots = node["ammoItemSlots"])
+	{
+		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+		{
+			if (ammoSlots[slot])
+			{
+				_ammoItem[slot] = ammoSlots[slot].as<std::string>();
+			}
+		}
+	}
 	_fuseTimer = node["fuseTimer"].as<int>(-1);
+	_fixed = node["fixed"].as<bool>(false);
 }
 
 /**
@@ -125,6 +168,7 @@ void EquipmentLayoutItem::load(const YAML::Node &node)
 YAML::Node EquipmentLayoutItem::save() const
 {
 	YAML::Node node;
+	node.SetStyle(YAML::EmitterStyle::Flow);
 	node["itemType"] = _itemType;
 	node["slot"] = _slot;
 	// only save this info if it's needed, reduce clutter in saves
@@ -136,13 +180,28 @@ YAML::Node EquipmentLayoutItem::save() const
 	{
 		node["slotY"] = _slotY;
 	}
-	if (_ammoItem != "NONE")
+	if (_ammoItem[0] != "NONE")
 	{
-		node["ammoItem"] = _ammoItem;
+		node["ammoItem"] = _ammoItem[0];
 	}
+	Collections::untilLastIf(
+		_ammoItem,
+		[](const std::string& s)
+		{
+			return s != "NONE";
+		},
+		[&](const std::string& s)
+		{
+			node["ammoItemSlots"].push_back(s);
+		}
+	);
 	if (_fuseTimer >= 0)
 	{
 		node["fuseTimer"] = _fuseTimer;
+	}
+	if (_fixed)
+	{
+		node["fixed"] = _fixed;
 	}
 	return node;
 }

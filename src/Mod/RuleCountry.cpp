@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include "RuleCountry.h"
+#include "Mod.h"
+#include "ModScript.h"
 #include "../Engine/RNG.h"
-#include <math.h>
+#include "../Engine/ScriptBind.h"
+#include "../fmath.h"
 
 namespace OpenXcom
 {
@@ -29,7 +31,7 @@ namespace OpenXcom
  * type of country.
  * @param type String defining the type.
  */
-RuleCountry::RuleCountry(const std::string &type) : _type(type), _fundingBase(0), _fundingCap(0), _labelLon(0.0), _labelLat(0.0)
+RuleCountry::RuleCountry(const std::string &type) : _type(type), _fundingBase(0), _fundingCap(0), _labelLon(0.0), _labelLat(0.0), _labelColor(0), _zoomLevel(0)
 {
 }
 
@@ -44,29 +46,47 @@ RuleCountry::~RuleCountry()
  * Loads the country type from a YAML file.
  * @param node YAML node.
  */
-void RuleCountry::load(const YAML::Node &node)
+void RuleCountry::load(const YAML::Node &node, const ModScript& parsers)
 {
 	if (const YAML::Node &parent = node["refNode"])
 	{
-		load(parent);
+		load(parent, parsers);
 	}
-	_type = node["type"].as<std::string>(_type);
+
+	_signedPactEventName = node["signedPactEvent"].as<std::string>(_signedPactEventName);
+	_rejoinedXcomEventName = node["rejoinedXcomEvent"].as<std::string>(_rejoinedXcomEventName);
 	_fundingBase = node["fundingBase"].as<int>(_fundingBase);
 	_fundingCap = node["fundingCap"].as<int>(_fundingCap);
-	_labelLon = node["labelLon"].as<double>(_labelLon) * M_PI / 180;
-	_labelLat = node["labelLat"].as<double>(_labelLat) * M_PI / 180;
+	if (node["labelLon"])
+		_labelLon = Deg2Rad(node["labelLon"].as<double>());
+	if (node["labelLat"])
+		_labelLat = Deg2Rad(node["labelLat"].as<double>());
+	_labelColor = node["labelColor"].as<int>(_labelColor);
+	_zoomLevel = node["zoomLevel"].as<int>(_zoomLevel);
 	std::vector< std::vector<double> > areas;
 	areas = node["areas"].as< std::vector< std::vector<double> > >(areas);
 	for (size_t i = 0; i != areas.size(); ++i)
 	{
-		_lonMin.push_back(areas[i][0] * M_PI / 180);
-		_lonMax.push_back(areas[i][1] * M_PI / 180);
-		_latMin.push_back(areas[i][2] * M_PI / 180);
-		_latMax.push_back(areas[i][3] * M_PI / 180);
+		_lonMin.push_back(Deg2Rad(areas[i][0]));
+		_lonMax.push_back(Deg2Rad(areas[i][1]));
+		_latMin.push_back(Deg2Rad(areas[i][2]));
+		_latMax.push_back(Deg2Rad(areas[i][3]));
 
 		if (_latMin.back() > _latMax.back())
 			std::swap(_latMin.back(), _latMax.back());
 	}
+
+	_countryScripts.load(_type, node, parsers.countryScripts);
+	_scriptValues.load(node, parsers.getShared());
+}
+
+/**
+ * Cross link with other rules.
+ */
+void RuleCountry::afterLoad(const Mod* mod)
+{
+	mod->linkRule(_signedPactEvent, _signedPactEventName);
+	mod->linkRule(_rejoinedXcomEvent, _rejoinedXcomEventName);
 }
 
 /**
@@ -75,7 +95,7 @@ void RuleCountry::load(const YAML::Node &node)
  * has a unique name.
  * @return The country's name.
  */
-std::string RuleCountry::getType() const
+const std::string& RuleCountry::getType() const
 {
 	return _type;
 }
@@ -134,11 +154,74 @@ bool RuleCountry::insideCountry(double lon, double lat) const
 		else
 			inLon = ((lon >= _lonMin[i] && lon < M_PI*2.0) || (lon >= 0 && lon < _lonMax[i]));
 
-		inLat = (lat >= _latMin[i] && lat < _latMax[i]);
+		if (lat > 0) // make that both poles could be in some regions, this means `M_PI == _latMax[i]` or `-M_PI == _latMin[i]`
+			inLat = (lat > _latMin[i] && lat <= _latMax[i]);
+		else
+			inLat = (lat >= _latMin[i] && lat < _latMax[i]);
 
 		if (inLon && inLat)
 			return true;
 	}
 	return false;
 }
+
+/**
+ * Gets the country's label color.
+ * @return The color code.
+ */
+int RuleCountry::getLabelColor() const
+{
+	return _labelColor;
+}
+
+/**
+ * Gets the minimum zoom level required to display the label.
+ * Note: this works for extraGlobeLabels only, not for vanilla countries.
+ * @return The zoom level.
+ */
+int RuleCountry::getZoomLevel() const
+{
+	return _zoomLevel;
+}
+
+////////////////////////////////////////////////////////////
+//					Script binding
+////////////////////////////////////////////////////////////
+
+namespace
+{
+
+std::string debugDisplayScript(const RuleCountry* rc)
+{
+	if (rc)
+	{
+		std::string s;
+		s += RuleCountry::ScriptName;
+		s += "(name: \"";
+		s += rc->getType();
+		s += "\")";
+		return s;
+	}
+	else
+	{
+		return "null";
+	}
+}
+
+} // namespace
+
+/**
+ * Register RuleCountry in script parser.
+ * @param parser Script parser.
+ */
+void RuleCountry::ScriptRegister(ScriptParserBase* parser)
+{
+	Bind<RuleCountry> rcb = { parser };
+
+	rcb.add<&RuleCountry::getFundingCap>("getFundingCap", "Gets the predefined max funding cap for this country.");
+
+	rcb.addScriptValue<BindBase::OnlyGet, &RuleCountry::_scriptValues>();
+	rcb.addDebugDisplay<&debugDisplayScript>();
+}
+
 }

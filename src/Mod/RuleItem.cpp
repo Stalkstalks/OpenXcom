@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,17 +16,126 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <algorithm>
+#include "LoadYaml.h"
+#include "Mod.h"
+#include "Armor.h"
 #include "Unit.h"
 #include "RuleItem.h"
 #include "RuleInventory.h"
 #include "RuleDamageType.h"
+#include "RuleSoldier.h"
 #include "../Savegame/BattleUnit.h"
+#include "../Engine/Exception.h"
+#include "../Engine/Collections.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Engine/Surface.h"
-#include "Mod.h"
+#include "../Engine/ScriptBind.h"
+#include "../Engine/RNG.h"
+#include "../Battlescape/BattlescapeGame.h"
 
 namespace OpenXcom
 {
+
+namespace
+{
+
+/**
+ * Update `attacker` from `weapon_item`.
+ */
+void UpdateAttacker(BattleActionAttack& attack)
+{
+	if (attack.weapon_item && !attack.attacker)
+	{
+		const auto battleType = attack.weapon_item->getRules()->getBattleType();
+		if (battleType == BT_PROXIMITYGRENADE || battleType == BT_GRENADE)
+		{
+			auto owner = attack.weapon_item->getPreviousOwner();
+			if (owner)
+			{
+				attack.attacker = owner;
+			}
+		}
+	}
+}
+
+/**
+ * Update `damage_item` from `weapon_item`.
+ */
+void UpdateAmmo(BattleActionAttack& attack)
+{
+	if (attack.weapon_item && !attack.damage_item)
+	{
+		const auto battleType = attack.weapon_item->getRules()->getBattleType();
+		if (battleType == BT_PROXIMITYGRENADE || battleType == BT_GRENADE || battleType == BT_PSIAMP)
+		{
+			attack.damage_item = attack.weapon_item;
+		}
+		else
+		{
+			attack.damage_item = attack.weapon_item->getAmmoForAction(attack.type);
+		}
+	}
+}
+
+/**
+ * Update grenade `damage_item` from `weapon_item`.
+ */
+void UpdateGrenade(BattleActionAttack& attack)
+{
+	if (attack.weapon_item && !attack.damage_item)
+	{
+		const auto battleType = attack.weapon_item->getRules()->getBattleType();
+		if (battleType == BT_PROXIMITYGRENADE || battleType == BT_GRENADE)
+		{
+			attack.damage_item = attack.weapon_item;
+		}
+	}
+}
+
+}
+
+/**
+ * Generate ActionAttack before shooting, this means we can get the ammo from the weapon.
+ * @param action BattleCost of attack.
+ * @return All attack action data.
+ */
+BattleActionAttack BattleActionAttack::GetBeforeShoot(const BattleActionCost &action)
+{
+	return GetBeforeShoot(action.type, action.actor, action.weapon, action.skillRules);
+}
+
+BattleActionAttack BattleActionAttack::GetBeforeShoot(BattleActionType type, BattleUnit *unit, BattleItem *wepon, const RuleSkill *skill)
+{
+	auto attack = BattleActionAttack{ type, unit, wepon };
+	UpdateAttacker(attack);
+	UpdateAmmo(attack);
+	attack.skill_rules = skill;
+	return attack;
+}
+
+/**
+ * Generate ActionAttack after shooting, the ammo can be already spent and unloaded from the weapon.
+ * @param action BattleCost of attack.
+ * @param ammo Ammo used to shoot/attack.
+ * @return All attack action data.
+ */
+BattleActionAttack BattleActionAttack::GetAferShoot(const BattleActionCost &action, BattleItem *ammo)
+{
+	return GetAferShoot(action.type, action.actor, action.weapon, ammo, action.skillRules);
+}
+
+BattleActionAttack BattleActionAttack::GetAferShoot(BattleActionType type, BattleUnit *unit, BattleItem *wepon, BattleItem *ammo, const RuleSkill *skill)
+{
+	auto attack = BattleActionAttack{ type, unit, wepon };
+	UpdateAttacker(attack);
+	attack.damage_item = ammo;
+	attack.skill_rules = skill;
+	UpdateGrenade(attack);
+	return attack;
+}
+
+
 
 const float VexelsToTiles = 0.0625f;
 const float TilesToVexels = 16.0f;
@@ -35,29 +144,76 @@ const float TilesToVexels = 16.0f;
  * Creates a blank ruleset for a certain type of item.
  * @param type String defining the type.
  */
-RuleItem::RuleItem(const std::string &type) :
-	_type(type), _name(type), _size(0.0), _costBuy(0), _costSell(0), _transferTime(24), _weight(3),
-	_bigSprite(-1), _bigSpriteAlt(0), _floorSprite(-1), _floorSpriteAlt(-1), _handSprite(120), _bulletSprite(-1),
-	_fireSound(-1),
-	_hitSound(-1), _hitAnimation(0), _hitMissSound(-1), _hitMissAnimation(-1),
-	_meleeSound(39), _meleeAnimation(0), _meleeMissSound(-1), _meleeMissAnimation(-1),
-	_meleeHitSound(-1), _explosionHitSound(-1),
-	_psiSound(-1), _psiAnimation(-1), _psiMissSound(-1), _psiMissAnimation(-1),
-	_power(0), _powerRangeReduction(0), _powerRangeThreshold(0),
-	_accuracyAimed(0), _accuracyAuto(0), _accuracySnap(0), _accuracyMelee(0), _accuracyUse(0), _accuracyMind(0), _accuracyPanic(20), _accuracyThrow(100),
-	_costAimed(0), _costAuto(0, -1), _costSnap(0, -1), _costMelee(0), _costUse(25), _costMind(-1, -1), _costPanic(-1, -1), _costThrow(25), _costPrime(50),
-	_clipSize(0), _specialChance(100), _tuLoad(15), _tuUnload(8),
-	_battleType(BT_NONE), _fuseType(BFT_NONE), _twoHanded(false), _waypoint(false), _fixedWeapon(false), _fixedWeaponShow(false), _allowSelfHeal(false), _invWidth(1), _invHeight(1),
-	_painKiller(0), _heal(0), _stimulant(0), _medikitType(BMT_NORMAL), _woundRecovery(0), _healthRecovery(0), _stunRecovery(0), _energyRecovery(0), _moraleRecovery(0), _painKillerRecovery(1.0f), _recoveryPoints(0), _armor(20), _turretType(-1),
+RuleItem::RuleItem(const std::string &type, int listOrder) :
+	_type(type), _name(type), _vehicleUnit(nullptr), _size(0.0),
+	_monthlyBuyLimit(0), _costBuy(0), _costSell(0), _transferTime(24), _weight(3), _throwRange(0), _underwaterThrowRange(0),
+	_bigSprite(-1), _floorSprite(-1), _handSprite(120), _bulletSprite(-1), _specialIconSprite(-1),
+	_hitAnimation(0), _hitAnimFrames(-1), _hitMissAnimation(-1), _hitMissAnimFrames(-1),
+	_meleeAnimation(0), _meleeAnimFrames(-1), _meleeMissAnimation(-1), _meleeMissAnimFrames(-1),
+	_psiAnimation(-1), _psiAnimFrames(-1), _psiMissAnimation(-1), _psiMissAnimFrames(-1),
+	_power(0), _powerForAnimation(0), _hidePower(false), _powerRangeReduction(0), _powerRangeThreshold(0),
+	_damageTypeSet(false), _meleeTypeSet(false),
+	_accuracyUse(0), _accuracyMind(0), _accuracyPanic(20), _accuracyThrow(100), _accuracyCloseQuarters(-1),
+	_noLOSAccuracyPenalty(-1),
+	_costUse(25), _costMind(-1, -1), _costPanic(-1, -1), _costThrow(25), _costPrime(50), _costUnprime(25),
+	_clipSize(0), _specialChance(100), _tuLoad{ }, _tuUnload{ },
+	_battleType(BT_NONE), _fuseType(BFT_NONE), _fuseTriggerEvents{ }, _hiddenOnMinimap(false),
+	_medikitActionName("STR_USE_MEDI_KIT"), _psiAttackName(), _primeActionName("STR_PRIME_GRENADE"), _unprimeActionName(), _primeActionMessage("STR_GRENADE_IS_ACTIVATED"), _unprimeActionMessage("STR_GRENADE_IS_DEACTIVATED"),
+	_twoHanded(false), _blockBothHands(false), _fixedWeapon(false), _fixedWeaponShow(false), _isConsumable(false), _isFireExtinguisher(false),
+	_isExplodingInHands(false), _specialUseEmptyHand(false), _specialUseEmptyHandShow(false),
+	_defaultInvSlotX(0), _defaultInvSlotY(0), _waypoints(0), _invWidth(1), _invHeight(1),
+	_painKiller(0), _heal(0), _stimulant(0), _medikitType(BMT_NORMAL), _medikitTargetSelf(false), _medikitTargetImmune(false), _medikitTargetMatrix(63),
+	_woundRecovery(0), _healthRecovery(0), _stunRecovery(0), _energyRecovery(0), _manaRecovery(0), _moraleRecovery(0), _painKillerRecovery(1.0f),
+	_recoveryPoints(0), _armor(20), _turretType(-1),
 	_aiUseDelay(-1), _aiMeleeHitCount(25),
-	_recover(true), _liveAlien(false), _attraction(0), _flatUse(0, 1), _flatMelee(-1, -1), _flatThrow(0, 1), _flatPrime(0, 1), _arcingShot(false), _listOrder(0),
-	_maxRange(200), _aimRange(200), _snapRange(15), _autoRange(7), _minRange(0), _dropoff(2), _bulletSpeed(0), _explosionSpeed(0), _autoShots(3), _shotgunPellets(0),
-	_LOSRequired(false), _underwaterOnly(false), _psiReqiured(false),
-	_meleePower(0), _specialType(-1), _vaporColor(-1), _vaporDensity(0), _vaporProbability(15)
+	_recover(true), _recoverCorpse(true), _ignoreInBaseDefense(false), _ignoreInCraftEquip(true), _liveAlien(false),
+	_liveAlienPrisonType(0), _attraction(0), _flatUse(0, 1), _flatThrow(0, 1), _flatPrime(0, 1), _flatUnprime(0, 1), _arcingShot(false),
+	_experienceTrainingMode(ETM_DEFAULT), _manaExperience(0), _listOrder(listOrder),
+	_maxRange(200), _minRange(0), _dropoff(2), _bulletSpeed(0), _explosionSpeed(0), _shotgunPellets(0), _shotgunBehaviorType(0), _shotgunSpread(100), _shotgunChoke(100),
+	_spawnUnitFaction(FACTION_NONE), _zombieUnitFaction(FACTION_HOSTILE),
+	_targetMatrix(7),
+	_LOSRequired(false), _underwaterOnly(false), _landOnly(false), _psiReqiured(false), _manaRequired(false),
+	_meleePower(0), _specialType(-1), _vaporColor(-1), _vaporDensity(0), _vaporProbability(15),
+	_vaporColorSurface(-1), _vaporDensitySurface(0), _vaporProbabilitySurface(15),
+	_kneelBonus(-1), _oneHandedPenalty(-1),
+	_monthlySalary(0), _monthlyMaintenance(0),
+	_sprayWaypoints(0)
 {
 	_accuracyMulti.setFiring();
 	_meleeMulti.setMelee();
 	_throwMulti.setThrowing();
+	_closeQuartersMulti.setCloseQuarters();
+
+	for (auto& load : _tuLoad)
+	{
+		load = 15;
+	}
+	for (auto& unload : _tuUnload)
+	{
+		unload = 8;
+	}
+
+	_confAimed.range = 200;
+	_confSnap.range = 15;
+	_confAuto.range = 7;
+
+	_confAimed.cost = RuleItemUseCost(0);
+	_confSnap.cost = RuleItemUseCost(0, -1);
+	_confAuto.cost = RuleItemUseCost(0, -1);
+	_confMelee.cost = RuleItemUseCost(0);
+
+	_confAimed.flat = RuleItemUseCost(-1, -1);
+	_confSnap.flat = RuleItemUseCost(-1, -1);
+	_confAuto.flat = RuleItemUseCost(-1, -1);
+	_confMelee.flat = RuleItemUseCost(-1, -1);
+
+	_confAimed.name = "STR_AIMED_SHOT";
+	_confSnap.name = "STR_SNAP_SHOT";
+	_confAuto.name = "STR_AUTO_SHOT";
+
+	_confAuto.shots = 3;
+
+	_customItemPreviewIndex.push_back(Mod::NO_SURFACE);
 }
 
 /**
@@ -81,90 +237,76 @@ RuleItemUseCost RuleItem::getDefault(const RuleItemUseCost& a, const RuleItemUse
 	n.Morale = a.Morale >= 0 ? a.Morale : b.Morale;
 	n.Health = a.Health >= 0 ? a.Health : b.Health;
 	n.Stun = a.Stun >= 0 ? a.Stun : b.Stun;
+	n.Mana = a.Mana >= 0 ? a.Mana : b.Mana;
 	return n;
 }
 
 /**
- * Load nullable bool value and store it in int (with null as -1).
- * @param a value to set.
- * @param node YAML node.
+ * Load ammo slot with checking correct range.
+ * @param result
+ * @param node
+ * @param parentName
  */
-void RuleItem::loadBool(int& a, const YAML::Node& node) const
+void RuleItem::loadAmmoSlotChecked(int& result, const YAML::Node& node, const std::string& parentName)
 {
 	if (node)
 	{
-		if (node.IsNull())
+		auto s = node.as<int>(result);
+		if (s < AmmoSlotSelfUse || s >= AmmoSlotMax)
 		{
-			a = -1;
+			Log(LOG_ERROR) << "ammoSlot outside of allowed range in '" << parentName << "'";
 		}
 		else
 		{
-			a = node.as<bool>();
+			result = s;
 		}
 	}
 }
 
 /**
- * Load nullable int (with null as -1).
- * @param a value to set.
- * @param node YAML node.
- */
-void RuleItem::loadInt(int& a, const YAML::Node& node) const
-{
-	if (node)
-	{
-		if (node.IsNull())
-		{
-			a = -1;
-		}
-		else
-		{
-			a = node.as<int>();
-		}
-	}
-}
-
-/**
- * Load item use cost type (flat or percent).
- * @param a Item use type.
+ * Load RuleItemAction from yaml.
+ * @param a Item use config.
  * @param node YAML node.
  * @param name Name of action type.
  */
-void RuleItem::loadPercent(RuleItemUseCost& a, const YAML::Node& node, const std::string& name) const
+void RuleItem::loadConfAction(RuleItemAction& a, const YAML::Node& node, const std::string& name) const
 {
-	if (const YAML::Node& cost = node["flat" + name])
+	if (const YAML::Node& conf = node["conf" + name])
 	{
-		if (cost.IsScalar())
-		{
-			loadBool(a.Time, cost);
-		}
-		else
-		{
-			loadBool(a.Time, cost["time"]);
-			loadBool(a.Energy, cost["energy"]);
-			loadBool(a.Morale, cost["morale"]);
-			loadBool(a.Health, cost["health"]);
-			loadBool(a.Stun, cost["stun"]);
-		}
+		a.shots = conf["shots"].as<int>(a.shots);
+		a.spendPerShot = conf["spendPerShot"].as<int>(a.spendPerShot);
+		a.followProjectiles = conf["followProjectiles"].as<bool>(a.followProjectiles);
+		a.name = conf["name"].as<std::string>(a.name);
+		a.shortName = conf["shortName"].as<std::string>(a.shortName);
+		loadAmmoSlotChecked(a.ammoSlot, conf["ammoSlot"], _name);
+		a.arcing = conf["arcing"].as<bool>(a.arcing);
 	}
 }
 
 /**
- * Load item use cost.
- * @param a Item use cost.
- * @param node YAML node.
- * @param name Name of action type.
+ * Load RuleItemFuseTrigger from yaml.
  */
-void RuleItem::loadCost(RuleItemUseCost& a, const YAML::Node& node, const std::string& name) const
+void RuleItem::loadConfFuse(RuleItemFuseTrigger& a, const YAML::Node& node, const std::string& name) const
 {
-	loadInt(a.Time, node["tu" + name]);
-	if (const YAML::Node& cost = node["cost" + name])
+	if (const YAML::Node& conf = node[name])
 	{
-		loadInt(a.Time, cost["time"]);
-		loadInt(a.Energy, cost["energy"]);
-		loadInt(a.Morale, cost["morale"]);
-		loadInt(a.Health, cost["health"]);
-		loadInt(a.Stun, cost["stun"]);
+		loadBool(a.defaultBehavior, conf["defaultBehavior"]);
+		loadBool(a.throwTrigger, conf["throwTrigger"]);
+		loadBool(a.throwExplode, conf["throwExplode"]);
+		loadBool(a.proximityTrigger, conf["proximityTrigger"]);
+		loadBool(a.proximityExplode, conf["proximityExplode"]);
+	}
+}
+
+/**
+* Updates item categories based on replacement rules.
+* @param replacementRules The list replacement rules.
+*/
+void RuleItem::updateCategories(std::map<std::string, std::string> *replacementRules)
+{
+	for (const auto& pair : *replacementRules)
+	{
+		std::replace(_categories.begin(), _categories.end(), pair.first, pair.second);
 	}
 }
 
@@ -174,131 +316,88 @@ void RuleItem::loadCost(RuleItemUseCost& a, const YAML::Node& node, const std::s
  * @param mod Mod for the item.
  * @param listOrder The list weight for this item.
  */
-void RuleItem::load(const YAML::Node &node, Mod *mod, int listOrder)
+void RuleItem::load(const YAML::Node &node, Mod *mod, const ModScript& parsers)
 {
 	if (const YAML::Node &parent = node["refNode"])
 	{
-		load(parent, mod, listOrder);
+		load(parent, mod, parsers);
 	}
-	_type = node["type"].as<std::string>(_type);
+
+	_ufopediaType = node["ufopediaType"].as<std::string>(_ufopediaType);
 	_name = node["name"].as<std::string>(_name);
-	_requires = node["requires"].as< std::vector<std::string> >(_requires);
-	_requiresBuy = node["requiresBuy"].as< std::vector<std::string> >(_requiresBuy);
+	_nameAsAmmo = node["nameAsAmmo"].as<std::string>(_nameAsAmmo);
+
+	//requires
+	_requiresBuyCountry = node["requiresBuyCountry"].as<std::string>(_requiresBuyCountry);
+	mod->loadUnorderedNames(_type, _requiresName, node["requires"]);
+	mod->loadUnorderedNames(_type, _requiresBuyName, node["requiresBuy"]);
+	mod->loadBaseFunction(_type, _requiresBuyBaseFunc, node["requiresBuyBaseFunc"]);
+
+
+	mod->loadUnorderedNamesToInt(_type, _recoveryDividers, node["recoveryDividers"]);
+	_recoveryTransformationsName = node["recoveryTransformations"].as< std::map<std::string, std::vector<int> > >(_recoveryTransformationsName);
+	mod->loadUnorderedNames(_type, _categories, node["categories"]);
 	_size = node["size"].as<double>(_size);
+	_monthlyBuyLimit = node["monthlyBuyLimit"].as<int>(_monthlyBuyLimit);
 	_costBuy = node["costBuy"].as<int>(_costBuy);
 	_costSell = node["costSell"].as<int>(_costSell);
 	_transferTime = node["transferTime"].as<int>(_transferTime);
 	_weight = node["weight"].as<int>(_weight);
-	if (node["bigSprite"])
-	{
-		_bigSprite = mod->getSpriteOffset(node["bigSprite"].as<int>(_bigSprite), "BIGOBS.PCK");
-	}
-	if (node["bigSpriteAlt"])
-	{
-		_bigSpriteAlt = mod->getSpriteOffset(node["bigSpriteAlt"].as<int>(_bigSpriteAlt), "BIGOBS.PCK");
-	}
-	else if (node["bigSprite"])
-	{
-		_bigSpriteAlt = _bigSprite;
-	}
-	if (node["floorSprite"])
-	{
-		_floorSprite = mod->getSpriteOffset(node["floorSprite"].as<int>(_floorSprite), "FLOOROB.PCK");
-	}
-	if (node["floorSpriteAlt"])
-	{
-		_floorSpriteAlt = mod->getSpriteOffset(node["floorSpriteAlt"].as<int>(_floorSpriteAlt), "FLOOROB.PCK");
-	}
-	else if (node["floorSprite"])
-	{
-		_floorSpriteAlt = _floorSprite;
-	}
-	if (node["handSprite"])
-	{
-		_handSprite = mod->getSpriteOffset(node["handSprite"].as<int>(_handSprite), "HANDOB.PCK");
-	}
-	if (node["bulletSprite"])
-	{
-		// Projectiles: 385 entries ((105*33) / (3*3)) (35 sprites per projectile(0-34), 11 projectiles (0-10))
-		_bulletSprite = node["bulletSprite"].as<int>(_bulletSprite) * 35;
-		if (_bulletSprite >= 385)
-			_bulletSprite += mod->getModOffset();
-	}
-	if (node["fireSound"])
-	{
-		_fireSound = mod->getSoundOffset(node["fireSound"].as<int>(_fireSound), "BATTLE.CAT");
-	}
-	if (node["hitSound"])
-	{
-		_hitSound = mod->getSoundOffset(node["hitSound"].as<int>(_hitSound), "BATTLE.CAT");
-	}
-	if (node["hitMissSound"])
-	{
-		_hitMissSound = mod->getSoundOffset(node["hitMissSound"].as<int>(_hitMissSound), "BATTLE.CAT");
-	}
-	if (node["meleeSound"])
-	{
-		_meleeSound = mod->getSoundOffset(node["meleeSound"].as<int>(_meleeSound), "BATTLE.CAT");
-	}
-	if (node["meleeMissSound"])
-	{
-		_meleeMissSound = mod->getSoundOffset(node["meleeMissSound"].as<int>(_meleeMissSound), "BATTLE.CAT");
-	}
-	if (node["psiSound"])
-	{
-		_psiSound = mod->getSoundOffset(node["psiSound"].as<int>(_psiSound), "BATTLE.CAT");
-	}
-	if (node["psiMissSound"])
-	{
-		_psiMissSound = mod->getSoundOffset(node["psiMissSound"].as<int>(_psiMissSound), "BATTLE.CAT");
-	}
-	if (node["hitAnimation"])
-	{
-		_hitAnimation = mod->getSpriteOffset(node["hitAnimation"].as<int>(_hitAnimation), "SMOKE.PCK");
-	}
-	if (node["hitMissAnimation"])
-	{
-		_hitMissAnimation = mod->getSpriteOffset(node["hitMissAnimation"].as<int>(_hitMissAnimation), "SMOKE.PCK");
-	}
-	if (node["meleeAnimation"])
-	{
-		_meleeAnimation = mod->getSpriteOffset(node["meleeAnimation"].as<int>(_meleeAnimation), "HIT.PCK");
-	}
-	if (node["meleeMissAnimation"])
-	{
-		_meleeMissAnimation = mod->getSpriteOffset(node["meleeMissAnimation"].as<int>(_meleeMissAnimation), "HIT.PCK");
-	}
-	if (node["psiAnimation"])
-	{
-		_psiAnimation = mod->getSpriteOffset(node["psiAnimation"].as<int>(_psiAnimation), "HIT.PCK");
-	}
-	if (node["psiMissAnimation"])
-	{
-		_psiMissAnimation = mod->getSpriteOffset(node["psiMissAnimation"].as<int>(_psiMissAnimation), "HIT.PCK");
-	}
-	if (node["meleeHitSound"])
-	{
-		_meleeHitSound = mod->getSoundOffset(node["meleeHitSound"].as<int>(_meleeHitSound), "BATTLE.CAT");
-	}
-	if (node["explosionHitSound"])
-	{
-		_explosionHitSound = mod->getSoundOffset(node["explosionHitSound"].as<int>(_explosionHitSound), "BATTLE.CAT");
-	}
+	_throwRange = node["throwRange"].as<int>(_throwRange);
+	_underwaterThrowRange = node["underwaterThrowRange"].as<int>(_underwaterThrowRange);
+
+	mod->loadSpriteOffset(_type, _bigSprite, node["bigSprite"], "BIGOBS.PCK");
+	mod->loadSpriteOffset(_type, _floorSprite, node["floorSprite"], "FLOOROB.PCK");
+	mod->loadSpriteOffset(_type, _handSprite, node["handSprite"], "HANDOB.PCK");
+	// Projectiles: 0-384 entries ((105*33) / (3*3)) (35 sprites per projectile(0-34), 11 projectiles (0-10))
+	mod->loadSpriteOffset(_type, _bulletSprite, node["bulletSprite"], "Projectiles", 35);
+	mod->loadSpriteOffset(_type, _specialIconSprite, node["specialIconSprite"], "SPICONS.DAT");
+
+	mod->loadSoundOffset(_type, _reloadSound, node["reloadSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _primeSound, node["primeSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _unprimeSound, node["unprimeSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _fireSound, node["fireSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _hitSound, node["hitSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _hitMissSound, node["hitMissSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _meleeSound, node["meleeSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _meleeHitSound, node["meleeHitSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _meleeMissSound, node["meleeMissSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _psiSound, node["psiSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _psiMissSound, node["psiMissSound"], "BATTLE.CAT");
+	mod->loadSoundOffset(_type, _explosionHitSound, node["explosionHitSound"], "BATTLE.CAT");
+
+	mod->loadSpriteOffset(_type, _hitAnimation, node["hitAnimation"], "SMOKE.PCK");
+	mod->loadSpriteOffset(_type, _hitMissAnimation, node["hitMissAnimation"], "SMOKE.PCK");
+	mod->loadSpriteOffset(_type, _meleeAnimation, node["meleeAnimation"], "HIT.PCK");
+	mod->loadSpriteOffset(_type, _meleeMissAnimation, node["meleeMissAnimation"], "HIT.PCK");
+	mod->loadSpriteOffset(_type, _psiAnimation, node["psiAnimation"], "HIT.PCK");
+	mod->loadSpriteOffset(_type, _psiMissAnimation, node["psiMissAnimation"], "HIT.PCK");
+
+	_hitAnimFrames = node["hitAnimFrames"].as<int>(_hitAnimFrames);
+	_hitMissAnimFrames = node["hitMissAnimFrames"].as<int>(_hitMissAnimFrames);
+	_meleeAnimFrames = node["meleeAnimFrames"].as<int>(_meleeAnimFrames);
+	_meleeMissAnimFrames = node["meleeMissAnimFrames"].as<int>(_meleeMissAnimFrames);
+	_psiAnimFrames = node["psiAnimFrames"].as<int>(_psiAnimFrames);
+	_psiMissAnimFrames = node["psiMissAnimFrames"].as<int>(_psiMissAnimFrames);
 
 	if (node["battleType"])
 	{
 		_battleType = (BattleType)node["battleType"].as<int>(_battleType);
+		_ignoreInCraftEquip = !isUsefulBattlescapeItem();
+
 		if (_battleType == BT_PSIAMP)
 		{
 			_psiReqiured = true;
 			_dropoff = 1;
-			_aimRange = 0;
+			_confAimed.range = 0;
 			_accuracyMulti.setPsiAttack();
+			_targetMatrix = 6; // only hostile and neutral by default
 		}
 		else
 		{
 			_psiReqiured = false;
 		}
+
 		if (_battleType == BT_PROXIMITYGRENADE)
 		{
 			_fuseType = BFT_INSTANT;
@@ -312,18 +411,30 @@ void RuleItem::load(const YAML::Node &node, Mod *mod, int listOrder)
 			_fuseType = BFT_NONE;
 		}
 
+		if (_battleType == BT_MELEE)
+		{
+			_confMelee.ammoSlot = 0;
+		}
+		else
+		{
+			_confMelee.ammoSlot = RuleItem::AmmoSlotSelfUse;
+		}
+
 		if (_battleType == BT_CORPSE)
 		{
 			//compatibility hack for corpse explosion, that didn't have defined damage type
 			_damageType = *mod->getDamageType(DT_HE);
+			_damageTypeSet = true;
 		}
 		_meleeType = *mod->getDamageType(DT_MELEE);
+		_meleeTypeSet = true;
 	}
 
 	if (const YAML::Node &type = node["damageType"])
 	{
 		//load predefined damage type
 		_damageType = *mod->getDamageType((ItemDamageType)type.as<int>());
+		_damageTypeSet = true;
 	}
 	_damageType.FixRadius = node["blastRadius"].as<int>(_damageType.FixRadius);
 	if (const YAML::Node &alter = node["damageAlter"])
@@ -335,67 +446,132 @@ void RuleItem::load(const YAML::Node &node, Mod *mod, int listOrder)
 	{
 		//load predefined damage type
 		_meleeType = *mod->getDamageType((ItemDamageType)type.as<int>());
+		_meleeTypeSet = true;
 	}
 	if (const YAML::Node &alter = node["meleeAlter"])
 	{
 		_meleeType.load(alter);
 	}
 
-	if (node["skillApplied"])
+	if (const YAML::Node &skill = node["skillApplied"])
 	{
-		if (node["skillApplied"].as<int>(false))
+		if (skill.as<bool>(false))
 		{
 			_meleeMulti.setMelee();
 		}
 		else
 		{
 			_meleeMulti.setFlatHundred();
+			_meleeMulti.setModded(true); // vanilla default = true
 		}
 	}
 	if (node["strengthApplied"].as<bool>(false))
 	{
 		_damageBonus.setStrength();
+		_damageBonus.setModded(true); // vanilla default = false
 	}
 
 	_power = node["power"].as<int>(_power);
+	_powerForAnimation = node["powerForAnimation"].as<int>(_powerForAnimation);
+	_hidePower = node["hidePower"].as<bool>(_hidePower);
+	_medikitActionName = node["medikitActionName"].as<std::string>(_medikitActionName);
 	_psiAttackName = node["psiAttackName"].as<std::string>(_psiAttackName);
-	_compatibleAmmo = node["compatibleAmmo"].as< std::vector<std::string> >(_compatibleAmmo);
+	_primeActionName = node["primeActionName"].as<std::string>(_primeActionName);
+	_primeActionMessage = node["primeActionMessage"].as<std::string>(_primeActionMessage);
+	_unprimeActionName = node["unprimeActionName"].as<std::string>(_unprimeActionName);
+	_unprimeActionMessage = node["unprimeActionMessage"].as<std::string>(_unprimeActionMessage);
 	_fuseType = (BattleFuseType)node["fuseType"].as<int>(_fuseType);
+	_hiddenOnMinimap = node["hiddenOnMinimap"].as<bool>(_hiddenOnMinimap);
+	_clipSize = node["clipSize"].as<int>(_clipSize);
 
-	_accuracyAimed = node["accuracyAimed"].as<int>(_accuracyAimed);
-	_accuracyAuto = node["accuracyAuto"].as<int>(_accuracyAuto);
-	_accuracySnap = node["accuracySnap"].as<int>(_accuracySnap);
-	_accuracyMelee = node["accuracyMelee"].as<int>(_accuracyMelee);
+	loadConfFuse(_fuseTriggerEvents, node, "fuseTriggerEvents");
+
+	_confAimed.accuracy = node["accuracyAimed"].as<int>(_confAimed.accuracy);
+	_confAuto.accuracy = node["accuracyAuto"].as<int>(_confAuto.accuracy);
+	_confSnap.accuracy = node["accuracySnap"].as<int>(_confSnap.accuracy);
+	_confMelee.accuracy = node["accuracyMelee"].as<int>(_confMelee.accuracy);
 	_accuracyUse = node["accuracyUse"].as<int>(_accuracyUse);
 	_accuracyMind = node["accuracyMindControl"].as<int>(_accuracyMind);
 	_accuracyPanic = node["accuracyPanic"].as<int>(_accuracyPanic);
 	_accuracyThrow = node["accuracyThrow"].as<int>(_accuracyThrow);
+	_accuracyCloseQuarters = node["accuracyCloseQuarters"].as<int>(_accuracyCloseQuarters);
+	_noLOSAccuracyPenalty = node["noLOSAccuracyPenalty"].as<int>(_noLOSAccuracyPenalty);
 
-	loadCost(_costAimed, node, "Aimed");
-	loadCost(_costAuto, node, "Auto");
-	loadCost(_costSnap, node, "Snap");
-	loadCost(_costMelee, node, "Melee");
-	loadCost(_costUse, node, "Use");
-	loadCost(_costMind, node, "MindControl");
-	loadCost(_costPanic, node, "Panic");
-	loadCost(_costThrow, node, "Throw");
-	loadCost(_costPrime, node, "Prime");
+	_confAimed.cost.loadCost(node, "Aimed");
+	_confAuto.cost.loadCost(node, "Auto");
+	_confSnap.cost.loadCost(node, "Snap");
+	_confMelee.cost.loadCost(node, "Melee");
+	_costUse.loadCost(node, "Use");
+	_costMind.loadCost(node, "MindControl");
+	_costPanic.loadCost(node, "Panic");
+	_costThrow.loadCost(node, "Throw");
+	_costPrime.loadCost(node, "Prime");
+	_costUnprime.loadCost(node, "Unprime");
 
-	loadBool(_flatUse.Time, node["flatRate"]);
-	loadPercent(_flatUse, node, "Use");
-	loadPercent(_flatMelee, node, "Melee");
-	loadPercent(_flatThrow, node, "Throw");
-	loadPercent(_flatPrime, node, "Prime");
+	loadBoolNullable(_flatUse.Time, node["flatRate"]);
 
-	_clipSize = node["clipSize"].as<int>(_clipSize);
+	_confAimed.flat.loadPercent(node, "Aimed");
+	_confAuto.flat.loadPercent(node, "Auto");
+	_confSnap.flat.loadPercent(node, "Snap");
+	_confMelee.flat.loadPercent(node, "Melee");
+	_flatUse.loadPercent(node, "Use");
+	_flatThrow.loadPercent(node, "Throw");
+	_flatPrime.loadPercent(node, "Prime");
+	_flatUnprime.loadPercent(node, "Unprime");
+
+	loadConfAction(_confAimed, node, "Aimed");
+	loadConfAction(_confAuto, node, "Auto");
+	loadConfAction(_confSnap, node, "Snap");
+	loadConfAction(_confMelee, node, "Melee");
+
+	auto loadAmmoConf = [&](int offset, const YAML::Node &n)
+	{
+		if (n)
+		{
+			mod->loadUnorderedNames(_type, _compatibleAmmoNames[offset], n["compatibleAmmo"]);
+			_tuLoad[offset] = n["tuLoad"].as<int>(_tuLoad[offset]);
+			_tuUnload[offset] = n["tuUnload"].as<int>(_tuUnload[offset]);
+		}
+	};
+
+	loadAmmoConf(0, node);
+	if (const YAML::Node &nodeAmmo = node["ammo"])
+	{
+		for (int slot = 0; slot < AmmoSlotMax; ++slot)
+		{
+			loadAmmoConf(slot, nodeAmmo[std::to_string(slot)]);
+		}
+	}
+
+	if ((_battleType == BT_MELEE || _battleType == BT_FIREARM) && _clipSize == 0)
+	{
+		for (RuleItemAction* conf : { &_confAimed, &_confAuto, &_confSnap, &_confMelee, })
+		{
+			if (conf->ammoSlot != RuleItem::AmmoSlotSelfUse && _compatibleAmmoNames[conf->ammoSlot].empty())
+			{
+				throw Exception("Weapon " + _type + " has clip size 0 and no ammo defined. Please use 'clipSize: -1' for unlimited ammo, or allocate a compatibleAmmo item.");
+			}
+		}
+	}
 	_specialChance = node["specialChance"].as<int>(_specialChance);
-	_tuLoad = node["tuLoad"].as<int>(_tuLoad);
-	_tuUnload = node["tuUnload"].as<int>(_tuUnload);
 	_twoHanded = node["twoHanded"].as<bool>(_twoHanded);
-	_waypoint = node["waypoint"].as<bool>(_waypoint);
+	_blockBothHands = node["blockBothHands"].as<bool>(_blockBothHands);
+	_waypoints = node["waypoints"].as<int>(_waypoints);
 	_fixedWeapon = node["fixedWeapon"].as<bool>(_fixedWeapon);
 	_fixedWeaponShow = node["fixedWeaponShow"].as<bool>(_fixedWeaponShow);
-	_allowSelfHeal = node["allowSelfHeal"].as<bool>(_allowSelfHeal);
+	if (const YAML::Node& cost = node["inventoryMoveCost"])
+	{
+		_inventoryMoveCostPercent = cost["basePercent"].as<int>(_inventoryMoveCostPercent);
+	}
+	mod->loadNameNull(_type, _defaultInventorySlotName, node["defaultInventorySlot"]);
+	_defaultInvSlotX = node["defaultInvSlotX"].as<int>(_defaultInvSlotX);
+	_defaultInvSlotY = node["defaultInvSlotY"].as<int>(_defaultInvSlotY);
+	mod->loadUnorderedNames(_type, _supportedInventorySectionsNames, node["supportedInventorySections"]);
+	_isConsumable = node["isConsumable"].as<bool>(_isConsumable);
+	_isFireExtinguisher = node["isFireExtinguisher"].as<bool>(_isFireExtinguisher);
+	_isExplodingInHands = node["isExplodingInHands"].as<bool>(_isExplodingInHands);
+	_specialUseEmptyHand = node["specialUseEmptyHand"].as<bool>(_specialUseEmptyHand);
+	_specialUseEmptyHandShow = node["specialUseEmptyHandShow"].as<bool>(_specialUseEmptyHandShow);
 	_invWidth = node["invWidth"].as<int>(_invWidth);
 	_invHeight = node["invHeight"].as<int>(_invHeight);
 
@@ -406,9 +582,14 @@ void RuleItem::load(const YAML::Node &node, Mod *mod, int listOrder)
 	_healthRecovery = node["healthRecovery"].as<int>(_healthRecovery);
 	_stunRecovery = node["stunRecovery"].as<int>(_stunRecovery);
 	_energyRecovery = node["energyRecovery"].as<int>(_energyRecovery);
+	_manaRecovery = node["manaRecovery"].as<int>(_manaRecovery);
 	_moraleRecovery = node["moraleRecovery"].as<int>(_moraleRecovery);
 	_painKillerRecovery = node["painKillerRecovery"].as<float>(_painKillerRecovery);
 	_medikitType = (BattleMediKitType)node["medikitType"].as<int>(_medikitType);
+	_medikitTargetSelf = node["medikitTargetSelf"].as<bool>(_medikitTargetSelf);
+	_medikitTargetImmune = node["medikitTargetImmune"].as<bool>(_medikitTargetImmune);
+	_medikitTargetMatrix = node["medikitTargetMatrix"].as<int>(_medikitTargetMatrix);
+	_medikitBackground = node["medikitBackground"].as<std::string>(_medikitBackground);
 
 	_recoveryPoints = node["recoveryPoints"].as<int>(_recoveryPoints);
 	_armor = node["armor"].as<int>(_armor);
@@ -419,44 +600,204 @@ void RuleItem::load(const YAML::Node &node, Mod *mod, int listOrder)
 		_aiMeleeHitCount = nodeAI["meleeHitCount"].as<int>(_aiMeleeHitCount);
 	}
 	_recover = node["recover"].as<bool>(_recover);
+	_recoverCorpse = node["recoverCorpse"].as<bool>(_recoverCorpse);
+	_ignoreInBaseDefense = node["ignoreInBaseDefense"].as<bool>(_ignoreInBaseDefense);
+	_ignoreInCraftEquip = node["ignoreInCraftEquip"].as<bool>(_ignoreInCraftEquip);
 	_liveAlien = node["liveAlien"].as<bool>(_liveAlien);
+	_liveAlienPrisonType = node["prisonType"].as<int>(_liveAlienPrisonType);
 	_attraction = node["attraction"].as<int>(_attraction);
 	_arcingShot = node["arcingShot"].as<bool>(_arcingShot);
+	_experienceTrainingMode = (ExperienceTrainingMode)node["experienceTrainingMode"].as<int>(_experienceTrainingMode);
+	_manaExperience = node["manaExperience"].as<int>(_manaExperience);
 	_listOrder = node["listOrder"].as<int>(_listOrder);
 	_maxRange = node["maxRange"].as<int>(_maxRange);
-	_aimRange = node["aimRange"].as<int>(_aimRange);
-	_snapRange = node["snapRange"].as<int>(_snapRange);
-	_autoRange = node["autoRange"].as<int>(_autoRange);
+	_confAimed.range = node["aimRange"].as<int>(_confAimed.range);
+	_confAuto.range = node["autoRange"].as<int>(_confAuto.range);
+	_confSnap.range = node["snapRange"].as<int>(_confSnap.range);
 	_minRange = node["minRange"].as<int>(_minRange);
 	_dropoff = node["dropoff"].as<int>(_dropoff);
 	_bulletSpeed = node["bulletSpeed"].as<int>(_bulletSpeed);
 	_explosionSpeed = node["explosionSpeed"].as<int>(_explosionSpeed);
-	_autoShots = node["autoShots"].as<int>(_autoShots);
+	_confAuto.shots = node["autoShots"].as<int>(_confAuto.shots);
 	_shotgunPellets = node["shotgunPellets"].as<int>(_shotgunPellets);
-	_zombieUnit = node["zombieUnit"].as<std::string>(_zombieUnit);
+	_shotgunBehaviorType = node["shotgunBehavior"].as<int>(_shotgunBehaviorType);
+	_shotgunSpread = node["shotgunSpread"].as<int>(_shotgunSpread);
+	_shotgunChoke = node["shotgunChoke"].as<int>(_shotgunChoke);
+
+	mod->loadUnorderedNamesToNames(_type, _zombieUnitByArmorMale, node["zombieUnitByArmorMale"]);
+	mod->loadUnorderedNamesToNames(_type, _zombieUnitByArmorFemale, node["zombieUnitByArmorFemale"]);
+	mod->loadUnorderedNamesToNames(_type, _zombieUnitByType, node["zombieUnitByType"]);
+	mod->loadNameNull(_type, _zombieUnit, node["zombieUnit"]);
+	mod->loadNameNull(_type, _spawnUnitName, node["spawnUnit"]);
+	mod->loadNameNull(_type, _spawnItemName, node["spawnItem"]);
+	_spawnUnitFaction = (UnitFaction)node["spawnUnitFaction"].as<int>(_spawnUnitFaction);
+	_zombieUnitFaction = (UnitFaction)node["zombieUnitFaction"].as<int>(_zombieUnitFaction);
+	loadIntNullable(_spawnUnitChance, node["spawnUnitChance"]);
+	loadIntNullable(_zombieUnitChance, node["zombieUnitChance"]);
+	loadIntNullable(_spawnItemChance, node["spawnItemChance"]);
+
+
+	if (node["psiTargetMatrix"])
+	{
+		// TODO: just backwards-compatibility, remove in 2022, update ruleset validator too
+		_targetMatrix = node["psiTargetMatrix"].as<int>(_targetMatrix);
+	}
+	_targetMatrix = node["targetMatrix"].as<int>(_targetMatrix);
 	_LOSRequired = node["LOSRequired"].as<bool>(_LOSRequired);
 	_meleePower = node["meleePower"].as<int>(_meleePower);
 	_underwaterOnly = node["underwaterOnly"].as<bool>(_underwaterOnly);
+	_landOnly = node["landOnly"].as<bool>(_landOnly);
 	_specialType = node["specialType"].as<int>(_specialType);
-	_vaporColor = node["vaporColor"].as<int>(_vaporColor);
+
+	mod->loadTransparencyOffset(_type, _vaporColor, node["vaporColor"]);
 	_vaporDensity = node["vaporDensity"].as<int>(_vaporDensity);
 	_vaporProbability = node["vaporProbability"].as<int>(_vaporProbability);
 
-	_damageBonus.load(node["damageBonus"]);
-	_meleeBonus.load(node["meleeBonus"]);
-	_accuracyMulti.load(node["accuracyMultiplier"]);
-	_meleeMulti.load(node["meleeMultiplier"]);
-	_throwMulti.load(node["throwMultiplier"]);
+	mod->loadTransparencyOffset(_type, _vaporColorSurface, node["vaporColorSurface"]);
+	_vaporDensitySurface = node["vaporDensitySurface"].as<int>(_vaporDensitySurface);
+	_vaporProbabilitySurface = node["vaporProbabilitySurface"].as<int>(_vaporProbabilitySurface);
+
+	mod->loadSpriteOffset(_type, _customItemPreviewIndex, node["customItemPreviewIndex"], "CustomItemPreviews");
+	_kneelBonus = node["kneelBonus"].as<int>(_kneelBonus);
+	_oneHandedPenalty = node["oneHandedPenalty"].as<int>(_oneHandedPenalty);
+	_monthlySalary = node["monthlySalary"].as<int>(_monthlySalary);
+	_monthlyMaintenance = node["monthlyMaintenance"].as<int>(_monthlyMaintenance);
+	_sprayWaypoints = node["sprayWaypoints"].as<int>(_sprayWaypoints);
+
+	_damageBonus.load(_type, node, parsers.bonusStatsScripts.get<ModScript::DamageBonusStatBonus>());
+	_meleeBonus.load(_type, node, parsers.bonusStatsScripts.get<ModScript::MeleeBonusStatBonus>());
+	_accuracyMulti.load(_type, node, parsers.bonusStatsScripts.get<ModScript::AccuracyMultiplierStatBonus>());
+	_meleeMulti.load(_type, node, parsers.bonusStatsScripts.get<ModScript::MeleeMultiplierStatBonus>());
+	_throwMulti.load(_type, node, parsers.bonusStatsScripts.get<ModScript::ThrowMultiplierStatBonus>());
+	_closeQuartersMulti.load(_type, node, parsers.bonusStatsScripts.get<ModScript::CloseQuarterMultiplierStatBonus>());
 
 	_powerRangeReduction = node["powerRangeReduction"].as<float>(_powerRangeReduction);
 	_powerRangeThreshold = node["powerRangeThreshold"].as<float>(_powerRangeThreshold);
 
 	_psiReqiured = node["psiRequired"].as<bool>(_psiReqiured);
+	_manaRequired = node["manaRequired"].as<bool>(_manaRequired);
+	_scriptValues.load(node, parsers.getShared());
 
-	if (!_listOrder)
+	_battleItemScripts.load(_type, node, parsers.battleItemScripts);
+}
+
+/**
+ * Cross link with other Rules.
+ */
+void RuleItem::afterLoad(const Mod* mod)
+{
+	mod->verifySpriteOffset(_type, _bigSprite, "BIGOBS.PCK");
+	mod->verifySpriteOffset(_type, _floorSprite, "FLOOROB.PCK");
+	mod->verifySpriteOffset(_type, _handSprite, "HANDOB.PCK");
+	// Projectiles: this will check only if first one is correct
+	if (!isWaterOnly()) mod->verifySpriteOffset(_type, _bulletSprite, "Projectiles");
+	if (isWaterOnly()) mod->verifySpriteOffset(_type, _bulletSprite, "UnderwaterProjectiles");
+	mod->verifySpriteOffset(_type, _specialIconSprite, "SPICONS.DAT");
+
+	mod->verifySoundOffset(_type, _reloadSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _fireSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _hitSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _hitMissSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _meleeSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _meleeHitSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _meleeMissSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _psiSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _psiMissSound, "BATTLE.CAT");
+	mod->verifySoundOffset(_type, _explosionHitSound, "BATTLE.CAT");
+
+	mod->verifySpriteOffset(_type, _hitAnimation, _damageType.FixRadius ? "X1.PCK" : "SMOKE.PCK");
+	mod->verifySpriteOffset(_type, _hitMissAnimation, _damageType.FixRadius ? "X1.PCK" : "SMOKE.PCK");
+	mod->verifySpriteOffset(_type, _meleeAnimation, "HIT.PCK");
+	mod->verifySpriteOffset(_type, _meleeMissAnimation, "HIT.PCK");
+	mod->verifySpriteOffset(_type, _psiAnimation, "HIT.PCK");
+	mod->verifySpriteOffset(_type, _psiMissAnimation, "HIT.PCK");
+
+	mod->verifySpriteOffset(_type, _customItemPreviewIndex, "CustomItemPreviews");
+
+
+	_requires = mod->getResearch(_requiresName);
+	_requiresBuy = mod->getResearch(_requiresBuyName);
+	// fixedWeapons can mean vehicle
+	if (_fixedWeapon)
 	{
-		_listOrder = listOrder;
+		_vehicleUnit = mod->getUnit(_type);
 	}
+	mod->linkRule(_spawnUnit, _spawnUnitName);
+	mod->linkRule(_spawnItem, _spawnItemName);
+
+	for (auto& pair : _recoveryTransformationsName)
+	{
+		auto item = mod->getItem(pair.first, true);
+		if (!item->isAlien())
+		{
+			if (!pair.second.empty())
+			{
+				_recoveryTransformations[item] = pair.second;
+			}
+			else
+			{
+				throw Exception("Right-hand value of recovery transformations definition cannot be empty!");
+			}
+		}
+		else
+		{
+			throw Exception("Sorry modders, cannot recover live aliens from random inorganic junk '" + pair.first + "'!");
+		}
+	}
+
+	mod->linkRule(_defaultInventorySlot, _defaultInventorySlotName);
+	if (_supportedInventorySectionsNames.size())
+	{
+		mod->linkRule(_supportedInventorySections, _supportedInventorySectionsNames);
+		Collections::sortVector(_supportedInventorySections);
+	}
+	for (int i = 0; i < AmmoSlotMax; ++i)
+	{
+		mod->linkRule(_compatibleAmmo[i], _compatibleAmmoNames[i]);
+		for (auto a : _compatibleAmmo[i])
+		{
+			if (_compatibleAmmoSlots.count(a) == 0)
+			{
+				_compatibleAmmoSlots.insert(std::make_pair(a, i));
+			}
+		}
+	}
+	if (_vehicleUnit)
+	{
+		if (_compatibleAmmo[0].size() > 1)
+		{
+			throw Exception("Vehicle weapons support only one ammo type");
+		}
+		if (_compatibleAmmo[0].size() == 1)
+		{
+			auto ammo = _compatibleAmmo[0][0];
+			if (ammo->getClipSize() > 0 && getClipSize() > 0)
+			{
+				if (getClipSize() % ammo->getClipSize())
+				{
+					throw Exception("Vehicle weapon clip size is not a multiple of '" + ammo->getType() +  "' clip size");
+				}
+			}
+		}
+	}
+
+	//remove not needed data
+	Collections::removeAll(_requiresName);
+	Collections::removeAll(_requiresBuyName);
+	Collections::removeAll(_recoveryTransformationsName);
+	Collections::removeAll(_compatibleAmmoNames);
+}
+
+/**
+ * Gets the custom name of the Ufopedia article related to this item.
+ * @return The ufopedia article name.
+ */
+const std::string& RuleItem::getUfopediaType() const
+{
+	if (!_ufopediaType.empty())
+		return _ufopediaType;
+
+	return _type;
 }
 
 /**
@@ -479,11 +820,20 @@ const std::string &RuleItem::getName() const
 }
 
 /**
+ * Gets name id to use when displaying in loaded weapon.
+ * @return Translation StringId.
+ */
+const std::string &RuleItem::getNameAsAmmo() const
+{
+	return _nameAsAmmo;
+}
+
+/**
  * Gets the list of research required to
  * use this item.
  * @return The list of research IDs.
  */
-const std::vector<std::string> &RuleItem::getRequirements() const
+const std::vector<const RuleResearch *> &RuleItem::getRequirements() const
 {
 	return _requires;
 }
@@ -493,9 +843,55 @@ const std::vector<std::string> &RuleItem::getRequirements() const
  * buy this item from market.
  * @return The list of research IDs.
  */
-const std::vector<std::string> &RuleItem::getBuyRequirements() const
+const std::vector<const RuleResearch *> &RuleItem::getBuyRequirements() const
 {
 	return _requiresBuy;
+}
+
+/**
+ * Gets the dividers used for recovery of special items (specialType > 1).
+ * @return The list of recovery divider rules
+ */
+const std::map<std::string, int> &RuleItem::getRecoveryDividers() const
+{
+	return _recoveryDividers;
+}
+
+/**
+ * Gets the item(s) to be recovered instead of this item.
+ * @return The list of recovery transformation rules
+ */
+const std::map<const RuleItem*, std::vector<int> > &RuleItem::getRecoveryTransformations() const
+{
+	return _recoveryTransformations;
+}
+
+/**
+* Gets the list of categories
+* this item belongs to.
+* @return The list of category IDs.
+*/
+const std::vector<std::string> &RuleItem::getCategories() const
+{
+	return _categories;
+}
+
+/**
+* Checks if the item belongs to a category.
+* @param category Category name.
+* @return True if item belongs to the category, False otherwise.
+*/
+bool RuleItem::belongsToCategory(const std::string &category) const
+{
+	return std::find(_categories.begin(), _categories.end(), category) != _categories.end();
+}
+
+/**
+ * Gets unit rule if the item is vehicle weapon.
+ */
+Unit* RuleItem::getVehicleUnit() const
+{
+	return _vehicleUnit;
 }
 
 /**
@@ -557,30 +953,12 @@ int RuleItem::getBigSprite() const
 }
 
 /**
- * Gets the alternative reference in BIGOBS.PCK for use in inventory.
- * @return The sprite reference.
- */
-int RuleItem::getBigSpriteAlt() const
-{
-	return _bigSpriteAlt;
-}
-
-/**
  * Gets the reference in FLOOROB.PCK for use in battlescape.
  * @return The sprite reference.
  */
 int RuleItem::getFloorSprite() const
 {
 	return _floorSprite;
-}
-
-/**
- * Gets the alternative reference in FLOOROB.PCK for use in battlescape.
- * @return The sprite reference.
- */
-int RuleItem::getFloorSpriteAlt() const
-{
-	return _floorSpriteAlt;
 }
 
 /**
@@ -593,6 +971,15 @@ int RuleItem::getHandSprite() const
 }
 
 /**
+ * Gets the reference in SPICONS.DAT for use in battlescape.
+ * @return The sprite reference.
+ */
+int RuleItem::getSpecialIconSprite() const
+{
+	return _specialIconSprite;
+}
+
+/**
  * Returns whether this item is held with two hands.
  * @return True if it is two-handed.
  */
@@ -602,12 +989,21 @@ bool RuleItem::isTwoHanded() const
 }
 
 /**
+ * Returns whether this item must be used with both hands.
+ * @return True if requires both hands.
+ */
+bool RuleItem::isBlockingBothHands() const
+{
+	return _blockBothHands;
+}
+
+/**
  * Returns whether this item uses waypoints.
  * @return True if it uses waypoints.
  */
-bool RuleItem::isWaypoint() const
+int RuleItem::getWaypoints() const
 {
-	return _waypoint;
+	return _waypoints;
 }
 
 /**
@@ -630,6 +1026,25 @@ bool RuleItem::getFixedShow() const
 }
 
 /**
+ * Checks if the item can be placed into a given inventory section.
+ * @param inventorySection Inventory section rule.
+ * @return True if the item can be placed into a given inventory section.
+ */
+bool RuleItem::canBePlacedIntoInventorySection(const RuleInventory* inventorySection) const
+{
+	// backwards-compatibility
+	if (_supportedInventorySections.empty())
+		return true;
+
+	// always possible to put an item on the ground
+	if (inventorySection->getType() == INV_GROUND)
+		return true;
+
+	// otherwise check allowed inventory sections
+	return Collections::sortVectorHave(_supportedInventorySections, inventorySection);
+}
+
+/**
  * Gets the item's bullet sprite reference.
  * @return The sprite reference.
  */
@@ -639,12 +1054,54 @@ int RuleItem::getBulletSprite() const
 }
 
 /**
+ * Gets a random sound id from a given sound vector.
+ * @param vector The source vector.
+ * @param defaultValue Default value (in case nothing is specified = vector is empty).
+ * @return The sound id.
+ */
+int RuleItem::getRandomSound(const std::vector<int> &vector, int defaultValue) const
+{
+	if (!vector.empty())
+	{
+		return vector[RNG::generate(0, vector.size() - 1)];
+	}
+	return defaultValue;
+}
+
+/**
+ * Gets the item's reload sound.
+ * @return The reload sound id.
+ */
+int RuleItem::getReloadSound() const
+{
+	return getRandomSound(_reloadSound);
+}
+
+/**
+ * Gets the item's prime sound.
+ * @return The prime sound id.
+ */
+int RuleItem::getPrimeSound() const
+{
+	return getRandomSound(_primeSound);
+}
+
+/**
+ * Gets the item's unprime sound.
+ * @return The unprime sound id.
+ */
+int RuleItem::getUnprimeSound() const
+{
+	return getRandomSound(_unprimeSound);
+}
+
+/**
  * Gets the item's fire sound.
  * @return The fire sound id.
  */
 int RuleItem::getFireSound() const
 {
-	return _fireSound;
+	return getRandomSound(_fireSound);
 }
 
 /**
@@ -653,7 +1110,7 @@ int RuleItem::getFireSound() const
  */
 int RuleItem::getHitSound() const
 {
-	return _hitSound;
+	return getRandomSound(_hitSound);
 }
 
 /**
@@ -671,7 +1128,7 @@ int RuleItem::getHitAnimation() const
  */
 int RuleItem::getHitMissSound() const
 {
-	return _hitMissSound;
+	return getRandomSound(_hitMissSound);
 }
 
 /**
@@ -690,7 +1147,7 @@ int RuleItem::getHitMissAnimation() const
  */
 int RuleItem::getMeleeSound() const
 {
-	return _meleeSound;
+	return getRandomSound(_meleeSound, 39);
 }
 
 /**
@@ -708,7 +1165,7 @@ int RuleItem::getMeleeAnimation() const
  */
 int RuleItem::getMeleeMissSound() const
 {
-	return _meleeMissSound;
+	return getRandomSound(_meleeMissSound);
 }
 
 /**
@@ -726,7 +1183,7 @@ int RuleItem::getMeleeMissAnimation() const
  */
 int RuleItem::getMeleeHitSound() const
 {
-	return _meleeHitSound;
+	return getRandomSound(_meleeHitSound);
 }
 
 /**
@@ -735,7 +1192,7 @@ int RuleItem::getMeleeHitSound() const
  */
 int RuleItem::getExplosionHitSound() const
 {
-	return _explosionHitSound;
+	return getRandomSound(_explosionHitSound);
 }
 
 /**
@@ -744,7 +1201,7 @@ int RuleItem::getExplosionHitSound() const
  */
 int RuleItem::getPsiSound() const
 {
-	return _psiSound;
+	return getRandomSound(_psiSound);
 }
 
 /**
@@ -762,7 +1219,7 @@ int RuleItem::getPsiAnimation() const
  */
 int RuleItem::getPsiMissSound() const
 {
-	return _psiMissSound;
+	return getRandomSound(_psiMissSound);
 }
 
 /**
@@ -800,9 +1257,42 @@ float RuleItem::getPowerRangeReduction(float range) const
  */
 float RuleItem::getPsiAccuracyRangeReduction(float range) const
 {
-	range -= _aimRange * TilesToVexels;
+	range -= _confAimed.range * TilesToVexels;
 	return (_dropoff * VexelsToTiles) * (range > 0 ? range : 0);
 }
+
+/**
+ * Get configuration of aimed shot action.
+ */
+const RuleItemAction *RuleItem::getConfigAimed() const
+{
+	return &_confAimed;
+}
+
+/**
+ * Get configuration of autoshot action.
+ */
+const RuleItemAction *RuleItem::getConfigAuto() const
+{
+	return &_confAuto;
+}
+
+/**
+ * Get configuration of snapshot action.
+ */
+const RuleItemAction *RuleItem::getConfigSnap() const
+{
+	return &_confSnap;
+}
+
+/**
+ * Get configuration of melee action.
+ */
+const RuleItemAction *RuleItem::getConfigMelee() const
+{
+	return &_confMelee;
+}
+
 
 /**
  * Gets the item's accuracy for snapshots.
@@ -810,7 +1300,7 @@ float RuleItem::getPsiAccuracyRangeReduction(float range) const
  */
 int RuleItem::getAccuracySnap() const
 {
-	return _accuracySnap;
+	return _confSnap.accuracy;
 }
 
 /**
@@ -819,7 +1309,7 @@ int RuleItem::getAccuracySnap() const
  */
 int RuleItem::getAccuracyAuto() const
 {
-	return _accuracyAuto;
+	return _confAuto.accuracy;
 }
 
 /**
@@ -828,7 +1318,7 @@ int RuleItem::getAccuracyAuto() const
  */
 int RuleItem::getAccuracyAimed() const
 {
-	return _accuracyAimed;
+	return _confAimed.accuracy;
 }
 
 /**
@@ -837,7 +1327,7 @@ int RuleItem::getAccuracyAimed() const
  */
 int RuleItem::getAccuracyMelee() const
 {
-	return _accuracyMelee;
+	return _confMelee.accuracy;
 }
 
 /**
@@ -877,12 +1367,30 @@ int RuleItem::getAccuracyThrow() const
 }
 
 /**
+ * Gets the item's accuracy for close quarters combat.
+ * @return The close quarters accuracy.
+ */
+int RuleItem::getAccuracyCloseQuarters(Mod *mod) const
+{
+	return _accuracyCloseQuarters != -1 ? _accuracyCloseQuarters : mod->getCloseQuartersAccuracyGlobal();
+}
+
+/**
+ * Gets the item's accuracy penalty for out-of-LOS targets
+ * @return The no-LOS accuracy penalty.
+ */
+int RuleItem::getNoLOSAccuracyPenalty(Mod *mod) const
+{
+	return _noLOSAccuracyPenalty != -1 ? _noLOSAccuracyPenalty : mod->getNoLOSAccuracyPenaltyGlobal();
+}
+
+/**
  * Gets the item's time unit percentage for aimed shots.
  * @return The aimed shot TU percentage.
  */
 RuleItemUseCost RuleItem::getCostAimed() const
 {
-	return _costAimed;
+	return _confAimed.cost;
 }
 
 /**
@@ -891,7 +1399,7 @@ RuleItemUseCost RuleItem::getCostAimed() const
  */
 RuleItemUseCost RuleItem::getCostAuto() const
 {
-	return getDefault(_costAuto, _costAimed);
+	return getDefault(_confAuto.cost, _confAimed.cost);
 }
 
 /**
@@ -900,7 +1408,7 @@ RuleItemUseCost RuleItem::getCostAuto() const
  */
 RuleItemUseCost RuleItem::getCostSnap() const
 {
-	return getDefault(_costSnap, _costAimed);
+	return getDefault(_confSnap.cost, _confAimed.cost);
 }
 
 /**
@@ -909,7 +1417,7 @@ RuleItemUseCost RuleItem::getCostSnap() const
  */
 RuleItemUseCost RuleItem::getCostMelee() const
 {
-	return _costMelee;
+	return _confMelee.cost;
 }
 
 /**
@@ -961,34 +1469,128 @@ RuleItemUseCost RuleItem::getCostThrow() const
  */
 RuleItemUseCost RuleItem::getCostPrime() const
 {
-	return _costPrime;
+	if (!_primeActionName.empty())
+	{
+		return _costPrime;
+	}
+	else
+	{
+		return { };
+	}
+}
+
+/**
+ * Gets the item's time unit percentage for unprime grenade.
+ * @return The prime TU percentage.
+ */
+RuleItemUseCost RuleItem::getCostUnprime() const
+{
+		return _costUnprime;
 }
 
 /**
  * Gets the item's time unit for loading weapon ammo.
+ * @param slot Slot position.
  * @return The throw TU.
  */
-int RuleItem::getTULoad() const
+int RuleItem::getTULoad(int slot) const
 {
-	return _tuLoad;
+	return _tuLoad[slot];
 }
 
 /**
  * Gets the item's time unit for unloading weapon ammo.
+ * @param slot Slot position.
  * @return The throw TU.
  */
-int RuleItem::getTUUnload() const
+int RuleItem::getTUUnload(int slot) const
 {
-	return _tuUnload;
+	return _tuUnload[slot];
 }
 
+/**
+ * Gets the ammo type for a vehicle.
+ */
+const RuleItem* RuleItem::getVehicleClipAmmo() const
+{
+	return _compatibleAmmo[0].empty() ? nullptr : _compatibleAmmo[0].front();
+}
+
+/**
+ * Gets the maximum number of rounds for a vehicle. E.g. a vehicle that can load 6 clips with 10 rounds each, returns 60.
+ */
+int RuleItem::getVehicleClipSize() const
+{
+	auto ammo = getVehicleClipAmmo();
+	if (ammo)
+	{
+		if (ammo->getClipSize() > 0 && getClipSize() > 0)
+		{
+			return getClipSize();
+		}
+		else
+		{
+			return ammo->getClipSize();
+		}
+	}
+	else
+	{
+		return getClipSize();
+	}
+}
+
+/**
+ * Gets the number of clips needed to fully load a vehicle. E.g. a vehicle that holds max 60 rounds and clip size is 10, returns 6.
+ */
+int RuleItem::getVehicleClipsLoaded() const
+{
+	auto ammo = getVehicleClipAmmo();
+	if (ammo)
+	{
+		if (ammo->getClipSize() > 0 && getClipSize() > 0)
+		{
+			return getClipSize() / ammo->getClipSize();
+		}
+		else
+		{
+			return ammo->getClipSize();
+		}
+	}
+	else
+	{
+		return 0;
+	}
+}
 /**
  * Gets a list of compatible ammo.
  * @return Pointer to a list of compatible ammo.
  */
-std::vector<std::string> *RuleItem::getCompatibleAmmo()
+const std::vector<const RuleItem*> *RuleItem::getPrimaryCompatibleAmmo() const
 {
-	return &_compatibleAmmo;
+	return &_compatibleAmmo[0];
+}
+
+/**
+ * Gets slot position for ammo type.
+ * @param type Type of ammo item.
+ * @return Slot position.
+ */
+int RuleItem::getSlotForAmmo(const RuleItem* type) const
+{
+	auto f = _compatibleAmmoSlots.find(type);
+	if (f != _compatibleAmmoSlots.end())
+	{
+		return f->second;
+	}
+	return -1;
+}
+
+/**
+ *  Get slot position for ammo type.
+ */
+const std::vector<const RuleItem*> *RuleItem::getCompatibleAmmoForSlot(int slot) const
+{
+	return &_compatibleAmmo[slot];
 }
 
 /**
@@ -1010,7 +1612,7 @@ const RuleDamageType *RuleItem::getMeleeType() const
 }
 
 /**
- * Gets the item's battlye type.
+ * Gets the item's battle type.
  * @return The battle type.
  */
 BattleType RuleItem::getBattleType() const
@@ -1024,6 +1626,8 @@ BattleType RuleItem::getBattleType() const
  */
 BattleFuseType RuleItem::getFuseTimerType() const
 {
+	if (_fuseType == BFT_SET && Options::instantPrime)
+		return BFT_FIX_MIN;
 	return _fuseType;
 }
 
@@ -1045,6 +1649,23 @@ int RuleItem::getFuseTimerDefault() const
 	{
 		return -1; //can't prime
 	}
+}
+
+/**
+ * Is this item (e.g. a mine) hidden on the minimap?
+ * @return True if the item should be hidden.
+ */
+bool RuleItem::isHiddenOnMinimap() const
+{
+	return _hiddenOnMinimap;
+}
+
+/**
+ * Get fuse trigger event.
+ */
+const RuleItemFuseTrigger *RuleItem::getFuseTriggerEvent() const
+{
+	return &_fuseTriggerEvents;
 }
 
 /**
@@ -1088,20 +1709,24 @@ int RuleItem::getSpecialChance() const
  * @param texture Pointer to the surface set to get the sprite from.
  * @param surface Pointer to the surface to draw to.
  */
-void RuleItem::drawHandSprite(SurfaceSet *texture, Surface *surface, BattleItem *item) const
+void RuleItem::drawHandSprite(const SurfaceSet *texture, Surface *surface, const BattleItem *item, const SavedBattleGame *save, int animFrame) const
 {
-	Surface *frame = texture->getFrame(item ? item->getBigSprite() : this->getBigSprite());
+	//TODO: split this function to one using only `this` and another using only `item`
+	const Surface *frame = nullptr;
 	if (item)
 	{
-		ScriptWorker scr;
-		BattleItem::ScriptFill(&scr, item, true, 0, 0);
-		scr.executeBlit(frame, surface, this->getHandSpriteOffX(), this->getHandSpriteOffY());
+		frame = item->getBigSprite(texture, save, animFrame);
+		if (frame)
+		{
+			ScriptWorkerBlit scr;
+			BattleItem::ScriptFill(&scr, item, save, BODYPART_ITEM_INVENTORY, animFrame, 0);
+			scr.executeBlit(frame, surface, this->getHandSpriteOffX(), this->getHandSpriteOffY(), 0);
+		}
 	}
 	else
 	{
-		frame->setX(this->getHandSpriteOffX());
-		frame->setY(this->getHandSpriteOffY());
-		frame->blit(surface);
+		frame = texture->getFrame(this->getBigSprite());
+		frame->blitNShade(surface, this->getHandSpriteOffX(), this->getHandSpriteOffY());
 	}
 }
 
@@ -1205,12 +1830,39 @@ float RuleItem::getPainKillerRecovery() const
 }
 
 /**
- * Gets the medikit morale recovered based on missing health.
- * @return True if you can use medkit on self.
+ * Is this (medikit-type & items with prime) item consumable?
+ * @return True if the item is consumable.
  */
-bool RuleItem::getAllowSelfHeal() const
+bool RuleItem::isConsumable() const
 {
-	return _allowSelfHeal;
+	return _isConsumable;
+}
+
+/**
+ * Does this item extinguish fire?
+ * @return True if the item extinguishes fire.
+ */
+bool RuleItem::isFireExtinguisher() const
+{
+	return _isFireExtinguisher;
+}
+
+/**
+ * Is this item explode in hands?
+ * @return True if the item can explode in hand.
+ */
+bool RuleItem::isExplodingInHands() const
+{
+	return _isExplodingInHands;
+}
+
+/**
+ * If this item is used as a specialWeapon, can it be accessed by an empty hand?
+ * @return True if accessed by empty hand.
+ */
+bool RuleItem::isSpecialUsingEmptyHand() const
+{
+	return _specialUseEmptyHand;
 }
 
 /**
@@ -1221,19 +1873,29 @@ BattleMediKitType RuleItem::getMediKitType() const
 {
 	return _medikitType;
 }
+
+/**
+ * Gets the medikit custom background.
+ * @return Sprite ID.
+ */
+const std::string &RuleItem::getMediKitCustomBackground() const
+{
+	return _medikitBackground;
+}
+
 /**
  * Returns the item's max explosion radius. Small explosions don't have a restriction.
  * Larger explosions are restricted using a formula, with a maximum of radius 10 no matter how large the explosion is.
  * @param stats unit stats
  * @return The radius.
  */
-int RuleItem::getExplosionRadius(const BattleUnit *unit) const
+int RuleItem::getExplosionRadius(BattleActionAttack::ReadOnly attack) const
 {
 	int radius = 0;
 
 	if (_damageType.FixRadius == -1)
 	{
-		radius = getPowerBonus(unit) * _damageType.RadiusEffectiveness;
+		radius = getPowerBonus(attack) * _damageType.RadiusEffectiveness;
 		if (_damageType.FireBlastCalc)
 		{
 			radius += 1;
@@ -1278,6 +1940,22 @@ int RuleItem::getArmor() const
 }
 
 /**
+ * Check if item is normal inventory item.
+ */
+bool RuleItem::isInventoryItem() const
+{
+	return getBigSprite() > -1 && isFixed() == false;
+}
+
+/**
+ * Checks if item have some use in battlescape.
+ */
+bool RuleItem::isUsefulBattlescapeItem() const
+{
+	return (_battleType != BT_CORPSE && _battleType != BT_NONE);
+}
+
+/**
  * Returns if the item should be recoverable
  * from the battlescape.
  * @return True if it is recoverable.
@@ -1287,6 +1965,38 @@ bool RuleItem::isRecoverable() const
 	return _recover;
 }
 
+
+/**
+ * Returns if the corpse item should be recoverable from the battlescape.
+ * @return True if it is recoverable.
+ */
+bool RuleItem::isCorpseRecoverable() const
+{
+	// Explanation:
+	// Since the "recover" flag applies to both live body (prisoner capture) and dead body (corpse recovery) in OXC,
+	// OXCE adds this new flag to allow recovery of a live body, but disable recovery of the corpse
+	// (used in mods mostly to ignore dead bodies of killed humans)
+	return _recoverCorpse;
+}
+
+
+/**
+* Checks if the item can be equipped in base defense mission.
+* @return True if it can be equipped.
+*/
+bool RuleItem::canBeEquippedBeforeBaseDefense() const
+{
+	return !_ignoreInBaseDefense;
+}
+
+/**
+ * Check if the item can be equipped to craft inventory.
+ * @return True if it can be equipped.
+ */
+bool RuleItem::canBeEquippedToCraftInventory() const
+{
+	return !_ignoreInCraftEquip;
+}
 
 /**
  * Returns the item's Turret Type.
@@ -1306,13 +2016,16 @@ int RuleItem::getTurretType() const
  */
 int RuleItem::getAIUseDelay(const Mod *mod) const
 {
+	if (Options::ignoreDelay)
+		return 0;
+
 	if (mod == 0 || _aiUseDelay >= 0)
 		return _aiUseDelay;
 
 	switch (getBattleType())
 	{
 	case BT_FIREARM:
-		if (isWaypoint())
+		if (getWaypoints())
 		{
 			return mod->getAIUseDelayBlaster();
 		}
@@ -1337,7 +2050,7 @@ int RuleItem::getAIUseDelay(const Mod *mod) const
 }
 
 /**
- * Resturns number of melee hits AI should do when attacking enemy.
+ * Returns number of melee hits AI should do when attacking enemy.
  * @return Number of hits.
  */
 int RuleItem::getAIMeleeHitCount() const
@@ -1355,21 +2068,57 @@ bool RuleItem::isAlien() const
 }
 
 /**
+* Returns to which type of prison does the live alien belong.
+* @return Prison type.
+*/
+int RuleItem::getPrisonType() const
+{
+	return _liveAlienPrisonType;
+}
+
+/**
+ * Returns whether this item charges a flat rate for costAimed.
+ * @return True if this item charges a flat rate for costAimed.
+ */
+RuleItemUseCost RuleItem::getFlatAimed() const
+{
+	return getDefault(_confAimed.flat, _flatUse);
+}
+
+/**
+ * Returns whether this item charges a flat rate for costAuto.
+ * @return True if this item charges a flat rate for costAuto.
+ */
+RuleItemUseCost RuleItem::getFlatAuto() const
+{
+	return getDefault(_confAuto.flat, getDefault(_confAimed.flat, _flatUse));
+}
+
+/**
+ * Returns whether this item charges a flat rate for costSnap.
+ * @return True if this item charges a flat rate for costSnap.
+ */
+RuleItemUseCost RuleItem::getFlatSnap() const
+{
+	return getDefault(_confSnap.flat, getDefault(_confAimed.flat, _flatUse));
+}
+
+/**
+ * Returns whether this item charges a flat rate for costMelee.
+ * @return True if this item charges a flat rate for costMelee.
+ */
+RuleItemUseCost RuleItem::getFlatMelee() const
+{
+	return getDefault(_confMelee.flat, _flatUse);
+}
+
+/**
  * Returns whether this item charges a flat rate of use and attack cost.
  * @return True if this item charges a flat rate of use and attack cost.
  */
 RuleItemUseCost RuleItem::getFlatUse() const
 {
 	return _flatUse;
-}
-
-/**
- * Returns whether this item charges a flat rate for costThrow.
- * @return True if this item charges a flat rate for costThrow.
- */
-RuleItemUseCost RuleItem::getFlatMelee() const
-{
-	return getDefault(_flatMelee, _flatUse);
 }
 
 /**
@@ -1391,12 +2140,30 @@ RuleItemUseCost RuleItem::getFlatPrime() const
 }
 
 /**
+ * Returns whether this item charges a flat rate for costUnprime.
+ * @return True if this item charges a flat rate for costUnprime.
+ */
+RuleItemUseCost RuleItem::getFlatUnprime() const
+{
+	return _flatUnprime;
+}
+
+/**
  * Returns if this weapon should arc its shots.
  * @return True if this weapon should arc its shots.
  */
 bool RuleItem::getArcingShot() const
 {
 	return _arcingShot;
+}
+
+/**
+ * Returns the experience training mode configured for this weapon.
+ * @return The mode ID.
+ */
+ExperienceTrainingMode RuleItem::getExperienceTrainingMode() const
+{
+	return _experienceTrainingMode;
 }
 
 /**
@@ -1427,30 +2194,55 @@ int RuleItem::getMaxRange() const
 }
 
 /**
+ * Checks whether a given distance is out of range for this item.
+ * @param distanceSq Given distance squared.
+ * @return True, if out of range.
+ */
+bool RuleItem::isOutOfRange(int distanceSq) const
+{
+	bool outOfRange = distanceSq > (_maxRange * _maxRange);
+	// special handling for short ranges and diagonals
+	if (outOfRange)
+	{
+		// special handling for maxRange 1: allow it to target diagonally adjacent tiles (one diagonal move)
+		if (_maxRange == 1 && distanceSq <= 3)
+		{
+			outOfRange = false;
+		}
+		// special handling for maxRange 2: allow it to target diagonally adjacent tiles (one diagonal move + one straight move)
+		else if (_maxRange == 2 && distanceSq <= 6)
+		{
+			outOfRange = false;
+		}
+	}
+	return outOfRange;
+}
+
+/**
  * Gets the maximum effective range of this weapon when using Aimed Shot.
  * @return The maximum range.
  */
 int RuleItem::getAimRange() const
 {
-	return _aimRange;
+	return _confAimed.range;
 }
 
 /**
- * Gets the maximim effective range of this weapon for Snap Shot.
+ * Gets the maximum effective range of this weapon for Snap Shot.
  * @return The maximum range.
  */
 int RuleItem::getSnapRange() const
 {
-	return _snapRange;
+	return _confSnap.range;
 }
 
 /**
- * Gets the maximim effective range of this weapon for Auto Shot.
+ * Gets the maximum effective range of this weapon for Auto Shot.
  * @return The maximum range.
  */
 int RuleItem::getAutoRange() const
 {
-	return _autoRange;
+	return _confAuto.range;
 }
 
 /**
@@ -1490,24 +2282,6 @@ int RuleItem::getExplosionSpeed() const
 }
 
 /**
- * Gets the amount of auto shots fired by this weapon.
- * @return The shots.
- */
-int RuleItem::getAutoShots() const
-{
-	return _autoShots;
-}
-
-/**
- * Gets the name of psi attack for action popup list.
- * @return String Id.
- */
-const std::string &RuleItem::getPsiAttackName() const
-{
-	return _psiAttackName;
-}
-
-/**
  * is this item a rifle?
  * @return whether or not it is a rifle.
  */
@@ -1535,11 +2309,67 @@ int RuleItem::getShotgunPellets() const
 }
 
 /**
+* Gets the shotgun behavior type. This is an attribute of shotgun ammo.
+* @return 0 = cone-like spread (vanilla), 1 = grouping.
+*/
+int RuleItem::getShotgunBehaviorType() const
+{
+	return _shotgunBehaviorType;
+}
+
+/**
+* Gets the spread of shotgun projectiles. This is an attribute of shotgun ammo.
+* Can be used in both shotgun behavior types.
+* @return The shotgun spread.
+*/
+int RuleItem::getShotgunSpread() const
+{
+	return _shotgunSpread;
+}
+
+/**
+* Gets the shotgun choke value for modifying pellet spread. This is an attribute of the weapon (not ammo).
+* @return The shotgun choke value.
+*/
+int RuleItem::getShotgunChoke() const
+{
+	return _shotgunChoke;
+}
+
+/**
  * Gets the unit that the victim is morphed into when attacked.
  * @return The weapon's zombie unit.
  */
-const std::string &RuleItem::getZombieUnit() const
+const std::string &RuleItem::getZombieUnit(const BattleUnit* victim) const
 {
+	if (victim)
+	{
+		// by armor and gender
+		if (victim->getGender() == GENDER_MALE)
+		{
+			auto i = _zombieUnitByArmorMale.find(victim->getArmor()->getType());
+			if (i != _zombieUnitByArmorMale.end())
+			{
+				return i->second;
+			}
+		}
+		else
+		{
+			auto j = _zombieUnitByArmorFemale.find(victim->getArmor()->getType());
+			if (j != _zombieUnitByArmorFemale.end())
+			{
+				return j->second;
+			}
+		}
+		// by type
+		const std::string victimType = victim->getUnitRules() ? victim->getUnitRules()->getType() : victim->getGeoscapeSoldier()->getRules()->getType();
+		auto k = _zombieUnitByType.find(victimType);
+		if (k != _zombieUnitByType.end())
+		{
+			return k->second;
+		}
+	}
+	// fall back
 	return _zombieUnit;
 }
 
@@ -1553,6 +2383,31 @@ int RuleItem::getMeleePower() const
 }
 
 /**
+ * Checks if this item can be used to target a given faction.
+ * Usage #1: checks the psiamp's allowed targets.
+ * - Not used in AI.
+ * - Mind control of the same faction is hardcoded disabled.
+ * Usage #2: checks if a death trap item applies to a given faction (it use `attacker == FACTION_PLAYER`).
+ * @return True if allowed, false otherwise.
+ */
+bool RuleItem::isTargetAllowed(UnitFaction targetFaction, UnitFaction attacker) const
+{
+	if (targetFaction == attacker) // same faction "attack"
+	{
+		return _targetMatrix & 1;
+	}
+	else if ((targetFaction == FACTION_HOSTILE) || (attacker == FACTION_HOSTILE)) // can't be both true as first `if` cover this case
+	{
+		return _targetMatrix & 2;
+	}
+	else if ((targetFaction == FACTION_NEUTRAL) || (attacker == FACTION_NEUTRAL)) // only `Player -> Neutral` or `Neutral -> Player` left
+	{
+		return _targetMatrix & 4;
+	}
+	return false;
+}
+
+/**
  * Is line of sight required for this psionic weapon to function?
  * @return If line of sight is required.
  */
@@ -1562,12 +2417,21 @@ bool RuleItem::isLOSRequired() const
 }
 
 /**
- * Can this item be used on land or is it underwater only?
+ * Can this item only be used underwater?
  * @return if this is an underwater weapon or not.
  */
 bool RuleItem::isWaterOnly() const
 {
 	return _underwaterOnly;
+}
+
+/**
+* Can this item only be used on land?
+* @return if this is a land weapon or not.
+*/
+bool RuleItem::isLandOnly() const
+{
+	return _landOnly;
 }
 
 /**
@@ -1580,13 +2444,12 @@ bool RuleItem::isPsiRequired() const
 }
 
 /**
- * Compute power bonus based on unit stats.
- * @param stats unit stats
- * @return bonus power.
+ * Is mana required to use this weapon?
+ * @return If mana is required.
  */
-int RuleItem::getPowerBonus(const BattleUnit *unit) const
+bool RuleItem::isManaRequired() const
 {
-	return _power + _damageBonus.getBonus(unit);
+	return _manaRequired;
 }
 
 /**
@@ -1594,9 +2457,19 @@ int RuleItem::getPowerBonus(const BattleUnit *unit) const
  * @param stats unit stats
  * @return bonus power.
  */
-int RuleItem::getMeleeBonus(const BattleUnit *unit) const
+int RuleItem::getPowerBonus(BattleActionAttack::ReadOnly attack) const
 {
-	return _meleePower + _meleeBonus.getBonus(unit);
+	return _damageBonus.getBonus(attack, _power);
+}
+
+/**
+ * Compute power bonus based on unit stats.
+ * @param stats unit stats
+ * @return bonus power.
+ */
+int RuleItem::getMeleeBonus(BattleActionAttack::ReadOnly attack) const
+{
+	return _meleeBonus.getBonus(attack, _meleePower);
 }
 
 /**
@@ -1604,9 +2477,9 @@ int RuleItem::getMeleeBonus(const BattleUnit *unit) const
  * @param stats unit stats
  * @return multiplier.
  */
-int RuleItem::getMeleeMultiplier(const BattleUnit *unit) const
+int RuleItem::getMeleeMultiplier(BattleActionAttack::ReadOnly attack) const
 {
-	return _meleeMulti.getBonus(unit);
+	return _meleeMulti.getBonus(attack);
 }
 
 /**
@@ -1614,9 +2487,9 @@ int RuleItem::getMeleeMultiplier(const BattleUnit *unit) const
  * @param stats unit stats
  * @return multiplier.
  */
-int RuleItem::getAccuracyMultiplier(const BattleUnit *unit) const
+int RuleItem::getAccuracyMultiplier(BattleActionAttack::ReadOnly attack) const
 {
-	return _accuracyMulti.getBonus(unit);
+	return _accuracyMulti.getBonus(attack);
 }
 
 /**
@@ -1624,10 +2497,21 @@ int RuleItem::getAccuracyMultiplier(const BattleUnit *unit) const
  * @param stats unit stats
  * @return multiplier.
  */
-int RuleItem::getThrowMultiplier(const BattleUnit *unit) const
+int RuleItem::getThrowMultiplier(BattleActionAttack::ReadOnly attack) const
 {
-	return _throwMulti.getBonus(unit);
+	return _throwMulti.getBonus(attack);
 }
+
+/**
+ * Compute multiplier of close quarters accuracy based on unit stats.
+ * @param stats unit stats
+ * @return multiplier.
+ */
+int RuleItem::getCloseQuartersMultiplier(BattleActionAttack::ReadOnly attack) const
+{
+	return _closeQuartersMulti.getBonus(attack);
+}
+
 /**
  * Gets the associated special type of this item.
  * note that type 14 is the alien brain, and types
@@ -1642,29 +2526,314 @@ int RuleItem::getSpecialType() const
 
 /**
  * Gets the color offset to use for the vapor trail.
+ * @param depth battlescape depth (0=surface, 1-3=underwater)
  * @return the color offset.
  */
-int RuleItem::getVaporColor() const
+int RuleItem::getVaporColor(int depth) const
 {
+	if (depth == 0)
+		return _vaporColorSurface;
+
 	return _vaporColor;
 }
 
 /**
  * Gets the vapor cloud density for the vapor trail.
+ * @param depth battlescape depth (0=surface, 1-3=underwater)
  * @return the vapor density.
  */
-int RuleItem::getVaporDensity() const
+int RuleItem::getVaporDensity(int depth) const
 {
+	if (depth == 0)
+		return _vaporDensitySurface;
+
 	return _vaporDensity;
 }
 
 /**
  * Gets the vapor cloud probability for the vapor trail.
+ * @param depth battlescape depth (0=surface, 1-3=underwater)
  * @return the vapor probability.
  */
-int RuleItem::getVaporProbability() const
+int RuleItem::getVaporProbability(int depth) const
 {
+	if (depth == 0)
+		return _vaporProbabilitySurface;
+
 	return _vaporProbability;
+}
+
+/**
+ * Gets the index of the sprite in the CustomItemPreview sprite set.
+ * @return Sprite index.
+ */
+const std::vector<int> &RuleItem::getCustomItemPreviewIndex() const
+{
+	return _customItemPreviewIndex;
+}
+
+/**
+* Gets the kneel bonus (15% bonus is encoded as 100+15 = 115).
+* @return Kneel bonus.
+*/
+int RuleItem::getKneelBonus(Mod *mod) const
+{
+	return _kneelBonus != -1 ? _kneelBonus : mod->getKneelBonusGlobal();
+}
+
+/**
+* Gets the one-handed penalty (20% penalty is encoded as 100-20 = 80).
+* @return One-handed penalty.
+*/
+int RuleItem::getOneHandedPenalty(Mod *mod) const
+{
+	return _oneHandedPenalty != -1 ? _oneHandedPenalty : mod->getOneHandedPenaltyGlobal();
+}
+
+/**
+* Gets the monthly salary.
+* @return Monthly salary.
+*/
+int RuleItem::getMonthlySalary() const
+{
+	return _monthlySalary;
+}
+
+/**
+* Gets the monthly maintenance.
+* @return Monthly maintenance.
+*/
+int RuleItem::getMonthlyMaintenance() const
+{
+	return _monthlyMaintenance;
+}
+
+/**
+ * Gets how many waypoints are used for a "spray" attack
+ * @return Number of waypoints.
+ */
+int RuleItem::getSprayWaypoints() const
+{
+	return _sprayWaypoints;
+}
+
+
+////////////////////////////////////////////////////////////
+//					Script binding
+////////////////////////////////////////////////////////////
+
+namespace
+{
+
+void getTypeScript(const RuleItem* r, ScriptText& txt)
+{
+	if (r)
+	{
+		txt = { r->getType().c_str() };
+		return;
+	}
+	else
+	{
+		txt = ScriptText::empty;
+	}
+}
+
+void getBattleTypeScript(const RuleItem *ri, int &ret)
+{
+	if (ri)
+	{
+		ret = (int)ri->getBattleType();
+		return;
+	}
+	ret = (int)BT_NONE;
+}
+
+void isSingleTargetScript(const RuleItem* r, int &ret)
+{
+	if (r)
+	{
+		ret = (r->getDamageType()->FixRadius == 0);
+		return;
+	}
+	else
+	{
+		ret = 0;
+	}
+}
+
+void hasCategoryScript(const RuleItem* ri, int& val, const std::string& cat)
+{
+	if (ri)
+	{
+		auto it = std::find(ri->getCategories().begin(), ri->getCategories().end(), cat);
+		if (it != ri->getCategories().end())
+		{
+			val = 1;
+			return;
+		}
+	}
+	val = 0;
+}
+
+void getResistTypeScript(const RuleDamageType* rdt, int &ret)
+{
+	ret = rdt ? rdt->ResistType : 0;
+}
+
+void getAoeScript(const RuleDamageType* rdt, int &ret)
+{
+	ret = rdt ? !rdt->isDirect() : 0;
+}
+
+void getRandomTypeScript(const RuleDamageType* rdt, int &ret)
+{
+	ret = rdt ? rdt->RandomType : 0;
+}
+
+void getArmorEffectivenessScript(const RuleDamageType* rdt, int& ret)
+{
+	ret = rdt ? round(rdt->ArmorEffectiveness * 100) : 0;
+}
+
+template<float RuleDamageType::* Ptr>
+void getDamageToScript(const RuleDamageType* rdt, int &ret, int value)
+{
+	ret = rdt ? (rdt->* Ptr) * value : 0;
+}
+
+void getRandomDamageScript(const RuleDamageType* rdt, int &ret, int value, RNG::RandomState* rng)
+{
+	ret = 0;
+	if (rdt && rng)
+	{
+		auto func = [&](int min, int max)
+		{
+			return rng->generate(min, max);
+		};
+		ret = rdt->getRandomDamage(value, &func);
+	}
+}
+
+std::string debugDisplayScript(const RuleDamageType* rdt)
+{
+	if (rdt)
+	{
+		std::string s;
+		s += "RuleDamageType";
+		s += "(resist: ";
+		s += std::to_string((int)rdt->ResistType);
+		s += " random: ";
+		s += std::to_string((int)rdt->RandomType);
+		s += ")";
+		return s;
+	}
+	else
+	{
+		return "null";
+	}
+}
+
+std::string debugDisplayScript(const RuleItem* ri)
+{
+	if (ri)
+	{
+		std::string s;
+		s += RuleItem::ScriptName;
+		s += "(name: \"";
+		s += ri->getName();
+		s += "\")";
+		return s;
+	}
+	else
+	{
+		return "null";
+	}
+}
+
+}
+
+
+/**
+ * Register RuleItem in script parser.
+ * @param parser Script parser.
+ */
+void RuleItem::ScriptRegister(ScriptParserBase* parser)
+{
+	{
+		const auto name = std::string{ "RuleDamageType" };
+		parser->registerRawPointerType<RuleDamageType>(name);
+		Bind<RuleDamageType> rs = { parser, name };
+
+		rs.add<&RuleDamageType::isDirect>("isDirect", "if this damage type affects only one target");
+		rs.add<&getAoeScript>("isAreaOfEffect", "if this damage type can affect multiple targets");
+
+		rs.add<&getResistTypeScript>("getResistType", "which damage resistance type is used for damage reduction");
+		rs.add<&getRandomTypeScript>("getRandomType", "how to calculate randomized weapon damage from the weapon's power");
+
+		rs.add<&getArmorEffectivenessScript>("getArmorEffectiveness", "how effective is a unit's armor against this damage, % (value multiplied by 100 compared to ruleset value)");
+
+		rs.add<&getDamageToScript<&RuleDamageType::ToArmorPre>>("getDamageToArmorPre", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToArmor>>("getDamageToArmor", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToEnergy>>("getDamageToEnergy", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToHealth>>("getDamageToHealth", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToItem>>("getDamageToItem", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToMana>>("getDamageToMana", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToMorale>>("getDamageToMorale", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToStun>>("getDamageToStun", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToTile>>("getDamageToTile", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToTime>>("getDamageToTime", "calculated damage value multiplied by the corresponding modifier");
+		rs.add<&getDamageToScript<&RuleDamageType::ToWound>>("getDamageToWound", "calculated damage value multiplied by the corresponding modifier");
+
+		rs.add<&getRandomDamageScript>("getRandomDamage", "calculated damage value (based on weapon's power)");
+
+		rs.addDebugDisplay<&debugDisplayScript>();
+	}
+
+	parser->registerPointerType<Mod>();
+
+	Bind<RuleItem> ri = { parser };
+
+	ri.addCustomConst("BT_NONE", BT_NONE);
+	ri.addCustomConst("BT_FIREARM", BT_FIREARM);
+	ri.addCustomConst("BT_AMMO", BT_AMMO);
+	ri.addCustomConst("BT_MELEE", BT_MELEE);
+	ri.addCustomConst("BT_GRENADE", BT_GRENADE);
+	ri.addCustomConst("BT_PROXIMITYGRENADE", BT_PROXIMITYGRENADE);
+	ri.addCustomConst("BT_MEDIKIT", BT_MEDIKIT);
+	ri.addCustomConst("BT_SCANNER", BT_SCANNER);
+	ri.addCustomConst("BT_MINDPROBE", BT_MINDPROBE);
+	ri.addCustomConst("BT_PSIAMP", BT_PSIAMP);
+	ri.addCustomConst("BT_FLARE", BT_FLARE);
+	ri.addCustomConst("BT_CORPSE", BT_CORPSE);
+
+	ri.add<&getTypeScript>("getType");
+
+	ri.add<&RuleItem::getAccuracyAimed>("getAccuracyAimed");
+	ri.add<&RuleItem::getAccuracyAuto>("getAccuracyAuto");
+	ri.add<&RuleItem::getAccuracyMelee>("getAccuracyMelee");
+	ri.add<&RuleItem::getAccuracyMind>("getAccuracyMind");
+	ri.add<&RuleItem::getAccuracyPanic>("getAccuracyPanic");
+	ri.add<&RuleItem::getAccuracySnap>("getAccuracySnap");
+	ri.add<&RuleItem::getAccuracyThrow>("getAccuracyThrow");
+	ri.add<&RuleItem::getAccuracyUse>("getAccuracyUse");
+
+	ri.add<&RuleItem::getPower>("getPower", "primary power, before applying unit bonuses, random rolls or other modifiers");
+	ri.add<&RuleItem::getDamageType>("getDamageType", "primary damage type");
+	ri.add<&RuleItem::getMeleePower>("getMeleePower", "secondary power (gunbutt), before applying unit bonuses, random rolls or other modifiers");
+	ri.add<&RuleItem::getMeleeType>("getMeleeDamageType", "secondary damage type (gunbutt)");
+
+	ri.add<&RuleItem::getArmor>("getArmorValue");
+	ri.add<&RuleItem::getWeight>("getWeight");
+	ri.add<&getBattleTypeScript>("getBattleType");
+	ri.add<&RuleItem::getWaypoints>("getWaypoints");
+	ri.add<&RuleItem::isWaterOnly>("isWaterOnly");
+	ri.add<&RuleItem::isTwoHanded>("isTwoHanded");
+	ri.add<&RuleItem::isBlockingBothHands>("isBlockingBothHands");
+	ri.add<&isSingleTargetScript>("isSingleTarget");
+	ri.add<&hasCategoryScript>("hasCategory");
+
+	ri.addScriptValue<BindBase::OnlyGet, &RuleItem::_scriptValues>();
+	ri.addDebugDisplay<&debugDisplayScript>();
 }
 
 }

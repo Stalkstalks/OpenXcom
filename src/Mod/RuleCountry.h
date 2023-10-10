@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,16 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULECOUNTRY_H
-#define OPENXCOM_RULECOUNTRY_H
-
 #include <string>
 #include <yaml-cpp/yaml.h>
+#include "RuleEvent.h"
+#include "ModScript.h"
 
 namespace OpenXcom
 {
+
+class Mod;
+class ModScript;
 
 /**
  * Represents a specific funding country.
@@ -34,18 +37,36 @@ class RuleCountry
 {
 private:
 	std::string _type;
+	std::string _signedPactEventName, _rejoinedXcomEventName;
 	int _fundingBase, _fundingCap;
 	double _labelLon, _labelLat;
 	std::vector<double> _lonMin, _lonMax, _latMin, _latMax;
+	int _labelColor, _zoomLevel;
+	const RuleEvent* _signedPactEvent = nullptr;
+	const RuleEvent* _rejoinedXcomEvent = nullptr;
+
+	ModScript::CountryScripts::Container _countryScripts;
+	ScriptValues<RuleCountry> _scriptValues;
 public:
+	/// Name of class used in script.
+	static constexpr const char* ScriptName = "RuleCountry";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+
 	/// Creates a blank country ruleset.
 	RuleCountry(const std::string &type);
 	/// Cleans up the country ruleset.
 	~RuleCountry();
 	/// Loads the country from YAML.
-	void load(const YAML::Node& node);
+	void load(const YAML::Node& node, const ModScript& parsers);
+	/// Cross link with other rules.
+	void afterLoad(const Mod* mod);
 	/// Gets the country's type.
-	std::string getType() const;
+	const std::string& getType() const;
+	/// Gets the event triggered after the country leaves Xcom.
+	const RuleEvent* getSignedPactEvent() const { return _signedPactEvent; }
+	/// Gets the event triggered after the country rejoins Xcom.
+	const RuleEvent* getRejoinedXcomEvent() const { return _rejoinedXcomEvent; }
 	/// Generates the country's starting funding.
 	int generateFunding() const;
 	/// Gets the country's funding cap.
@@ -60,8 +81,13 @@ public:
 	const std::vector<double> &getLonMin() const { return _lonMin; }
 	const std::vector<double> &getLatMax() const { return _latMax; }
 	const std::vector<double> &getLatMin() const { return _latMin; }
+	/// Gets the country's label color.
+	int getLabelColor() const;
+	/// Gets the minimum zoom level required to display the label (Note: works for extraGlobeLabels only, not for vanilla countries).
+	int getZoomLevel() const;
+	/// Gets script.
+	template<typename Script>
+	const typename Script::Container& getScript() const { return _countryScripts.get<Script>(); }
 };
 
 }
-
-#endif

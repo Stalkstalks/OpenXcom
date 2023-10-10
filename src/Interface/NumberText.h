@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_NUMBERTEXT_H
-#define OPENXCOM_NUMBERTEXT_H
-
 #include "../Engine/Surface.h"
 
 namespace OpenXcom
@@ -46,18 +44,16 @@ public:
 	/// Gets the number text's value.
 	unsigned int getValue() const;
 	/// Sets the number text's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the number text's color.
 	Uint8 getColor() const;
 	/// Sets the number text's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Draws the number text.
-	void draw();
+	void draw() override;
 	/// sets this numbertext to have a border or not
 	void setBordered(bool bordered);
 
 };
 
 }
-
-#endif

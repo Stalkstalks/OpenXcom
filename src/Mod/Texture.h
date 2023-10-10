@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TEXTURE_H
-#define OPENXCOM_TEXTURE_H
-
-#define _USE_MATH_DEFINES
-#include <math.h>
+#include "../fmath.h"
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -46,8 +43,11 @@ class Texture
 {
 private:
 	int _id;
+	bool _fakeUnderwater;
+	std::string _startingCondition;
 	std::map<std::string, int> _deployments;
 	std::vector<TerrainCriteria> _terrain;
+	std::vector<TerrainCriteria> _baseTerrain;
 public:
 	/// Creates a new texture with mission data.
 	Texture(int id);
@@ -59,10 +59,18 @@ public:
 	std::vector<TerrainCriteria> *getTerrain();
 	/// Gets a random texture terrain for a given target.
 	std::string getRandomTerrain(Target *target) const;
+	/// Gets the list of terrain criteria for base defenses.
+	std::vector<TerrainCriteria> *getBaseTerrain();
+	/// Gets a random texture terrain for base defenses for a given target.
+	std::string getRandomBaseTerrain(Target *target) const;
 	/// Gets the alien deployment for this texture.
-	const std::map<std::string, int> &getDeployments();
+	const std::map<std::string, int> &getDeployments() const;
 	/// Gets a random deployment.
 	std::string getRandomDeployment() const;
+	/// Is the texture a fake underwater texture?
+	bool isFakeUnderwater() const { return _fakeUnderwater; }
+	/// Gets the Texture's starting condition.
+	const std::string &getStartingCondition() const { return _startingCondition; }
 };
 
 }
@@ -96,14 +104,12 @@ namespace YAML
 			if (node["area"])
 			{
 				std::vector<double> area = node["area"].as< std::vector<double> >();
-				rhs.lonMin = area[0] * M_PI / 180.0;
-				rhs.lonMax = area[1] * M_PI / 180.0;
-				rhs.latMin = area[2] * M_PI / 180.0;
-				rhs.latMax = area[3] * M_PI / 180.0;
+				rhs.lonMin = Deg2Rad(area[0]);
+				rhs.lonMax = Deg2Rad(area[1]);
+				rhs.latMin = Deg2Rad(area[2]);
+				rhs.latMax = Deg2Rad(area[3]);
 			}
 			return true;
 		}
 	};
 }
-
-#endif

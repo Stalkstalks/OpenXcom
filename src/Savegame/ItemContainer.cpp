@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -64,15 +64,24 @@ YAML::Node ItemContainer::save() const
  */
 void ItemContainer::addItem(const std::string &id, int qty)
 {
-	if (id.empty())
+	if (Mod::isEmptyRuleName(id))
 	{
 		return;
 	}
-	if (_qty.find(id) == _qty.end())
-	{
-		_qty[id] = 0;
-	}
 	_qty[id] += qty;
+}
+
+/**
+ * Adds an item amount to the container.
+ * @param id Item ID.
+ * @param qty Item quantity.
+ */
+void ItemContainer::addItem(const RuleItem* item, int qty)
+{
+	if (item)
+	{
+		addItem(item->getType(), qty);
+	}
 }
 
 /**
@@ -82,17 +91,36 @@ void ItemContainer::addItem(const std::string &id, int qty)
  */
 void ItemContainer::removeItem(const std::string &id, int qty)
 {
-	if (id.empty() || _qty.find(id) == _qty.end())
+	if (Mod::isEmptyRuleName(id))
 	{
 		return;
 	}
-	if (qty < _qty[id])
+	auto it = _qty.find(id);
+	if (it == _qty.end())
 	{
-		_qty[id] -= qty;
+		return;
+	}
+
+	if (qty < it->second)
+	{
+		it->second -= qty;
 	}
 	else
 	{
-		_qty.erase(id);
+		_qty.erase(it);
+	}
+}
+
+/**
+ * Removes an item amount from the container.
+ * @param id Item ID.
+ * @param qty Item quantity.
+ */
+void ItemContainer::removeItem(const RuleItem* item, int qty)
+{
+	if (item)
+	{
+		removeItem(item->getType(), qty);
 	}
 }
 
@@ -103,12 +131,12 @@ void ItemContainer::removeItem(const std::string &id, int qty)
  */
 int ItemContainer::getItem(const std::string &id) const
 {
-	if (id.empty())
+	if (Mod::isEmptyRuleName(id))
 	{
 		return 0;
 	}
 
-	std::map<std::string, int>::const_iterator it = _qty.find(id);
+	auto it = _qty.find(id);
 	if (it == _qty.end())
 	{
 		return 0;
@@ -120,15 +148,32 @@ int ItemContainer::getItem(const std::string &id) const
 }
 
 /**
+ * Returns the quantity of an item in the container.
+ * @param id Item ID.
+ * @return Item quantity.
+ */
+int ItemContainer::getItem(const RuleItem* item) const
+{
+	if (item)
+	{
+		return getItem(item->getType());
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+/**
  * Returns the total quantity of the items in the container.
  * @return Total item quantity.
  */
 int ItemContainer::getTotalQuantity() const
 {
 	int total = 0;
-	for (std::map<std::string, int>::const_iterator i = _qty.begin(); i != _qty.end(); ++i)
+	for (const auto& pair : _qty)
 	{
-		total += i->second;
+		total += pair.second;
 	}
 	return total;
 }
@@ -141,9 +186,9 @@ int ItemContainer::getTotalQuantity() const
 double ItemContainer::getTotalSize(const Mod *mod) const
 {
 	double total = 0;
-	for (std::map<std::string, int>::const_iterator i = _qty.begin(); i != _qty.end(); ++i)
+	for (const auto& pair : _qty)
 	{
-		total += mod->getItem(i->first)->getSize() * i->second;
+		total += mod->getItem(pair.first, true)->getSize() * pair.second;
 	}
 	return total;
 }

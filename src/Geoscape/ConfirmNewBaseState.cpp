@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -30,6 +30,7 @@
 #include "BaseNameState.h"
 #include "../Menu/ErrorMessageState.h"
 #include "../Engine/Options.h"
+#include "../Engine/Unicode.h"
 #include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
@@ -64,7 +65,7 @@ ConfirmNewBaseState::ConfirmNewBaseState(Base *base, Globe *globe) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "geoscape");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ConfirmNewBaseState::btnOkClick);
@@ -74,18 +75,18 @@ ConfirmNewBaseState::ConfirmNewBaseState(Base *base, Globe *globe) : _base(base)
 	_btnCancel->onMouseClick((ActionHandler)&ConfirmNewBaseState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ConfirmNewBaseState::btnCancelClick, Options::keyCancel);
 
-	std::wstring area;
-	for (std::vector<Region*>::iterator i = _game->getSavedGame()->getRegions()->begin(); i != _game->getSavedGame()->getRegions()->end(); ++i)
+	std::string area;
+	for (const auto* region : *_game->getSavedGame()->getRegions())
 	{
-		if ((*i)->getRules()->insideRegion(_base->getLongitude(), _base->getLatitude()))
+		if (region->getRules()->insideRegion(_base->getLongitude(), _base->getLatitude()))
 		{
-			_cost = (*i)->getRules()->getBaseCost();
-			area = tr((*i)->getRules()->getType());
+			_cost = region->getRules()->getBaseCost();
+			area = tr(region->getRules()->getType());
 			break;
 		}
 	}
 
-	_txtCost->setText(tr("STR_COST_").arg(Text::formatFunding(_cost)));
+	_txtCost->setText(tr("STR_COST_").arg(Unicode::formatFunding(_cost)));
 
 	_txtArea->setText(tr("STR_AREA_").arg(area));
 }
@@ -108,7 +109,7 @@ void ConfirmNewBaseState::btnOkClick(Action *)
 	{
 		_game->getSavedGame()->setFunds(_game->getSavedGame()->getFunds() - _cost);
 		_game->getSavedGame()->getBases()->push_back(_base);
-		_game->pushState(new BaseNameState(_base, _globe, false));
+		_game->pushState(new BaseNameState(_base, _globe, false, false));
 	}
 	else
 	{

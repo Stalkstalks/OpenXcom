@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,6 +17,8 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "AlienRace.h"
+#include "../Engine/Exception.h"
+#include "../Engine/RNG.h"
 
 namespace OpenXcom
 {
@@ -25,12 +27,16 @@ namespace OpenXcom
  * Creates a blank alien race.
  * @param id String defining the id.
  */
-AlienRace::AlienRace(const std::string &id) : _id(id), _retaliation(true), _retaliationAggression(0)
+AlienRace::AlienRace(const std::string &id) : _id(id), _retaliationAggression(0)
 {
 }
 
 AlienRace::~AlienRace()
 {
+	for (auto& pair : _retaliationMissionDistribution)
+	{
+		delete pair.second;
+	}
 }
 
 /**
@@ -43,13 +49,31 @@ void AlienRace::load(const YAML::Node &node)
 	{
 		load(parent);
 	}
-	_id = node["id"].as<std::string>(_id);
+
 	_baseCustomDeploy = node["baseCustomDeploy"].as<std::string>(_baseCustomDeploy);
 	_baseCustomMission = node["baseCustomMission"].as<std::string>(_baseCustomMission);
-	_retaliationMission = node["retaliationMission"].as<std::string>(_retaliationMission);
 	_members = node["members"].as< std::vector<std::string> >(_members);
-	_retaliation = node["retaliation"].as<bool>(_retaliation);
+	_membersRandom = node["membersRandom"].as< std::vector <std::vector<std::string> > >(_membersRandom);
 	_retaliationAggression = node["retaliationAggression"].as<int>(_retaliationAggression);
+
+	if (const YAML::Node& weights = node["retaliationMissionWeights"])
+	{
+		for (YAML::const_iterator nn = weights.begin(); nn != weights.end(); ++nn)
+		{
+			WeightedOptions* nw = new WeightedOptions();
+			nw->load(nn->second);
+			_retaliationMissionDistribution.push_back(std::make_pair(nn->first.as<size_t>(0), nw));
+		}
+	}
+	else if (node["retaliationMission"])
+	{
+		// FIXME: backwards-compatibility, remove after mid 2022
+		std::string retaliationMission = node["retaliationMission"].as<std::string>("");
+
+		WeightedOptions* nw = new WeightedOptions();
+		nw->set(retaliationMission, 100); // weight 100
+		_retaliationMissionDistribution.push_back(std::make_pair(0, nw)); // month 0
+	}
 }
 
 /**
@@ -86,16 +110,35 @@ const std::string &AlienRace::getBaseCustomMission() const
  */
 const std::string &AlienRace::getMember(int id) const
 {
+	if (!_membersRandom.empty())
+	{
+		if ((size_t)id >= _membersRandom.size())
+		{
+			throw Exception("Race " + _id + " does not have a random member at position/rank " + std::to_string(id));
+		}
+		int rng = RNG::generate(0, _membersRandom[id].size() - 1);
+		return _membersRandom[id][rng];
+	}
+
+	if ((size_t)id >= _members.size())
+	{
+		throw Exception("Race " + _id + " does not have a member at position/rank " + std::to_string(id));
+	}
 	return _members[id];
 }
 
 /**
- * Gets mission used for retaliation, can be empty. This is different than canRetaliate.
- * @return Mission ID or empty string.
+ * Gets the total number of members of this alien race family.
+ * @return The number of members.
  */
-const std::string &AlienRace::getRetaliationMission() const
+int AlienRace::getMembers() const
 {
-	return _retaliationMission;
+	if (!_membersRandom.empty())
+	{
+		return _membersRandom.size();
+	}
+
+	return _members.size();
 }
 
 /**
@@ -106,13 +149,22 @@ int AlienRace::getRetaliationAggression() const
 {
 	return _retaliationAggression;
 }
+
 /**
- * Returns if the race can participate in retaliation missions.
- * @return True if it can retaliate.
+ * Returns a list of retaliation missions based on the given month.
+ * @param monthsPassed The number of months that have passed in the game world.
+ * @return The list of missions. Can be NULL.
  */
-bool AlienRace::canRetaliate() const
+WeightedOptions* AlienRace::retaliationMissionWeights(const size_t monthsPassed) const
 {
-	return _retaliation;
+	if (_retaliationMissionDistribution.empty())
+		return nullptr;
+
+	std::vector<std::pair<size_t, WeightedOptions*> >::const_reverse_iterator rw;
+	rw = _retaliationMissionDistribution.rbegin();
+	while (monthsPassed < rw->first)
+		++rw;
+	return rw->second;
 }
 
 }

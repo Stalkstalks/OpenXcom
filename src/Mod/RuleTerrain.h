@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULETERRAIN_H
-#define OPENXCOM_RULETERRAIN_H
-
 #include <vector>
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -43,10 +41,15 @@ class RuleTerrain
 private:
 	std::vector<MapDataSet*> _mapDataSets;
 	std::vector<MapBlock*> _mapBlocks;
-	std::string _name, _script;
+	std::string _name, _mapScript;
+	std::vector<std::string> _mapScripts;
+	std::string _enviroEffects;
 	std::vector<std::string> _civilianTypes, _music;
 	int _minDepth, _maxDepth, _ambience;
 	double _ambientVolume;
+	std::vector<int> _ambienceRandom;
+	int _minAmbienceRandomDelay, _maxAmbienceRandomDelay;
+	int _lastCraftSkinIndex;
 public:
 	RuleTerrain(const std::string &name);
 	~RuleTerrain();
@@ -54,10 +57,14 @@ public:
 	void load(const YAML::Node& node, Mod *mod);
 	/// Gets the terrain's name (used for MAP generation).
 	std::string getName() const;
+	/// Gets the terrain's enviro effects.
+	const std::string& getEnviroEffects() const;
 	/// Gets the terrain's mapblocks.
 	std::vector<MapBlock*> *getMapBlocks();
 	/// Gets the terrain's mapdatafiles.
 	std::vector<MapDataSet*> *getMapDataSets();
+	/// Refreshes the terrain's mapdatafiles. Use for craft skins ONLY!
+	void refreshMapDataSets(int craftSkinIndex, Mod *mod);
 	/// Gets a random mapblock.
 	MapBlock *getRandomMapBlock(int maxSizeX, int maxSizeY, int group, bool force = true);
 	/// Gets a mapblock given its name.
@@ -72,13 +79,17 @@ public:
 	 int getMaxDepth() const;
 	/// Gets the ambient sound effect.
 	int getAmbience() const;
+	/// Gets the random ambient sound effects.
+	const std::vector<int> &getAmbienceRandom() const { return _ambienceRandom; }
+	/// Gets the minimum delay for the random ambient sound effect.
+	int getMinAmbienceRandomDelay() const { return _minAmbienceRandomDelay; }
+	/// Gets the maximum delay for the random ambient sound effect.
+	int getMaxAmbienceRandomDelay() const { return _maxAmbienceRandomDelay; }
 	/// Gets the generation script name.
-	std::string getScript();
+	const std::string& getRandomMapScript() const;
 	/// Gets the list of music to pick from.
-	const std::vector<std::string> &getMusic();
+	const std::vector<std::string> &getMusic() const;
 	double getAmbientVolume() const;
 };
 
 }
-
-#endif

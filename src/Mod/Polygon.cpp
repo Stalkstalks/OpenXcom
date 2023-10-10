@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +16,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include "Polygon.h"
-#include <cmath>
+#include "../fmath.h"
 
 namespace OpenXcom
 {
@@ -96,8 +95,8 @@ void Polygon::load(const YAML::Node &node)
 	for (size_t i = 1; i < coords.size(); i += 2)
 	{
 		size_t j = (i - 1) / 2;
-		_lon[j] = coords[i] * M_PI / 180;
-		_lat[j] = coords[i+1] * M_PI / 180;
+		_lon[j] = Deg2Rad(coords[i]);
+		_lat[j] = Deg2Rad(coords[i+1]);
 		_x[j] = 0;
 		_y[j] = 0;
 	}

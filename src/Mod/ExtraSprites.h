@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,16 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_EXTRASPRITES_H
-#define OPENXCOM_EXTRASPRITES_H
-
 #include <yaml-cpp/yaml.h>
+#include <string>
+#include <map>
 
 namespace OpenXcom
 {
+
+class Surface;
+class SurfaceSet;
+struct ModData;
 
 /**
  * For adding a set of extra sprite data to the game.
@@ -30,17 +34,24 @@ namespace OpenXcom
 class ExtraSprites
 {
 private:
+	std::string _type;
 	std::map<int, std::string> _sprites;
+	const ModData* _current;
 	int _width, _height;
 	bool _singleImage;
-	int _modIndex, _subX, _subY;
+	int _subX, _subY;
+	bool _loaded;
+
+	Surface *getFrame(SurfaceSet *set, int index) const;
 public:
 	/// Creates a blank external sprite set.
 	ExtraSprites();
 	/// Cleans up the external sprite set.
 	virtual ~ExtraSprites();
 	/// Loads the data from YAML.
-	void load(const YAML::Node &node, int modIndex);
+	void load(const YAML::Node &node, const ModData* current);
+	/// Gets the sprite's type.
+	const std::string& getType() const;
 	/// Gets the list of sprites defined by this mod.
 	std::map<int, std::string> *getSprites();
 	/// Gets the width of the surfaces (used for single images and new spritesets).
@@ -49,15 +60,20 @@ public:
 	int getHeight() const;
 	/// Checks if this is a single surface, or a set of surfaces.
 	bool getSingleImage() const;
-	/// Gets the mod index for this external sprite set.
-	int getModIndex() const;
 	/// Gets the x subdivision.
 	int getSubX() const;
 	/// Gets the y subdivision.
 	int getSubY() const;
-
+	/// Has this sprite been loaded?
+	bool isLoaded() const;
+	/// Checks if a filename is a valid image file.
+	static bool isImageFile(const std::string &filename);
+	/// Load the external sprite into a surface.
+	Surface *loadSurface(Surface *surface);
+	/// Load the external sprite into a surface set.
+	SurfaceSet *loadSurfaceSet(SurfaceSet *set);
+	/// Gets mod data that define this surface.
+	const ModData* getModOwner() { return _current; }
 };
 
 }
-
-#endif

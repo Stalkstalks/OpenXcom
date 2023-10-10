@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BASENAMESTATE_H
-#define OPENXCOM_BASENAMESTATE_H
-
 #include "../Engine/State.h"
 #include "Globe.h"
 
@@ -47,9 +45,10 @@ private:
 	TextEdit *_edtName;
 	TextButton *_btnOk;
 	bool _first;
+	bool _fixedLocation;
 public:
 	/// Creates the Base Name state.
-	BaseNameState(Base *base, Globe *globe, bool first);
+	BaseNameState(Base *base, Globe *globe, bool first, bool fixedLocation);
 	/// Cleans up the Base Name state.
 	~BaseNameState();
 	/// Handler for clicking the OK button.
@@ -59,5 +58,3 @@ public:
 };
 
 }
-
-#endif

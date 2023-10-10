@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,7 +20,6 @@
 #include "SackSoldierState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -62,7 +61,7 @@ SackSoldierState::SackSoldierState(Base *base, size_t soldierId) : _base(base), 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK13.SCR"));
+	setWindowBackground(_window, "sackSoldier");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&SackSoldierState::btnOkClick);
@@ -75,11 +74,11 @@ SackSoldierState::SackSoldierState(Base *base, size_t soldierId) : _base(base), 
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setText(tr("STR_SACK"));
 
-	std::wostringstream ss;
+	std::ostringstream ss;
 	ss << _base->getSoldiers()->at(_soldierId)->getName(true) << "?";
 
 	_txtSoldier->setAlign(ALIGN_CENTER);
-	_txtSoldier->setText(ss.str().c_str());
+	_txtSoldier->setText(ss.str());
 }
 
 /**
@@ -98,9 +97,9 @@ SackSoldierState::~SackSoldierState()
 void SackSoldierState::btnOkClick(Action *)
 {
 	Soldier *soldier = _base->getSoldiers()->at(_soldierId);
-	if (soldier->getArmor()->getStoreItem() != Armor::NONE)
+	if (soldier->getArmor()->getStoreItem())
 	{
-		_base->getStorageItems()->addItem(soldier->getArmor()->getStoreItem());
+		_base->getStorageItems()->addItem(soldier->getArmor()->getStoreItem()->getType());
 	}
 	_base->getSoldiers()->erase(_base->getSoldiers()->begin() + _soldierId);
 	delete soldier;

@@ -9,6 +9,10 @@ MCDPatches: #will never be done
 # bigWall 7 = acts as south wall
 # bigWall 8 = acts as east and south wall
 # bigWall 9 = acts as west and north wall
+  - type: ENTRY
+    data:
+      - MCDIndex: 6
+        deathTile: 7
   - type: ATLANTIS
     data:
       - MCDIndex: 47
@@ -27,6 +31,12 @@ MCDPatches: #will never be done
     data:
       - MCDIndex: 31
         bigWall: 0
+  - type: ISLAND1
+    data:
+      - MCDIndex: 30
+        TUWalk: 0
+        TUFly: 0
+        TUSlide: 0
   - type: CARGO1
     data:
       - MCDIndex: 10
@@ -442,6 +452,7 @@ MCDPatches: #will never be done
       - MCDIndex: 1
         bigWall: 7
       - MCDIndex: 3
+        bigWall: 6
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
@@ -453,8 +464,12 @@ MCDPatches: #will never be done
       - MCDIndex: 13
         LOFTS: [6,6,6,6,6,6,6,6,6,78,78,0]
       - MCDIndex: 18
-        bigWall: 4
-        LOFTS: [13,13,13,13,13,0,0,0,0,0,0,0]
+        bigWall: 0
+        TUWalk: 4
+        TUFly: 4
+        TUSlide: 4
+        terrainHeight: -3
+        LOFTS: [13,13,13,0,0,0,0,0,0,0,0,0]
       - MCDIndex: 19
         bigWall: 0
         TUWalk: 4
@@ -462,42 +477,54 @@ MCDPatches: #will never be done
         TUSlide: 4
         terrainHeight: -10
       - MCDIndex: 20
+        bigWall: 0
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
         terrainHeight: -16
       - MCDIndex: 21
         bigWall: 0
-        terrainHeight: -12
+        terrainHeight: -6
       - MCDIndex: 22
         bigWall: 0
+      - MCDIndex: 23
+        bigWall: 0
       - MCDIndex: 24
-        bigWall: 6
-        LOFTS: [26,26,26,26,26,0,0,0,0,0,0,0]
+        bigWall: 0
+        TUWalk: 4
+        TUFly: 4
+        TUSlide: 4
+        terrainHeight: -3
+        LOFTS: [26,26,26,0,0,0,0,0,0,0,0,0]
       - MCDIndex: 25
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
         terrainHeight: -10
       - MCDIndex: 26
+        bigWall: 0
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
         terrainHeight: -16
       - MCDIndex: 27
+        bigWall: 4
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
         LOFTS: [6,6,6,6,6,6,19,17,15,13,11,9]
       - MCDIndex: 28
+        bigWall: 4
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
       - MCDIndex: 29
+        bigWall: 4
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
       - MCDIndex: 30
+        bigWall: 4
         TUWalk: 4
         TUFly: 4
         TUSlide: 4
@@ -550,6 +577,10 @@ MCDPatches: #will never be done
         bigWall: 0
       - MCDIndex: 21
         bigWall: 3
+      - MCDIndex: 29
+        bigWall: 0
+      - MCDIndex: 32
+        bigWall: 0
   - type: UINT3
     data:
       - MCDIndex: 9
@@ -578,3 +609,23 @@ MCDPatches: #will never be done
         bigWall: 9
       - MCDIndex: 9
         bigWall: 9
+  - type: MU
+    data:
+      - MCDIndex: 7
+        bigWall: 0
+      - MCDIndex: 8
+        bigWall: 0
+  - type: CORAL
+    data:
+      - MCDIndex: 9
+        bigWall: 0
+      - MCDIndex: 10
+        bigWall: 0
+      - MCDIndex: 11
+        bigWall: 0
+      - MCDIndex: 12
+        bigWall: 0
+      - MCDIndex: 13
+        bigWall: 0
+      - MCDIndex: 14
+        bigWall: 0

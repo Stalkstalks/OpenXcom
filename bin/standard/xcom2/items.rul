@@ -27,7 +27,7 @@ items: #done
     costSell: 22500
     transferTime: 48
   - type: STR_CRAFT_GAS_CANNON_ROUNDS_X50
-    size: 0
+    size: 0.1 # changed from vanilla - these took up no space at all in the original, and so have been given the minimum size.
     costBuy: 1240
     costSell: 1012
     transferTime: 96
@@ -37,7 +37,7 @@ items: #done
     costSell: 211000
     transferTime: 48
   - type: STR_GAUSS_CANNON_AMMO
-    size: 0
+    size: 0.1
     clipSize: 1
     costSell: 200
     transferTime: 48
@@ -77,7 +77,7 @@ items: #done
       - STR_HWP_SOLID_HARPOON_BOLTS
     accuracySnap: 60
     accuracyAimed: 90
-    tuSnap: 33
+    tuSnap: 30
     tuAimed: 80
     battleType: 1
     fixedWeapon: true
@@ -147,8 +147,8 @@ items: #done
     invHeight: 3
     turretType: 2
     battleType: 1
-    # special behaviour here: for a HWP with compatible ammo, setting a clipsize
-    # defines the max ammo for the HWP, and the clipsize on the weapon dictates
+    # special behaviour here: for a HWP with compatible ammo, setting a clipSize
+    # defines the max ammo for the HWP, and the clipSize on the weapon dictates
     # how many rounds it adds.
     compatibleAmmo:
       - STR_GAUSS_CANNON_AMMO
@@ -164,7 +164,7 @@ items: #done
     power: 110
     damageType: 5
     hitAnimation: 46
-    accuracySnap: 85
+    accuracySnap: 86
     accuracyAimed: 100
     tuSnap: 30
     tuAimed: 60
@@ -185,17 +185,17 @@ items: #done
     fireSound: 26
     compatibleAmmo:
       - STR_HWP_DISPLACER_PWT
-    accuracyAimed: 100
+    accuracyAimed: 60
     tuAimed: 66
     battleType: 1
     fixedWeapon: true
-    waypoint: true
+    waypoints: 9
     invWidth: 2
     invHeight: 3
     turretType: 4
     underwaterOnly: true
   - type: STR_HWP_DISPLACER_PWT
-    size: 6
+    size: 0.6
     costSell: 31500
     transferTime: 48
     power: 140
@@ -759,6 +759,7 @@ items: #done
     twoHanded: true
     invWidth: 1
     invHeight: 3
+    clipSize: -1
   - type: STR_CHEMICAL_FLARE
     size: 0.1
     costBuy: 60
@@ -777,6 +778,7 @@ items: #done
     invWidth: 2
     invHeight: 3
     armor: 0
+    battleType: 11
     recover: false
   - type: STR_CORPSE_ARMOR
     name: STR_CORPSE
@@ -786,6 +788,7 @@ items: #done
     invWidth: 2
     invHeight: 3
     armor: 0
+    battleType: 11
     recover: false
   - type: STR_CORPSE_ION
     name: STR_CORPSE
@@ -795,6 +798,7 @@ items: #done
     invWidth: 2
     invHeight: 3
     armor: 0
+    battleType: 11
     recover: false
   - type: STR_SONIC_CANNON
     requires:
@@ -944,7 +948,7 @@ items: #done
     tuAimed: 66
     battleType: 1
     twoHanded: true
-    waypoint: true
+    waypoints: 9
     invWidth: 2
     invHeight: 3
     recoveryPoints: 5
@@ -1043,6 +1047,7 @@ items: #done
     invWidth: 2
     invHeight: 1
     attraction: 4
+    recoveryPoints: 5
   - type: STR_MC_READER
     requires:
       - STR_MC_READER
@@ -1300,41 +1305,49 @@ items: #done
     floorSprite: 64
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: DISPLACER_CORPSE_2
     floorSprite: 65
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: DISPLACER_CORPSE_3
     floorSprite: 66
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: DISPLACER_CORPSE_4
     floorSprite: 67
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: COELACANTH_CORPSE_1
     floorSprite: 68
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: COELACANTH_CORPSE_2
     floorSprite: 69
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: COELACANTH_CORPSE_3
     floorSprite: 70
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: COELACANTH_CORPSE_4
     floorSprite: 71
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: CIVM_CORPSE
     name: STR_CORPSE
@@ -1343,6 +1356,7 @@ items: #done
     invWidth: 0
     invHeight: 0
     armor: 12
+    battleType: 11
     recover: false
   - type: CIVF_CORPSE
     name: STR_CORPSE
@@ -1351,6 +1365,7 @@ items: #done
     invWidth: 0
     invHeight: 0
     armor: 12
+    battleType: 11
     recover: false
   - type: STR_ION_BEAM_ACCELERATORS
     size: 0.7
@@ -1402,6 +1417,9 @@ items: #done
     costSell: 6500
     specialType: 10
     recoveryPoints: 1
+    recoveryDividers:
+      STR_UFO: 10
+      STR_OTHER: 150
   - type: STR_PLASTIC_AQUA_ARMOR
     size: 0.8
     costSell: 54000
@@ -1412,7 +1430,7 @@ items: #done
     size: 0.8
     costSell: 115000
   - type: STR_BIODRONE_MELEE_WEAPON
-    bigSprite: -2
+    bigSprite: 73
     meleeSound: 26
     strengthApplied: true
     damageType: 7
@@ -1425,7 +1443,7 @@ items: #done
     clipSize: -1
     recover: false
   - type: HALLUCINOID_WEAPON
-    bigSprite: -7
+    bigSprite: 68
     meleeSound: 26
     strengthApplied: true
     damageType: 7
@@ -1438,7 +1456,9 @@ items: #done
     clipSize: -1
     recover: false
   - type: STR_LOBSTERMAN_MELEE_WEAPON
-    bigSprite: -5
+    specialUseEmptyHand: true
+    specialUseEmptyHandShow: true
+    bigSprite: 70
     meleeSound: 42
     strengthApplied: true
     damageType: 7
@@ -1451,7 +1471,7 @@ items: #done
     clipSize: -1
     recover: false
   - type: CALCINITE_WEAPON
-    bigSprite: -9
+    bigSprite: 66
     meleeSound: 16
     strengthApplied: true
     damageType: 7
@@ -1463,8 +1483,8 @@ items: #done
     invHeight: 3
     clipSize: -1
     recover: false
-  - type: DEEP_ONE_WEAPON 
-    bigSprite: -3
+  - type: DEEP_ONE_WEAPON
+    bigSprite: 72
     bulletSprite: 8
     fireSound: 40
     hitSound: 41
@@ -1485,7 +1505,7 @@ items: #done
     arcingShot: true
     hitAnimation: -1
   - type: STR_TRISCENE_MELEE_WEAPON
-    bigSprite: -6
+    bigSprite: 69
     handSprite: 41
     meleeSound: 44
     strengthApplied: true
@@ -1500,7 +1520,7 @@ items: #done
     recover: false
   - type: STR_TRIBIO_SONIC_WEAPON
     weight: 3
-    bigSprite: -8
+    bigSprite: 67
     floorSprite: 29
     handSprite: 40
     fireSound: 36
@@ -1523,7 +1543,7 @@ items: #done
     vaporDensity: 30
   - type: XARQUID_WEAPON
     weight: 3
-    bigSprite: -8
+    bigSprite: 67
     floorSprite: 29
     handSprite: 40
     fireSound: 37
@@ -1545,7 +1565,7 @@ items: #done
     vaporColor: 3
     vaporDensity: 30
   - type: TENTACULAT_WEAPON
-    bigSprite: -4
+    bigSprite: 71
     meleeSound: 42
     strengthApplied: true
     damageType: 7
@@ -1559,7 +1579,7 @@ items: #done
     recover: false
     zombieUnit: STR_ZOMBIE
   - type: ZOMBIE_WEAPON
-    bigSprite: -1
+    bigSprite: 74
     meleeSound: 42
     strengthApplied: true
     damageType: 7

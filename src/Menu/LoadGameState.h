@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM__LOADGAMESTATE
-#define OPENXCOM__LOADGAMESTATE
-
 #include "../Engine/State.h"
 #include <SDL.h>
 #include <string>
@@ -29,6 +27,7 @@ namespace OpenXcom
 {
 
 class Text;
+class SavedGame;
 
 /**
  * Loads a saved game, with an optional message.
@@ -50,11 +49,11 @@ public:
 	/// Creates the interface.
 	void buildUi(SDL_Color *palette);
 	/// Validates game.
-	void init();
+	void init() override;
 	/// Loads the game.
-	void think();
+	void think() override;
+	/// Shows an error message.
+	void error(const std::string &msg, SavedGame *save);
 };
 
 }
-
-#endif

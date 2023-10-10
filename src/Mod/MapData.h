@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MAPDATA_H
-#define OPENXCOM_MAPDATA_H
-
 #include "RuleItem.h"
 
 namespace OpenXcom
@@ -26,7 +24,7 @@ namespace OpenXcom
 
 class MapDataSet;
 
-enum SpecialTileType{TILE=0,
+enum SpecialTileType : int {TILE=0,
 					START_POINT,
 					UFO_POWER_SOURCE,
 					UFO_NAVIGATION,
@@ -40,11 +38,12 @@ enum SpecialTileType{TILE=0,
 					ALIEN_HABITAT,
 					DEAD_TILE,
 					END_POINT,
-					MUST_DESTROY};
+					MUST_DESTROY,
+					DEATH_TRAPS=200};
 
-enum MovementType{ MT_WALK, MT_FLY, MT_SLIDE, MT_FLOAT, MT_SINK};
-enum VoxelType{ V_EMPTY = -1, V_FLOOR, V_WESTWALL, V_NORTHWALL, V_OBJECT, V_UNIT, V_OUTOFBOUNDS };
-enum MapDataType { O_FLOOR, O_WESTWALL, O_NORTHWALL, O_OBJECT };
+enum MovementType : int { MT_WALK, MT_FLY, MT_SLIDE, MT_FLOAT, MT_SINK};
+enum VoxelType : int { V_EMPTY = -1, V_FLOOR, V_WESTWALL, V_NORTHWALL, V_OBJECT, V_UNIT, V_OUTOFBOUNDS };
+enum TilePart : int { O_FLOOR, O_WESTWALL, O_NORTHWALL, O_OBJECT, O_MAX };
 
 /**
  * MapData is the smallest piece of a Battlescape terrain, holding info about a certain object, wall, floor, ...
@@ -56,13 +55,16 @@ private:
 	MapDataSet *_dataset;
 	SpecialTileType _specialType;
 	bool _isUfoDoor, _stopLOS, _isNoFloor, _isGravLift, _isDoor, _blockFire, _blockSmoke, _baseModule;
-	int _yOffset, _TUWalk, _TUFly, _TUSlide, _terrainLevel, _footstepSound, _dieMCD, _altMCD, _objectType, _lightSource;
+	int _yOffset, _TUWalk, _TUFly, _TUSlide, _terrainLevel, _footstepSound, _dieMCD, _altMCD;
+	TilePart _objectType;
+	int _lightSource;
 	int _armor, _flammable, _fuel, _explosive, _explosiveType, _bigWall;
 	int _sprite[8];
 	int _block[6];
 	int _loftID[12];
 	unsigned short _miniMapIndex;
 public:
+	static const int O_DUMMY = 999;
 	MapData(MapDataSet *dataset);
 	~MapData();
 	/// Gets the dataset this object belongs to.
@@ -81,6 +83,8 @@ public:
 	bool isDoor() const;
 	/// Gets whether this is a grav lift.
 	bool isGravLift() const;
+	/// Gets whether this should be drawn behind a unit or in front of a unit (i.e. if it works as a S or E wall).
+	bool isBackTileObject() const;
 	/// Sets all kinds of flags.
 	void setFlags(bool isUfoDoor, bool stopLOS, bool isNoFloor, int bigWall, bool isGravLift, bool isDoor, bool blockFire, bool blockSmoke, bool baseModule);
 	/// Gets the amount of blockage of a certain type.
@@ -94,13 +98,13 @@ public:
 	/// Sets the offset on the Y axis for drawing this object.
 	void setYOffset(int value);
 	/// Set the type of tile.
-	void setObjectType(int type);
+	void setObjectType(TilePart type);
 	/// Get the type of tile.
-	int getObjectType() const;
+	TilePart getObjectType() const;
 	/// Gets info about special tile types
 	SpecialTileType getSpecialType() const;
 	/// Sets a special tile type and object type.
-	void setSpecialType(int value, int otype);
+	void setSpecialType(int value, TilePart otype);
 	/// Gets the TU cost to move over the object.
 	int getTUCost(MovementType movementType) const;
 	/// Sets the TU cost to move over the object.
@@ -113,7 +117,7 @@ public:
 	int getFootstepSound() const;
 	/// Sets the index to the footstep sound.
 	void setFootstepSound(int value);
-	/// Gets sthe alternative object ID.
+	/// Gets the alternative object ID.
 	int getAltMCD() const;
 	/// Sets the alternative object ID.
 	void setAltMCD(int value);
@@ -162,7 +166,7 @@ public:
 	/// Sets the TUSlide value.
 	void setTUSlide(const int TUSlide);
 	/// Check if this is an xcom base object.
-	bool isBaseModule();
+	bool isBaseModule() const;
 	/// Sets this tile as not a floor (water, etc.)
 	void setNoFloor(bool isNoFloor);
 	/// Sets this tile as not stopping LOS.
@@ -170,5 +174,3 @@ public:
 };
 
 }
-
-#endif

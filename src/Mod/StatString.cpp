@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include "StatString.h"
+#include "Unit.h"
 #include <vector>
+#include "../Engine/Language.h"
+#include "../Engine/Unicode.h"
 
 namespace OpenXcom
 {
@@ -43,15 +45,15 @@ StatString::~StatString()
  */
 void StatString::load(const YAML::Node &node)
 {
-    std::string conditionNames[] = {"psiStrength", "psiSkill", "bravery", "strength", "firing", "reactions", "stamina", "tu", "health", "throwing", "melee"};
+	std::string conditionNames[] = {"psiStrength", "psiSkill", "bravery", "strength", "firing", "reactions", "stamina", "tu", "health", "throwing", "melee", "psiTraining", "manaPool"};
 	_stringToBeAddedIfAllConditionsAreMet = node["string"].as<std::string>(_stringToBeAddedIfAllConditionsAreMet);
-    for (size_t i = 0; i < sizeof(conditionNames)/sizeof(conditionNames[0]); i++)
+	for (size_t i = 0; i < std::size(conditionNames); i++)
 	{
-        if (node[conditionNames[i]])
+		if (node[conditionNames[i]])
 		{
-            _conditions.push_back(getCondition(conditionNames[i], node));
-        }
-    }
+			_conditions.push_back(getCondition(conditionNames[i], node));
+		}
+	}
 }
 
 /**
@@ -60,7 +62,7 @@ void StatString::load(const YAML::Node &node)
  * @param node YAML node.
  * @return New StatStringCondition.
  */
-StatStringCondition *StatString::getCondition(const std::string &conditionName, const YAML::Node &node) const
+StatStringCondition *StatString::getCondition(const std::string &conditionName, const YAML::Node &node)
 {
 	// These are the defaults from xcomutil
 	int minValue = 0, maxValue = 255;
@@ -80,7 +82,7 @@ StatStringCondition *StatString::getCondition(const std::string &conditionName, 
  * Returns the conditions associated with this StatString.
  * @return List of StatStringConditions.
  */
-std::vector< StatStringCondition* > StatString::getConditions() const
+const std::vector<StatStringCondition*> &StatString::getConditions() const
 {
 	return _conditions;
 }
@@ -101,45 +103,45 @@ std::string StatString::getString() const
  * @param psiStrengthEval Are psi stats available?
  * @return Resulting string of all valid StatStrings.
  */
-std::wstring StatString::calcStatString(UnitStats &currentStats, const std::vector<StatString *> &statStrings, bool psiStrengthEval)
+std::string StatString::calcStatString(UnitStats &currentStats, const std::vector<StatString *> &statStrings, bool psiStrengthEval, bool inTraining)
 {
-	size_t conditionsMet;
-	int minVal, maxVal;
-	std::string conditionName, string;
-	std::wstring wstring, statString;
-	bool continueCalc = true;
+	std::string result;
 	std::map<std::string, int> currentStatsMap = getCurrentStats(currentStats);
-
-	for (std::vector<StatString *>::const_iterator i1 = statStrings.begin(); i1 != statStrings.end() && continueCalc; ++i1)
+	if (inTraining)
 	{
-		string = (*i1)->getString();
-		const std::vector<StatStringCondition* > conditions = (*i1)->getConditions();
-		conditionsMet = 0;
-		for (std::vector<StatStringCondition* >::const_iterator i2 = conditions.begin(); i2 != conditions.end() && continueCalc; ++i2)
+		currentStatsMap["psiTraining"] = 1;
+	}
+	for (auto* statStringDef : statStrings)
+	{
+		bool conditionsMet = true;
+		for (auto* statStringCondition : statStringDef->getConditions())
 		{
-			conditionName = (*i2)->getConditionName();
-			minVal = (*i2)->getMinVal();
-			maxVal = (*i2)->getMaxVal();
-			if (currentStatsMap.find(conditionName) != currentStatsMap.end())
+			if (!conditionsMet) break; // loop finished
+			auto name = currentStatsMap.find(statStringCondition->getConditionName());
+			if (name != currentStatsMap.end())
 			{
-				if (currentStatsMap[conditionName] >= minVal && currentStatsMap[conditionName] <= maxVal
-					&& (conditionName != "psiStrength" || (currentStats.psiSkill > 0 || psiStrengthEval)))
-				{
-					conditionsMet++;
-				}
-				if (conditionsMet == conditions.size())
-				{
-					wstring.assign(string.begin(), string.end());
-					statString = statString + wstring;
-					if (wstring.length() > 1)
-					{
-						continueCalc = false;
-					}
-				}
+				conditionsMet = conditionsMet && statStringCondition->isMet(name->second, currentStats.psiSkill > 0 || psiStrengthEval);
+			}
+			else
+			{
+				// if name == currentStatsMap.end() we've searched for a stat that doesn't exist.
+				// this means psi training. if there's no "psiTraining" stat in the statsMap,
+				// this soldier isn't in training, so we won't append his name with the psiTraining tag.
+				// presumably conditionsMet was originally initialized as false, but for whatever reason that was changed, hence this.
+				conditionsMet = false;
+			}
+		}
+		if (conditionsMet)
+		{
+			std::string wstring = statStringDef->getString();
+			result += wstring;
+			if (Unicode::codePointLengthUTF8(wstring) > 1)
+			{
+				break;
 			}
 		}
 	}
-	return statString;
+	return result;
 }
 
 /**
@@ -161,6 +163,7 @@ std::map<std::string, int> StatString::getCurrentStats(UnitStats &currentStats)
 	currentStatsMap["health"] = currentStats.health;
 	currentStatsMap["throwing"] = currentStats.throwing;
 	currentStatsMap["melee"] = currentStats.melee;
+	currentStatsMap["manaPool"] = currentStats.mana;
 	return currentStatsMap;
 }
 

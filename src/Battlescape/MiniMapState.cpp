@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -54,12 +54,12 @@ MiniMapState::MiniMapState (Camera * camera, SavedBattleGame * battleGame)
 	_btnLvlDwn = new BattlescapeButton(18, 20, 24, 88);
 	_btnOk = new BattlescapeButton(32, 32, 275, 145);
 	_txtLevel = new Text(28, 16, 281, 75);
-	
+
 	// Set palette
 	battleGame->setPaletteByDepth(this);
 
 	add(_bg);
-	_game->getMod()->getSurface("SCANBORD.PCK")->blit(_bg);
+	_game->getMod()->getSurface("SCANBORD.PCK")->blitNShade(_bg, 0, 0);
 	add(_miniMapView);
 	add(_btnLvlUp, "buttonUp", "minimap", _bg);
 	add(_btnLvlDwn, "buttonDown", "minimap", _bg);
@@ -124,7 +124,7 @@ void MiniMapState::btnOkClick(Action *)
 {
 	if (Options::maximizeInfoScreens)
 	{
-		Screen::updateScale(Options::battlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
+		Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
 		_game->getScreen()->resetDisplay(false);
 	}
 	_game->popState();
@@ -164,4 +164,5 @@ void MiniMapState::think()
 	State::think();
 	_timerAnimate->think(this, 0);
 }
+
 }

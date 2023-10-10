@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -22,7 +22,6 @@
 #include "../Engine/Screen.h"
 #include "../Engine/Action.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Surface.h"
 #include "../Interface/Window.h"
 #include "Globe.h"
@@ -33,6 +32,8 @@
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Craft.h"
 #include "../Mod/RuleCraft.h"
+#include "../Mod/AlienDeployment.h"
+#include "../Mod/RuleStartingCondition.h"
 #include "ConfirmCydoniaState.h"
 #include "../Engine/Options.h"
 
@@ -45,7 +46,7 @@ namespace OpenXcom
  * @param craft Pointer to the craft to target.
  * @param globe Pointer to the Geoscape globe.
  */
-SelectDestinationState::SelectDestinationState(Craft *craft, Globe *globe) : _craft(craft), _globe(globe)
+SelectDestinationState::SelectDestinationState(std::vector<Craft*> crafts, Globe *globe) : _crafts(std::move(crafts)), _globe(globe)
 {
 	int dx = _game->getScreen()->getDX();
 	int dy = _game->getScreen()->getDY();
@@ -118,7 +119,7 @@ SelectDestinationState::SelectDestinationState(Craft *craft, Globe *globe) : _cr
 	_btnRotateUp->setListButton();
 	_btnRotateDown->setListButton();
 
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "geoscape");
 
 	_btnCancel->setText(tr("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&SelectDestinationState::btnCancelClick);
@@ -128,7 +129,11 @@ SelectDestinationState::SelectDestinationState(Craft *craft, Globe *globe) : _cr
 	_txtTitle->setVerticalAlign(ALIGN_MIDDLE);
 	_txtTitle->setWordWrap(true);
 
-	if (!_craft->getRules()->getSpacecraft() || !_game->getSavedGame()->isResearched(_game->getMod()->getFinalResearch()))
+	if (_crafts.size() != 1 ||
+		_crafts.front()->getFuelPercentage() < 100 ||
+		!_crafts.front()->getRules()->getSpacecraft() ||
+		(_game->getMod()->getFinalResearch() && // if not Research specified then we look only on `getSpacecraft`
+			!_game->getSavedGame()->isResearched(_game->getMod()->getFinalResearch())))
 	{
 		_btnCydonia->setVisible(false);
 	}
@@ -136,6 +141,27 @@ SelectDestinationState::SelectDestinationState(Craft *craft, Globe *globe) : _cr
 	{
 		_btnCydonia->setText(tr("STR_CYDONIA"));
 		_btnCydonia->onMouseClick((ActionHandler)&SelectDestinationState::btnCydoniaClick);
+
+		// one more check...
+		for (auto& depl : _game->getMod()->getDeploymentsList())
+		{
+			AlienDeployment* deploymentRule = _game->getMod()->getDeployment(depl);
+			if (deploymentRule->isFinalDestination())
+			{
+				RuleStartingCondition* sc = _game->getMod()->getStartingCondition(deploymentRule->getStartingCondition());
+				if (sc && sc->requiresCommanderOnboard() && !_crafts.front()->isCommanderOnboard())
+				{
+					_btnCydonia->setVisible(false);
+				}
+				break;
+			}
+		}
+	}
+
+	if (_crafts.front()->getStatus() != "STR_OUT")
+	{
+		_globe->setCraftRange(_crafts.front()->getLongitude(), _crafts.front()->getLatitude(), _crafts.front()->getBaseRange());
+		_globe->invalidate();
 	}
 }
 
@@ -144,7 +170,7 @@ SelectDestinationState::SelectDestinationState(Craft *craft, Globe *globe) : _cr
  */
 SelectDestinationState::~SelectDestinationState()
 {
-
+	_globe->setCraftRange(0.0, 0.0, 0.0);
 }
 
 /**
@@ -195,7 +221,7 @@ void SelectDestinationState::globeClick(Action *action)
 	// Clicking on a valid target
 	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
 	{
-		std::vector<Target*> v = _globe->getTargets(mouseX, mouseY, true);
+		std::vector<Target*> v = _globe->getTargets(mouseX, mouseY, true, _crafts.front());
 		if (v.empty())
 		{
 			Waypoint *w = new Waypoint();
@@ -203,7 +229,7 @@ void SelectDestinationState::globeClick(Action *action)
 			w->setLatitude(lat);
 			v.push_back(w);
 		}
-		_game->pushState(new MultipleTargetsState(v, _craft, 0));
+		_game->pushState(new MultipleTargetsState(v, _crafts, 0, false));
 	}
 }
 
@@ -326,9 +352,9 @@ void SelectDestinationState::btnCancelClick(Action *)
 
 void SelectDestinationState::btnCydoniaClick(Action *)
 {
-	if (_craft->getNumSoldiers() > 0 || _craft->getNumVehicles() > 0)
+	if (_crafts.front()->getNumTotalUnits() > 0)
 	{
-		_game->pushState(new ConfirmCydoniaState(_craft));
+		_game->pushState(new ConfirmCydoniaState(_crafts.front()));
 	}
 }
 
@@ -339,13 +365,14 @@ void SelectDestinationState::btnCydoniaClick(Action *)
  */
 void SelectDestinationState::resize(int &dX, int &dY)
 {
-	for (std::vector<Surface*>::const_iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		(*i)->setX((*i)->getX() + dX / 2);
-		if (*i != _window && *i != _btnCancel && *i != _txtTitle && *i != _btnCydonia)
+		surface->setX(surface->getX() + dX / 2);
+		if (surface != _window && surface != _btnCancel && surface != _txtTitle && surface != _btnCydonia)
 		{
-			(*i)->setY((*i)->getY() + dY / 2);
+			surface->setY(surface->getY() + dY / 2);
 		}
 	}
 }
+
 }

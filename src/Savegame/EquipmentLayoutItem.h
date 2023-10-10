@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,14 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_EQUIPMENTLAYOUTITEM_H
-#define OPENXCOM_EQUIPMENTLAYOUTITEM_H
-
 #include <string>
 #include <yaml-cpp/yaml.h>
+#include "../Mod/RuleItem.h"
 
 namespace OpenXcom
 {
+
+class BattleItem;
 
 /**
  * Represents a soldier-equipment layout item which is used
@@ -35,27 +36,30 @@ private:
 	std::string _itemType;
 	std::string _slot;
 	int _slotX, _slotY;
-	std::string _ammoItem;
+	std::string _ammoItem[RuleItem::AmmoSlotMax];
 	int _fuseTimer;
+	bool _fixed;
 public:
 	/// Creates a new soldier-equipment layout item and loads its contents from YAML.
 	EquipmentLayoutItem(const YAML::Node& node);
 	/// Creates a new soldier-equipment layout item.
-	EquipmentLayoutItem(const std::string &itemType, const std::string &slot, int slotX, int slotY, const std::string &ammoItem, int fuseTimer);
+	EquipmentLayoutItem(const BattleItem* item);
 	/// Cleans up the soldier-equipment layout item.
 	~EquipmentLayoutItem();
 	/// Gets the item's type which has to be in a slot
-	std::string getItemType() const;
+	const std::string& getItemType() const;
 	/// Gets the slot to be occupied
-	std::string getSlot() const;
+	const std::string& getSlot() const;
 	/// Gets the slotX to be occupied
 	int getSlotX() const;
 	/// Gets the slotY to be occupied
 	int getSlotY() const;
 	/// Gets the ammo item
-	std::string getAmmoItem() const;
+	const std::string& getAmmoItemForSlot(int i) const;
 	/// Gets the turn until explosion
 	int getFuseTimer() const;
+	/// Is this a fixed weapon entry?
+	bool isFixed() const;
 	/// Loads the soldier-equipment layout item from YAML.
 	void load(const YAML::Node& node);
 	/// Saves the soldier-equipment layout item to YAML.
@@ -63,5 +67,3 @@ public:
 };
 
 }
-
-#endif

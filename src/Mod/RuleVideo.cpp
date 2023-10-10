@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -23,8 +23,13 @@
 namespace OpenXcom
 {
 
-RuleVideo::RuleVideo(const std::string &id) : _id(id)
+RuleVideo::RuleVideo(const std::string &id) : _id(id), _useUfoAudioSequence(false), _winGame(false), _loseGame(false)
 {
+	// backwards-compatibility failsafe
+	if (_id == "winGame")
+		_winGame = true;
+	if (_id == "loseGame")
+		_loseGame = true;
 }
 
 RuleVideo::~RuleVideo()
@@ -48,16 +53,25 @@ static void _loadSlide(SlideshowSlide &slide, const YAML::Node &node)
 	slide.color = node["captionColor"].as<int>(INT_MAX);
 	slide.transitionSeconds = node["transitionSeconds"].as<int>(0);
 	slide.align = (TextHAlign)node["captionAlign"].as<int>(ALIGN_LEFT);
+	slide.valign = (TextVAlign)node["captionVerticalAlign"].as<int>(ALIGN_TOP);
 }
 
 void RuleVideo::load(const YAML::Node &node)
 {
 	_useUfoAudioSequence = node["useUfoAudioSequence"].as<bool>(false);
+	_winGame = node["winGame"].as<bool>(_winGame);
+	_loseGame = node["loseGame"].as<bool>(_loseGame);
 
 	if (const YAML::Node &videos = node["videos"])
 	{
 		for (YAML::const_iterator i = videos.begin(); i != videos.end(); ++i)
 			_videos.push_back((*i).as<std::string>());
+	}
+
+	if (const YAML::Node &tracks = node["audioTracks"])
+	{
+		for (YAML::const_iterator i = tracks.begin(); i != tracks.end(); ++i)
+			_audioTracks.push_back((*i).as<std::string>());
 	}
 
 	if (const YAML::Node &slideshow = node["slideshow"])
@@ -93,6 +107,11 @@ const SlideshowHeader & RuleVideo::getSlideshowHeader() const
 const std::vector<SlideshowSlide> * RuleVideo::getSlides() const
 {
 	return &_slides;
+}
+
+const std::vector<std::string> * RuleVideo::getAudioTracks() const
+{
+	return &_audioTracks;
 }
 
 }

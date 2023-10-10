@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -27,6 +27,7 @@
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Soldier.h"
+#include "../Savegame/Transfer.h"
 #include "../Engine/Options.h"
 
 namespace OpenXcom
@@ -38,7 +39,7 @@ namespace OpenXcom
  */
 PromotionsState::PromotionsState()
 {
-	// Create objects
+	// Create object
 	_window = new Window(this, 320, 200, 0, 0);
 	_btnOk = new TextButton(288, 16, 16, 176);
 	_txtTitle = new Text(300, 17, 10, 8);
@@ -60,8 +61,8 @@ PromotionsState::PromotionsState()
 
 	centerAllSurfaces();
 
-	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	// Set up object
+	setWindowBackground(_window, "promotions");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&PromotionsState::btnOkClick);
@@ -83,13 +84,23 @@ PromotionsState::PromotionsState()
 	_lstSoldiers->setBackground(_window);
 	_lstSoldiers->setMargin(8);
 
-	for (std::vector<Base*>::iterator i = _game->getSavedGame()->getBases()->begin(); i != _game->getSavedGame()->getBases()->end(); ++i)
+	for (auto* xbase : *_game->getSavedGame()->getBases())
 	{
-		for (std::vector<Soldier*>::iterator j = (*i)->getSoldiers()->begin(); j != (*i)->getSoldiers()->end(); ++j)
+		for (auto* soldier : *xbase->getSoldiers())
 		{
-			if ((*j)->isPromoted())
+			if (soldier->isPromoted())
 			{
-				_lstSoldiers->addRow(3, (*j)->getName().c_str(), tr((*j)->getRankString()).c_str(), (*i)->getName().c_str());
+				_lstSoldiers->addRow(3, soldier->getName().c_str(), tr(soldier->getRankString()).c_str(), xbase->getName().c_str());
+			}
+		}
+		for (auto* transfer : *xbase->getTransfers())
+		{
+			if (transfer->getType() == TRANSFER_SOLDIER)
+			{
+				if (transfer->getSoldier()->isPromoted())
+				{
+					_lstSoldiers->addRow(3, transfer->getSoldier()->getName().c_str(), tr(transfer->getSoldier()->getRankString()).c_str(), xbase->getName().c_str());
+				}
 			}
 		}
 	}

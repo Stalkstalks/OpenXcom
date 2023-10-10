@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RNG_H
-#define OPENXCOM_RNG_H
-
 #include <algorithm>
+#include <vector>
 #define __STDC_LIMIT_MACROS
 #include <stdint.h>
 
@@ -33,34 +32,61 @@ namespace OpenXcom
  */
 namespace RNG
 {
+	class RandomState
+	{
+		 uint64_t _seedState;
+
+	public:
+		/// Default constructor initializing the seed by time and this type address.
+		RandomState();
+		/// Constructor from predefined seed.
+		explicit RandomState(uint64_t seed);
+		/// Get current seed.
+		uint64_t getSeed() const;
+
+		/// Get next random number.
+		uint64_t next();
+		/// Generates a random integer number, inclusive.
+		int generate(int min, int max);
+		///  Generates a percentage chance.
+		bool percent(int value)
+		{
+			return generate(0, 99) < value;
+		}
+		/// Get new random-sub-sequence, that depends on current seed but each time it creates a different sequence.
+		RandomState subSequence()
+		{
+			return RandomState{ next() ^ 0x055e3ac3461280cful}; //random value to have different new seed but still deterministic values when game run again.
+		}
+	};
+
 	/// Gets the seed in use.
 	uint64_t getSeed();
 	/// Sets the seed in use.
 	void setSeed(uint64_t n);
+	/// Get state.
+	RandomState& globalRandomState();
 	/// Generates a random integer number, inclusive.
 	int generate(int min, int max);
 	/// Generates a random floating-point number.
 	double generate(double min, double max);
 	/// Generates a random integer number, inclusive (non-seed version).
 	int seedless(int min, int max);
-	/// Get normally distributed value.
-	double boxMuller(double m = 0, double s = 1);
 	/// Generates a percentage chance.
 	bool percent(int value);
-	/// Generates a random integer number, exclusive.
-	int generateEx(int max);
 	/// Shuffles a list randomly.
 	/**
 	 * Randomly changes the orders of the elements in a list.
 	 * @param list The container to randomize.
 	 */
 	template <typename T>
-	void shuffle(T &list)
+	void shuffle(std::vector<T> &list)
 	{
-		std::random_shuffle(list.begin(), list.end(), generateEx);
+		if (list.empty())
+			return;
+		for (size_t i = list.size() - 1; i > 0; --i)
+			std::swap(list[i], list[generate(0, i)]);
 	}
 }
 
 }
-
-#endif

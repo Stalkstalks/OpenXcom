@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
 #include <assert.h>
 #include "RuleRegion.h"
 #include "City.h"
-#include "../fmath.h"
+#include "../Engine/Logger.h"
 #include "../Engine/RNG.h"
-#include <math.h>
 
 namespace OpenXcom
 {
@@ -40,9 +38,9 @@ RuleRegion::RuleRegion(const std::string &type): _type(type), _cost(0), _regionW
  */
 RuleRegion::~RuleRegion()
 {
-	for (std::vector<City*>::iterator i = _cities.begin(); i != _cities.end(); ++i)
+	for (auto* city : _cities)
 	{
-		delete *i;
+		delete city;
 	}
 }
 
@@ -56,21 +54,59 @@ void RuleRegion::load(const YAML::Node &node)
 	{
 		load(parent);
 	}
-	_type = node["type"].as<std::string>(_type);
-	_cost = node["cost"].as<int>(_cost);
-	std::vector< std::vector<double> > areas;
-	areas = node["areas"].as< std::vector< std::vector<double> > >(areas);
-	for (size_t i = 0; i != areas.size(); ++i)
-	{
-		_lonMin.push_back(areas[i][0] * M_PI / 180.0);
-		_lonMax.push_back(areas[i][1] * M_PI / 180.0);
-		_latMin.push_back(areas[i][2] * M_PI / 180.0);
-		_latMax.push_back(areas[i][3] * M_PI / 180.0);
 
-		if (_latMin.back() > _latMax.back())
-			std::swap(_latMin.back(), _latMax.back());
+	_cost = node["cost"].as<int>(_cost);
+
+	if (node["deleteOldAreas"].as<bool>(false))
+	{
+		_lonMin.clear();
+		_lonMax.clear();
+		_latMin.clear();
+		_latMax.clear();
 	}
+	if (auto& areaNode = node["areas"])
+	{
+		for (const auto& area : areaNode.as<std::vector<std::array<double, 4>>>())
+		{
+			_lonMin.push_back(Deg2Rad(area[0]));
+			_lonMax.push_back(Deg2Rad(area[1]));
+			_latMin.push_back(Deg2Rad(area[2]));
+			_latMax.push_back(Deg2Rad(area[3]));
+
+			if (_latMin.back() > _latMax.back())
+				std::swap(_latMin.back(), _latMax.back());
+		}
+	}
+
 	_missionZones = node["missionZones"].as< std::vector<MissionZone> >(_missionZones);
+	{
+		int zn = 0;
+		for (auto &z : _missionZones)
+		{
+			if (z.areas.size() < 1)
+			{
+				Log(LOG_WARNING) << "Empty zone, region: " << _type << ", zone: " << zn;
+				continue;
+			}
+			int an = 0;
+			bool firstAreaType = z.areas.at(0).isPoint();
+			for (auto &a : z.areas)
+			{
+				if (a.isPoint() != firstAreaType)
+				{
+					Log(LOG_WARNING) << "Mixed area types (point vs non-point), region: " << _type << ", zone: " << zn << ", area: " << an;
+				}
+				if (a.lonMin > a.lonMax)
+				{
+					Log(LOG_ERROR) << "Crossing the prime meridian in mission zones requires a different syntax, region: " << _type << ", zone: " << zn << ", area: " << an << ", lonMin: " << Rad2Deg(a.lonMin) << ", lonMax: " << Rad2Deg(a.lonMax);
+					Log(LOG_INFO) << "  Wrong example: [350,   8, 20, 30]";
+					Log(LOG_INFO) << "Correct example: [350, 368, 20, 30]";
+				}
+				++an;
+			}
+			++zn;
+		}
+	}
 	if (const YAML::Node &weights = node["missionWeights"])
 	{
 		_missionWeights.load(weights);
@@ -85,7 +121,7 @@ void RuleRegion::load(const YAML::Node &node)
  * has a unique name.
  * @return The region type.
  */
-std::string RuleRegion::getType() const
+const std::string& RuleRegion::getType() const
 {
 	return _type;
 }
@@ -103,10 +139,14 @@ int RuleRegion::getBaseCost() const
  * Checks if a point is inside this region.
  * @param lon Longitude in radians.
  * @param lat Latitude in radians.
+ * @param ignoreTechnicalRegion If true, empty technical regions (i.e. regions with no areas, just having mission zones) will return true.
  * @return True if it's inside, false if it's outside.
  */
-bool RuleRegion::insideRegion(double lon, double lat) const
+bool RuleRegion::insideRegion(double lon, double lat, bool ignoreTechnicalRegion) const
 {
+	if (ignoreTechnicalRegion && _lonMin.empty())
+		return true;
+
 	for (size_t i = 0; i < _lonMin.size(); ++i)
 	{
 		bool inLon, inLat;
@@ -116,7 +156,10 @@ bool RuleRegion::insideRegion(double lon, double lat) const
 		else
 			inLon = ((lon >= _lonMin[i] && lon < M_PI*2.0) || (lon >= 0 && lon < _lonMax[i]));
 
-		inLat = (lat >= _latMin[i] && lat < _latMax[i]);
+		if (lat > 0) // make that both poles could be in some regions, this means `M_PI == _latMax[i]` or `-M_PI == _latMin[i]`
+			inLat = (lat > _latMin[i] && lat <= _latMax[i]);
+		else
+			inLat = (lat >= _latMin[i] && lat < _latMax[i]);
 
 		if (inLon && inLat)
 			return true;
@@ -134,13 +177,13 @@ std::vector<City*> *RuleRegion::getCities()
 	// Saves us from constantly searching for them
 	if (_cities.empty())
 	{
-		for (std::vector<MissionZone>::iterator i = _missionZones.begin(); i != _missionZones.end(); ++i)
+		for (const auto& mz : _missionZones)
 		{
-			for (std::vector<MissionArea>::iterator j = i->areas.begin(); j != i->areas.end(); ++j)
+			for (const auto& ma : mz.areas)
 			{
-				if (j->isPoint() && !j->name.empty())
+				if (ma.isPoint() && !ma.name.empty())
 				{
-					_cities.push_back(new City(j->name, j->lonMin, j->latMin));
+					_cities.push_back(new City(ma.name, ma.lonMin, ma.latMin));
 				}
 			}
 		}
@@ -172,11 +215,11 @@ const std::vector<MissionZone> &RuleRegion::getMissionZones() const
  * @param zone The target zone.
  * @return A pair of longitude and latitude.
  */
-std::pair<double, double> RuleRegion::getRandomPoint(size_t zone) const
+std::pair<double, double> RuleRegion::getRandomPoint(size_t zone, int area) const
 {
 	if (zone < _missionZones.size())
 	{
-		size_t a = RNG::generate(0, _missionZones[zone].areas.size() - 1);
+		size_t a = area != -1 ? area : RNG::generate(0, _missionZones[zone].areas.size() - 1);
 		double lonMin = _missionZones[zone].areas[a].lonMin;
 		double lonMax = _missionZones[zone].areas[a].lonMax;
 		double latMin = _missionZones[zone].areas[a].latMin;
@@ -197,57 +240,6 @@ std::pair<double, double> RuleRegion::getRandomPoint(size_t zone) const
 	}
 	assert(0 && "Invalid zone number");
 	return std::make_pair(0.0, 0.0);
-}
-
-/**
- * Gets the area data for the mission point in the specified zone and coordinates.
- * @param zone The target zone.
- * @param target The target coordinates.
- * @return A MissionArea from which to extract coordinates, textures, or any other pertinent information.
- */
-MissionArea RuleRegion::getMissionPoint(size_t zone, Target *target) const
-{
-	if (zone < _missionZones.size())
-	{
-		for (std::vector<MissionArea>::const_iterator i = _missionZones[zone].areas.begin(); i != _missionZones[zone].areas.end(); ++i)
-		{
-			if (i->isPoint() && AreSame(target->getLongitude(), i->lonMin) && AreSame(target->getLatitude(), i->latMin))
-			{
-				return *i;
-			}
-		}
-	}
-	assert(0 && "Invalid zone number");
-	return MissionArea();
-}
-
-/**
- * Gets the area data for the random mission point in the region.
- * @return A MissionArea from which to extract coordinates, textures, or any other pertinent information.
- */
-MissionArea RuleRegion::getRandomMissionPoint(size_t zone) const
-{
-	if (zone < _missionZones.size())
-	{
-		std::vector<MissionArea> randomSelection = _missionZones[zone].areas;
-		for (std::vector<MissionArea>::iterator i = randomSelection.begin(); i != randomSelection.end();)
-		{
-			if (!i->isPoint())
-			{
-				i = randomSelection.erase(i);
-			}
-			else
-			{
-				++i;
-			}
-		}
-		if (!randomSelection.empty())
-		{
-			return randomSelection.at(RNG::generate(0, randomSelection.size() - 1));
-		}
-	}
-	assert(0 && "Invalid zone number");
-	return MissionArea();
 }
 
 }

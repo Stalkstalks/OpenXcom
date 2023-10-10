@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MELEEATTACKBSTATE_H
-#define OPENXCOM_MELEEATTACKBSTATE_H
-
 #include "BattleState.h"
 #include "Position.h"
 
@@ -41,22 +39,19 @@ private:
 	Position _voxel;
 	int _hitNumber;
 	bool _initialized;
+	bool _reaction;
 public:
 	/// Creates a new MeleeAttackBState class
 	MeleeAttackBState(BattlescapeGame *parent, BattleAction action);
 	/// Cleans up the MeleeAttackBState.
 	~MeleeAttackBState();
 	/// Initializes the state.
-	void init();
+	void init() override;
 	/// Runs state functionality every cycle.
-	void think();
+	void think() override;
 	/// Performs a melee attack
-	void performMeleeAttack();
-	/// Determine if the attack hit, and if so, do stuff.
-	void resolveHit();
+	void performMeleeAttack(int terrainMeleeTilePart = 0);
 
 };
 
 }
-
-#endif

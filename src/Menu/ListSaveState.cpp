@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,7 +20,7 @@
 #include "../Engine/CrossPlatform.h"
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
-#include "../Engine/Language.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextList.h"
 #include "../Interface/TextEdit.h"
@@ -94,7 +94,7 @@ void ListSaveState::lstSavesPress(Action *action)
 {
 	if (action->getDetails()->button.button == SDL_BUTTON_RIGHT && _edtSave->isFocused())
 	{
-		_edtSave->setText(L"");
+		_edtSave->setText("");
 		_edtSave->setVisible(false);
 		_edtSave->setFocus(false, false);
 		_lstSaves->setScrolling(true);
@@ -117,11 +117,11 @@ void ListSaveState::lstSavesPress(Action *action)
 		}
 
 		_selected = _lstSaves->getCellText(_lstSaves->getSelectedRow(), 0);
-		_lstSaves->setCellText(_lstSaves->getSelectedRow(), 0, L"");
+		_lstSaves->setCellText(_lstSaves->getSelectedRow(), 0, "");
 		if (_lstSaves->getSelectedRow() == 0)
 		{
-			_edtSave->setText(L"");
-			_selected = L"";
+			_edtSave->setText("");
+			_selected = "";
 		}
 		else
 		{
@@ -168,7 +168,7 @@ void ListSaveState::saveGame()
 {
 	_game->getSavedGame()->setName(_edtSave->getText());
 	std::string oldFilename, newFilename;
-	newFilename = CrossPlatform::sanitizeFilename(Language::wstrToFs(_edtSave->getText()));
+	newFilename = CrossPlatform::sanitizeFilename(_edtSave->getText());
 	if (_selectedRow > 0)
 	{
 		oldFilename = _saves[_selectedRow - 1].fileName;

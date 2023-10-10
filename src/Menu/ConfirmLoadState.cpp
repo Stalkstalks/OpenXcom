@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "ConfirmLoadState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -56,7 +55,7 @@ ConfirmLoadState::ConfirmLoadState(OptionsOrigin origin, const std::string &file
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "saveMenus");
 
 	_btnYes->setText(tr("STR_YES"));
 	_btnYes->onMouseClick((ActionHandler)&ConfirmLoadState::btnYesClick);
@@ -73,7 +72,7 @@ ConfirmLoadState::ConfirmLoadState(OptionsOrigin origin, const std::string &file
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("saveMenus");
 	}
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,6 +18,7 @@
  */
 #include <algorithm>
 #include "BuildFacilitiesState.h"
+#include "../Engine/Action.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
 #include "../Engine/LocalizedText.h"
@@ -30,7 +31,7 @@
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Base.h"
 #include "PlaceFacilityState.h"
-#include "../Mod/Mod.h"
+#include "../Ufopaedia/Ufopaedia.h"
 
 namespace OpenXcom
 {
@@ -41,7 +42,7 @@ namespace OpenXcom
  * @param base Pointer to the base to get info from.
  * @param state Pointer to the base state to refresh.
  */
-BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(base), _state(state)
+BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(base), _state(state), _lstScroll(0)
 {
 	_screen = false;
 
@@ -62,7 +63,7 @@ BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(bas
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK05.SCR"));
+	setWindowBackground(_window, "selectFacility");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BuildFacilitiesState::btnOkClick);
@@ -79,8 +80,8 @@ BuildFacilitiesState::BuildFacilitiesState(Base *base, State *state) : _base(bas
 	_lstFacilities->setWordWrap(true);
 	_lstFacilities->setScrolling(true, 0);
 	_lstFacilities->onMouseClick((ActionHandler)&BuildFacilitiesState::lstFacilitiesClick);
+	_lstFacilities->onMouseClick((ActionHandler)&BuildFacilitiesState::lstFacilitiesClick, SDL_BUTTON_MIDDLE);
 
-	PopulateBuildList();
 }
 
 /**
@@ -94,26 +95,80 @@ BuildFacilitiesState::~BuildFacilitiesState()
 /**
  * Populates the build list from the current "available" facilities.
  */
-void BuildFacilitiesState::PopulateBuildList()
+void BuildFacilitiesState::populateBuildList()
 {
-	const std::set<std::string> &providedBaseFunc = _base->getProvidedBaseFunc();
+	_facilities.clear();
+	_disabledFacilities.clear();
+	_lstFacilities->clearList();
 
-	const std::vector<std::string> &facilities = _game->getMod()->getBaseFacilitiesList();
-	for (std::vector<std::string>::const_iterator i = facilities.begin(); i != facilities.end(); ++i)
+	auto providedBaseFunc = _base->getProvidedBaseFunc({});
+	auto forbiddenBaseFunc = _base->getForbiddenBaseFunc({});
+	auto futureBaseFunc = _base->getFutureBaseFunc({});
+
+	for (auto& facilityType : _game->getMod()->getBaseFacilitiesList())
 	{
-		RuleBaseFacility *rule = _game->getMod()->getBaseFacility(*i);
-		const std::vector<std::string> &req = rule->getRequireBaseFunc();
-		if (!std::includes(providedBaseFunc.begin(), providedBaseFunc.end(), req.begin(), req.end()))
+		RuleBaseFacility *rule = _game->getMod()->getBaseFacility(facilityType);
+		if (!rule->isAllowedForBaseType(_base->isFakeUnderwater()))
 		{
 			continue;
 		}
-		if (_game->getSavedGame()->isResearched(rule->getRequirements()) && !rule->isLift())
-			_facilities.push_back(rule);
+		if (rule->isLift() || !_game->getSavedGame()->isResearched(rule->getRequirements()))
+		{
+			continue;
+		}
+		if (_base->isMaxAllowedLimitReached(rule))
+		{
+			_disabledFacilities.push_back(rule);
+			continue;
+		}
+		auto req = rule->getRequireBaseFunc();
+		auto forb = rule->getForbiddenBaseFunc();
+		auto prov = rule->getProvidedBaseFunc();
+		if ((~providedBaseFunc & req).any())
+		{
+			_disabledFacilities.push_back(rule);
+			continue;
+		}
+
+		// do not check requirements for bulding that can overbuild others, correct check will be done when you will try to place it somewhere
+		if (rule->getBuildOverFacilities().empty())
+		{
+			if ((forbiddenBaseFunc & prov).any())
+			{
+				_disabledFacilities.push_back(rule);
+				continue;
+			}
+			if ((futureBaseFunc & forb).any())
+			{
+				_disabledFacilities.push_back(rule);
+				continue;
+			}
+		}
+		_facilities.push_back(rule);
 	}
 
-	for (std::vector<RuleBaseFacility*>::iterator i = _facilities.begin(); i != _facilities.end(); ++i)
+	int row = 0;
+	for (const auto* facRule : _facilities)
 	{
-		_lstFacilities->addRow(1, tr((*i)->getType()).c_str());
+		_lstFacilities->addRow(1, tr(facRule->getType()).c_str());
+		++row;
+	}
+
+	if (!_disabledFacilities.empty())
+	{
+		Uint8 disabledColor = _lstFacilities->getSecondaryColor();
+		for (const auto* facRule : _disabledFacilities)
+		{
+			_lstFacilities->addRow(1, tr(facRule->getType()).c_str());
+			_lstFacilities->setRowColor(row, disabledColor);
+			++row;
+		}
+	}
+
+	if (_lstScroll > 0)
+	{
+		_lstFacilities->scrollTo(_lstScroll);
+		_lstScroll = 0;
 	}
 }
 
@@ -125,6 +180,8 @@ void BuildFacilitiesState::init()
 {
 	_state->init();
 	State::init();
+
+	populateBuildList();
 }
 
 /**
@@ -140,9 +197,23 @@ void BuildFacilitiesState::btnOkClick(Action *)
  * Places the selected facility.
  * @param action Pointer to an action.
  */
-void BuildFacilitiesState::lstFacilitiesClick(Action *)
+void BuildFacilitiesState::lstFacilitiesClick(Action *action)
 {
-	_game->pushState(new PlaceFacilityState(_base, _facilities[_lstFacilities->getSelectedRow()]));
+	auto index = _lstFacilities->getSelectedRow();
+	_lstScroll = _lstFacilities->getScroll();
+
+	if (action->getDetails()->button.button == SDL_BUTTON_MIDDLE)
+	{
+		std::string tmp = (index >= _facilities.size()) ? _disabledFacilities[index - _facilities.size()]->getType() : _facilities[index]->getType();
+		Ufopaedia::openArticle(_game, tmp);
+		return;
+	}
+
+	if (index >= _facilities.size())
+	{
+		return;
+	}
+	_game->pushState(new PlaceFacilityState(_base, _facilities[index]));
 }
 
 }

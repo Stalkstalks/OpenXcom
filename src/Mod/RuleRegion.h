@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,15 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEREGION_H
-#define OPENXCOM_RULEREGION_H
-
-#define _USE_MATH_DEFINES
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
 #include "../fmath.h"
-#include <math.h>
 #include "../Savegame/WeightedOptions.h"
 
 namespace OpenXcom
@@ -40,7 +36,9 @@ struct MissionArea
 	int texture;
 	std::string name;
 
-    bool operator== (const MissionArea& ma) const
+	MissionArea() : lonMin(0.0), lonMax(360.0), latMin(-90.0), latMax(90.0), texture(0) { }
+
+	bool operator== (const MissionArea& ma) const
 	{
 		return AreSame(lonMax, ma.lonMax) && AreSame(lonMin, ma.lonMin) && AreSame(latMax, ma.latMax) && AreSame(latMin, ma.latMin);
 	}
@@ -65,7 +63,6 @@ struct MissionZone
 };
 
 class City;
-class Target;
 
 /**
  * Represents a specific region of the world.
@@ -95,11 +92,11 @@ public:
 	/// Loads the region from YAML.
 	void load(const YAML::Node& node);
 	/// Gets the region's type.
-	std::string getType() const;
+	const std::string& getType() const;
 	/// Gets the region's base cost.
 	int getBaseCost() const;
 	/// Checks if a point is inside the region.
-	bool insideRegion(double lon, double lat) const;
+	bool insideRegion(double lon, double lat, bool ignoreTechnicalRegion = false) const;
 	/// Gets the cities in this region.
 	std::vector<City*> *getCities();
 	/// Gets the weight of this region for mission selection.
@@ -109,11 +106,7 @@ public:
 	/// Gets the substitute mission region.
 	const std::string &getMissionRegion() const { return _missionRegion; }
 	/// Gets a random point inside a mission zone.
-	std::pair<double, double> getRandomPoint(size_t zone) const;
-	/// Gets the mission area for the corresponding target.
-	MissionArea getMissionPoint(size_t zone, Target *target) const;
-	/// Gets a random mission area.
-	MissionArea getRandomMissionPoint(size_t zone) const;
+	std::pair<double, double> getRandomPoint(size_t zone, int area = -1) const;
 	/// Gets the maximum longitude.
 	const std::vector<double> &getLonMax() const { return _lonMax; }
 	/// Gets the minimum longitude.
@@ -136,10 +129,10 @@ namespace YAML
 		static Node encode(const OpenXcom::MissionArea& rhs)
 		{
 			Node node;
-			node.push_back(rhs.lonMin / M_PI * 180.0);
-			node.push_back(rhs.lonMax / M_PI * 180.0);
-			node.push_back(rhs.latMin / M_PI * 180.0);
-			node.push_back(rhs.latMax / M_PI * 180.0);
+			node.push_back(Rad2Deg(rhs.lonMin));
+			node.push_back(Rad2Deg(rhs.lonMax));
+			node.push_back(Rad2Deg(rhs.latMin));
+			node.push_back(Rad2Deg(rhs.latMax));
 			return node;
 		}
 
@@ -148,10 +141,10 @@ namespace YAML
 			if (!node.IsSequence() || node.size() < 4)
 				return false;
 
-			rhs.lonMin = node[0].as<double>() * M_PI / 180.0;
-			rhs.lonMax = node[1].as<double>() * M_PI / 180.0;
-			rhs.latMin = node[2].as<double>() * M_PI / 180.0;
-			rhs.latMax = node[3].as<double>() * M_PI / 180.0;
+			rhs.lonMin = Deg2Rad(node[0].as<double>());
+			rhs.lonMax = Deg2Rad(node[1].as<double>());
+			rhs.latMin = Deg2Rad(node[2].as<double>());
+			rhs.latMax = Deg2Rad(node[3].as<double>());
 			if (rhs.latMin > rhs.latMax)
 				std::swap(rhs.latMin, rhs.latMax);
 			if (node.size() >= 5) rhs.texture = node[4].as<int>();
@@ -180,5 +173,3 @@ namespace YAML
 		}
 	};
 }
-
-#endif

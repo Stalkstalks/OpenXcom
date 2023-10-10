@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -55,6 +55,14 @@ BattleState::~BattleState()
  * Start the current BattleState.
  */
 void BattleState::init()
+{
+
+}
+
+/**
+ * Called when the state gets popped out.
+ */
+void BattleState::deinit()
 {
 
 }

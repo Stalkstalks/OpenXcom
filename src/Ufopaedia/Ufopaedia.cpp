@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,6 +20,9 @@
 #include "Ufopaedia.h"
 #include "UfopaediaStartState.h"
 #include "../Savegame/SavedGame.h"
+#include "../Savegame/Base.h"
+#include "../Savegame/Soldier.h"
+#include "../Savegame/SoldierDiary.h"
 #include "../Mod/Mod.h"
 #include "../Mod/ArticleDefinition.h"
 #include "ArticleState.h"
@@ -40,12 +43,11 @@
 #include "ArticleStateTFTDCraft.h"
 #include "ArticleStateTFTDCraftWeapon.h"
 #include "ArticleStateTFTDUso.h"
+#include "StatsForNerdsState.h"
 #include "../Engine/Game.h"
 
 namespace OpenXcom
 {
-	size_t Ufopaedia::_current_index = 0;
-
 	/**
 	 * Checks, if an article has already been released.
 	 * @param save Pointer to saved game.
@@ -54,7 +56,7 @@ namespace OpenXcom
 	 */
 	bool Ufopaedia::isArticleAvailable(SavedGame *save, ArticleDefinition *article)
 	{
-		return save->isResearched(article->requires);
+		return save->isResearched(article->_requires);
 	}
 
 	/**
@@ -65,31 +67,34 @@ namespace OpenXcom
 	 * @param article_id Article id to find.
 	 * @returns Index of the given article id in the internal list, -1 if not found.
 	 */
-	size_t Ufopaedia::getArticleIndex(SavedGame *save, Mod *mod, std::string &article_id)
+	size_t Ufopaedia::getArticleIndex(const ArticleDefinitionList& articles, const std::string &article_id)
 	{
 		std::string UC_ID = article_id + "_UC";
-		ArticleDefinitionList articles = getAvailableArticles(save, mod);
 		for (size_t it=0; it<articles.size(); ++it)
 		{
-			for (std::vector<std::string>::iterator j = articles[it]->requires.begin(); j != articles[it]->requires.end(); ++j)
-			{
-				if (article_id == *j)
-				{
-					article_id = articles[it]->id;
-					return it;
-				}
-			}
 			if (articles[it]->id == article_id)
 			{
 				return it;
 			}
+		}
+		for (size_t it = 0; it<articles.size(); ++it)
+		{
 			if (articles[it]->id == UC_ID)
 			{
-				article_id = UC_ID;
 				return it;
 			}
 		}
-		return -1;
+		for (size_t it = 0; it<articles.size(); ++it)
+		{
+			for (const auto& req : articles[it]->_requires)
+			{
+				if (article_id == req)
+				{
+					return it;
+				}
+			}
+		}
+		return ArticleCommonState::invalid;
 	}
 
 	/**
@@ -98,47 +103,48 @@ namespace OpenXcom
 	 * @param article Article definition to create from.
 	 * @returns Article state object if created, 0 otherwise.
 	 */
-	ArticleState *Ufopaedia::createArticleState(ArticleDefinition *article)
+	ArticleState *Ufopaedia::createArticleState(std::shared_ptr<ArticleCommonState> state)
 	{
+		ArticleDefinition *article = state->getCurrentArticle();
 		switch (article->getType())
 		{
 			case UFOPAEDIA_TYPE_CRAFT:
-				return new ArticleStateCraft(dynamic_cast<ArticleDefinitionCraft *> (article));
+				return new ArticleStateCraft(dynamic_cast<ArticleDefinitionCraft *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_CRAFT_WEAPON:
-				return new ArticleStateCraftWeapon(dynamic_cast<ArticleDefinitionCraftWeapon *> (article));
+				return new ArticleStateCraftWeapon(dynamic_cast<ArticleDefinitionCraftWeapon *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_VEHICLE:
-				return new ArticleStateVehicle(dynamic_cast<ArticleDefinitionVehicle *> (article));
+				return new ArticleStateVehicle(dynamic_cast<ArticleDefinitionVehicle *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_ITEM:
-				return new ArticleStateItem(dynamic_cast<ArticleDefinitionItem *> (article));
+				return new ArticleStateItem(dynamic_cast<ArticleDefinitionItem *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_ARMOR:
-				return new ArticleStateArmor(dynamic_cast<ArticleDefinitionArmor *> (article));
+				return new ArticleStateArmor(dynamic_cast<ArticleDefinitionArmor *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_BASE_FACILITY:
-				return new ArticleStateBaseFacility(dynamic_cast<ArticleDefinitionBaseFacility *> (article));
+				return new ArticleStateBaseFacility(dynamic_cast<ArticleDefinitionBaseFacility *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TEXT:
-				return new ArticleStateText(dynamic_cast<ArticleDefinitionText *> (article));
+				return new ArticleStateText(dynamic_cast<ArticleDefinitionText *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TEXTIMAGE:
-				return new ArticleStateTextImage(dynamic_cast<ArticleDefinitionTextImage *> (article));
+				return new ArticleStateTextImage(dynamic_cast<ArticleDefinitionTextImage *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_UFO:
-				return new ArticleStateUfo(dynamic_cast<ArticleDefinitionUfo *> (article));
+				return new ArticleStateUfo(dynamic_cast<ArticleDefinitionUfo *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD:
-				return new ArticleStateTFTD(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTD(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_CRAFT:
-				return new ArticleStateTFTDCraft(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDCraft(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_CRAFT_WEAPON:
-				return new ArticleStateTFTDCraftWeapon(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDCraftWeapon(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_VEHICLE:
-				return new ArticleStateTFTDVehicle(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDVehicle(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_ITEM:
-				return new ArticleStateTFTDItem(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDItem(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_ARMOR:
-				return new ArticleStateTFTDArmor(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDArmor(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_BASE_FACILITY:
-				return new ArticleStateTFTDFacility(dynamic_cast<ArticleDefinitionTFTD *> (article));
+				return new ArticleStateTFTDFacility(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
 			case UFOPAEDIA_TYPE_TFTD_USO:
-				return new ArticleStateTFTDUso(dynamic_cast<ArticleDefinitionTFTD *> (article));
-			default: break;
+				return new ArticleStateTFTDUso(dynamic_cast<ArticleDefinitionTFTD *>(article), std::move(state));
+			default:
+				throw new Exception("Unknown type for article '" + article->id + "'");
 		}
-		return 0;
 	}
 
 	/**
@@ -148,26 +154,41 @@ namespace OpenXcom
 	 */
 	void Ufopaedia::openArticle(Game *game, ArticleDefinition *article)
 	{
-		_current_index = getArticleIndex(game->getSavedGame(), game->getMod(), article->id);
-		if (_current_index != (size_t) -1)
+		auto state = createCommonArticleState(game->getSavedGame(), game->getMod());
+		state->current_index = getArticleIndex(state->articleList, article->id);
+		if (state->current_index != ArticleCommonState::invalid)
 		{
-			game->pushState(createArticleState(article));
+			game->pushState(createArticleState(std::move(state)));
 		}
 	}
 
 	/**
 	 * Checks if selected article_id is available -> if yes, open it.
-	 * Otherwise, open start state!
 	 * @param game Pointer to actual game.
 	 * @param article_id Article id to find.
 	 */
-	void Ufopaedia::openArticle(Game *game, std::string &article_id)
+	void Ufopaedia::openArticle(Game *game, const std::string &article_id)
 	{
-		_current_index = getArticleIndex(game->getSavedGame(), game->getMod(), article_id);
-		if (_current_index != (size_t) -1)
+		auto state = createCommonArticleState(game->getSavedGame(), game->getMod());
+		state->current_index = getArticleIndex(state->articleList, article_id);
+		if (state->current_index != ArticleCommonState::invalid)
 		{
-			ArticleDefinition *article = game->getMod()->getUfopaediaArticle(article_id);
-			game->pushState(createArticleState(article));
+			game->pushState(createArticleState(std::move(state)));
+		}
+	}
+
+	/**
+	 * Checks if selected article_id is available -> if yes, open its (raw) details.
+	 * @param game Pointer to actual game.
+	 * @param article_id Article id to find.
+	 */
+	void Ufopaedia::openArticleDetail(Game *game, const std::string &article_id)
+	{
+		auto state = createCommonArticleState(game->getSavedGame(), game->getMod());
+		state->current_index = getArticleIndex(state->articleList, article_id);
+		if (state->current_index != ArticleCommonState::invalid)
+		{
+			game->pushState(new StatsForNerdsState(std::move(state), false, false, false));
 		}
 	}
 
@@ -184,40 +205,44 @@ namespace OpenXcom
 	 * Open the next article in the list. Loops to the first.
 	 * @param game Pointer to actual game.
 	 */
-	void Ufopaedia::next(Game *game)
+	void Ufopaedia::next(Game *game, std::shared_ptr<ArticleCommonState> state)
 	{
-		ArticleDefinitionList articles = getAvailableArticles(game->getSavedGame(), game->getMod());
-		if (_current_index >= articles.size() - 1)
-		{
-			// goto first
-			_current_index = 0;
-		}
-		else
-		{
-			_current_index++;
-		}
+		state->nextArticlePage();
 		game->popState();
-		game->pushState(createArticleState(articles[_current_index]));
+		game->pushState(createArticleState(std::move(state)));
+	}
+
+	/**
+	 * Open the next article detail (Stats for Nerds) in the list. Loops to the first.
+	 * @param game Pointer to actual game.
+	 */
+	void Ufopaedia::nextDetail(Game *game, std::shared_ptr<ArticleCommonState> state, bool debug, bool ids, bool defaults)
+	{
+		state->nextArticle();
+		game->popState();
+		game->pushState(new StatsForNerdsState(std::move(state), debug, ids, defaults));
 	}
 
 	/**
 	 * Open the previous article in the list. Loops to the last.
 	 * @param game Pointer to actual game.
 	 */
-	void Ufopaedia::prev(Game *game)
+	void Ufopaedia::prev(Game *game, std::shared_ptr<ArticleCommonState> state)
 	{
-		ArticleDefinitionList articles = getAvailableArticles(game->getSavedGame(), game->getMod());
-		if (_current_index == 0)
-		{
-			// goto last
-			_current_index = articles.size() - 1;
-		}
-		else
-		{
-			_current_index--;
-		}
+		state->prevArticlePage();
 		game->popState();
-		game->pushState(createArticleState(articles[_current_index]));
+		game->pushState(createArticleState(std::move(state)));
+	}
+
+	/**
+	 * Open the previous article detail (Stats for Nerds) in the list. Loops to the last.
+	 * @param game Pointer to actual game.
+	 */
+	void Ufopaedia::prevDetail(Game *game, std::shared_ptr<ArticleCommonState> state, bool debug, bool ids, bool defaults)
+	{
+		state->prevArticle();
+		game->popState();
+		game->pushState(new StatsForNerdsState(std::move(state), debug, ids, defaults));
 	}
 
 	/**
@@ -229,14 +254,88 @@ namespace OpenXcom
 	 */
 	void Ufopaedia::list(SavedGame *save, Mod *mod, const std::string &section, ArticleDefinitionList &data)
 	{
-		ArticleDefinitionList articles = getAvailableArticles(save, mod);
-		for (ArticleDefinitionList::iterator it=articles.begin(); it!=articles.end(); ++it)
+		auto state = createCommonArticleState(save, mod);
+		for (auto a : state->articleList)
 		{
-			if ((*it)->section == section)
+			if (a->section == section)
 			{
-				data.push_back(*it);
+				data.push_back(a);
 			}
 		}
+	}
+
+	/**
+	 * Check if the article is hidden.
+	 * @param save Pointer to saved game.
+	 * @param article Article to check.
+	 */
+	bool Ufopaedia::isArticleHidden(SavedGame *save, ArticleDefinition *article, Mod *mod)
+	{
+		// show hidden Commendations entries if:
+		if (article->hiddenCommendation)
+		{
+			// 1. debug mode is on
+			if (save->getDebugMode())
+			{
+				return false;
+			}
+
+			// 2. or if the article was opened already
+			if (save->getUfopediaRuleStatus(article->id) != ArticleDefinition::PEDIA_STATUS_NEW)
+			{
+				return false;
+			}
+
+			// 3. or if the medal was awarded at least once
+			if (isAwardedCommendation(save, article))
+			{
+				return false;
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Check if the article corresponds to an awarded commendation.
+	 * @param save Pointer to saved game.
+	 * @param article Article to check.
+	 */
+	bool Ufopaedia::isAwardedCommendation(SavedGame *save, ArticleDefinition *article)
+	{
+		if (article->section == UFOPAEDIA_COMMENDATIONS)
+		{
+			// 1. check living soldiers
+			for (auto* xbase : *save->getBases())
+			{
+				for (auto* soldier : *xbase->getSoldiers())
+				{
+					for (auto* comm : *soldier->getDiary()->getSoldierCommendations())
+					{
+						if (comm->getType() == article->getMainTitle())
+						{
+							return true;
+						}
+					}
+				}
+			}
+
+			// 2. check dead soldiers
+			for (std::vector<Soldier*>::reverse_iterator deadManIt = save->getDeadSoldiers()->rbegin(); deadManIt != save->getDeadSoldiers()->rend(); ++deadManIt)
+			{
+				for (auto* comm : *(*deadManIt)->getDiary()->getSoldierCommendations())
+				{
+					if (comm->getType() == article->getMainTitle())
+					{
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -245,19 +344,18 @@ namespace OpenXcom
 	 * @param mod Pointer to mod.
 	 * @return List of visible ArticleDefinitions.
 	 */
-	ArticleDefinitionList Ufopaedia::getAvailableArticles(SavedGame *save, Mod *mod)
+	std::shared_ptr<ArticleCommonState> Ufopaedia::createCommonArticleState(SavedGame *save, Mod *mod)
 	{
-		const std::vector<std::string> &list = mod->getUfopaediaList();
-		ArticleDefinitionList articles;
-		for (std::vector<std::string>::const_iterator it=list.begin(); it!=list.end(); ++it)
+		auto shared = std::make_shared<ArticleCommonState>();
+		for (const auto& articleName : mod->getUfopaediaList())
 		{
-			ArticleDefinition *article = mod->getUfopaediaArticle(*it);
-			if (isArticleAvailable(save, article) && article->section != UFOPAEDIA_NOT_AVAILABLE)
+			ArticleDefinition *article = mod->getUfopaediaArticle(articleName);
+			if (isArticleAvailable(save, article) && article->section != UFOPAEDIA_NOT_AVAILABLE && !isArticleHidden(save, article, mod))
 			{
-				articles.push_back(article);
+				shared->articleList.push_back(article);
 			}
 		}
-		return articles;
+		return shared;
 	}
 
 }

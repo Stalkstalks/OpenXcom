@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,23 +20,34 @@
 #include "../Mod/ArticleDefinition.h"
 #include "ArticleStateTextImage.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
 #include "../Engine/Surface.h"
-#include "../Engine/LocalizedText.h"
 #include "../Mod/Mod.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateTextImage::ArticleStateTextImage(ArticleDefinitionTextImage *defs) : ArticleState(defs->id)
+	ArticleStateTextImage::ArticleStateTextImage(ArticleDefinitionTextImage *defs, std::shared_ptr<ArticleCommonState> state) : ArticleState(defs->id, std::move(state))
 	{
 		// add screen elements
 		_txtTitle = new Text(defs->text_width, 48, 5, 22);
 
 		// Set palette
-		setPalette("PAL_UFOPAEDIA");
+		if (defs->customPalette)
+		{
+			setCustomPalette(_game->getMod()->getSurface(defs->image_id)->getPalette(), Mod::UFOPAEDIA_CURSOR);
+		}
+		else
+		{
+			setStandardPalette("PAL_UFOPAEDIA");
+		}
+
+		_buttonColor = _game->getMod()->getInterface("articleTextImage")->getElement("button")->color;
+		_titleColor = _game->getMod()->getInterface("articleTextImage")->getElement("title")->color;
+		_textColor1 = _game->getMod()->getInterface("articleTextImage")->getElement("text")->color;
+		_textColor2 = _game->getMod()->getInterface("articleTextImage")->getElement("text")->color2;
 
 		ArticleState::initLayout();
 
@@ -44,24 +55,38 @@ namespace OpenXcom
 		add(_txtTitle);
 
 		// Set up objects
-		_game->getMod()->getSurface(defs->image_id)->blit(_bg);
-		_btnOk->setColor(Palette::blockOffset(5)+3);
-		_btnPrev->setColor(Palette::blockOffset(5)+3);
-		_btnNext->setColor(Palette::blockOffset(5)+3);
+		_game->getMod()->getSurface(defs->image_id)->blitNShade(_bg, 0, 0);
+		_btnOk->setColor(_buttonColor);
+		_btnPrev->setColor(_buttonColor);
+		_btnNext->setColor(_buttonColor);
 
-		_txtTitle->setColor(Palette::blockOffset(15)+4);
+		_txtTitle->setColor(_titleColor);
 		_txtTitle->setBig();
 		_txtTitle->setWordWrap(true);
-		_txtTitle->setText(tr(defs->title));
+		_txtTitle->setText(tr(defs->getTitleForPage(_state->current_page)));
 
 		int text_height = _txtTitle->getTextHeight();
 
-		_txtInfo = new Text(defs->text_width, 162, 5, 23 + text_height);
+		if (defs->rect_text.width == 0)
+		{
+			int txtInfoHeight = defs->align_bottom ? 200 - 2 - 23 - text_height : 162;
+			_txtInfo = new Text(defs->text_width, txtInfoHeight, 5, 23 + text_height);
+		}
+		else
+		{
+			_txtInfo = new Text(defs->rect_text.width, defs->rect_text.height, defs->rect_text.x, defs->rect_text.y);
+		}
 		add(_txtInfo);
 
-		_txtInfo->setColor(Palette::blockOffset(15)-1);
+		_txtInfo->setColor(_textColor1);
+		_txtInfo->setSecondaryColor(_textColor2);
 		_txtInfo->setWordWrap(true);
-		_txtInfo->setText(tr(defs->text));
+		_txtInfo->setScrollable(true);
+		if (defs->align_bottom)
+		{
+			_txtInfo->setVerticalAlign(ALIGN_BOTTOM);
+		}
+		_txtInfo->setText(tr(defs->getTextForPage(_state->current_page)));
 
 		centerAllSurfaces();
 	}

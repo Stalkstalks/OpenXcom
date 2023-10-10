@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RESEARCHSTATE_H
-#define OPENXCOM_RESEARCHSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -53,12 +51,14 @@ public:
 	void btnNewClick(Action *action);
 	/// Handler for clicking the ResearchProject list.
 	void onSelectProject(Action *action);
+	void onOpenTechTreeViewer(Action *action);
+	void lstResearchMousePress(Action *action);
+	/// Handler for opening the Current Global Research UI.
+	void onCurrentGlobalResearchClick(Action *action);
 	/// Fills the ResearchProject list with Base ResearchProjects.
-	void fillProjectList();
+	void fillProjectList(size_t scrl);
 	/// Updates the research list.
-	void init();
+	void init() override;
 };
 
 }
-
-#endif

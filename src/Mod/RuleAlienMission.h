@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEALIENMISSION_H
-#define OPENXCOM_RULEALIENMISSION_H
-
 #include <vector>
 #include <map>
 #include <string>
@@ -26,6 +24,16 @@
 
 namespace OpenXcom
 {
+
+enum AlienMissionOperationType {
+	AMOT_SPACE,
+	AMOT_REGION_EXISTING_BASE,
+	AMOT_REGION_NEW_BASE,
+	AMOT_REGION_NEW_BASE_IF_NECESSARY,
+	AMOT_EARTH_EXISTING_BASE,
+	AMOT_EARTH_NEW_BASE_IF_NECESSARY,
+	AMOT_EXISTING_BASE_HUNT_MISSION
+};
 
 class WeightedOptions;
 
@@ -57,9 +65,54 @@ struct MissionWave
 	 * The UFO executes a special action based on the mission objective.
 	 */
 	bool objective;
+	/// This wave performs the mission objective in a rectangular (non-point) area.
+	/**
+	 * Make the UFO land on a random landing site (instead of always top left). Make the mission site spawn exactly on the landing site.
+	 */
+	bool objectiveOnTheLandingSite;
+	/**
+	 * Make the mission site spawn on an xcom base (or not at all).
+	 */
+	bool objectiveOnXcomBase;
+	/// The chance to become a hunter-killer UFO upon spawning.
+	/**
+	 * -1 (default): take the info from RuleUfo
+	 *  0: not a hunter-killer
+	 *  1..99: percentage chance to be flagged as hunter-killer upon spawn
+	 *  100: always a hunter-killer
+	 */
+	int hunterKillerPercentage;
+	/// Algorithm to use when prioritizing xcom targets
+	/**
+	 * -1 (default): take the info from RuleUfo
+	 * 0: prefer hunting xcom interceptors
+	 * 1: prefer hunting xcom transports
+	 * 2: random preference (0 or 1) determined at spawn
+	 */
+	int huntMode;
+	/// Algorithm to use when considering retreating from the dogfight
+	/**
+	* -1 (default): take the info from RuleUfo
+	* 0: flee if you're losing
+	* 1: never flee, never crash (is destroyed instead of crashing)
+	* 2: random preference (0 or 1) determined at spawn
+	*/
+	int huntBehavior;
+	/// Does this wave escort/protect the previous wave(s)?
+	/**
+	* The UFO escorts other UFO(s) from the same mission.
+	*/
+	bool escort;
+	/// The chance to interrupt the alien mission when successfully shooting down a UFO from this wave.
+	/**
+	*  0 (default): cannot interrupt
+	*  1..99: percentage chance to be interrupted
+	*  100: always interrupted
+	*/
+	int interruptPercentage;
 };
 
-enum MissionObjective { OBJECTIVE_SCORE, OBJECTIVE_INFILTRATION, OBJECTIVE_BASE, OBJECTIVE_SITE, OBJECTIVE_RETALIATION, OBJECTIVE_SUPPLY };
+enum MissionObjective { OBJECTIVE_SCORE, OBJECTIVE_INFILTRATION, OBJECTIVE_BASE, OBJECTIVE_SITE, OBJECTIVE_RETALIATION, OBJECTIVE_SUPPLY, OBJECTIVE_INSTANT_RETALIATION };
 
 /**
  * Stores fixed information about a mission type.
@@ -74,6 +127,8 @@ public:
 	~RuleAlienMission();
 	/// Gets the mission's type.
 	const std::string &getType() const { return _type; }
+	/// Does this mission have raceWeights?
+	bool hasRaceWeights() const;
 	/// Gets a race based on the game time and the racial distribution.
 	std::string generateRace(const size_t monthsPassed) const;
 	/// Loads alien mission data from YAML.
@@ -94,6 +149,32 @@ public:
 	int getWeight(const size_t monthsPassed) const;
 	/// Gets the inherent odds of this mission spawning a retaliation mission.
 	int getRetaliationOdds() const;
+	/// Should the infiltration end after first cycle or continue indefinitely?
+	bool isEndlessInfiltration() const;
+	/// Should the retaliation mission end after the first base defense or continue until all already spawned UFOs disappear?
+	bool isMultiUfoRetaliation() const { return _multiUfoRetaliation; }
+	/// Should the retaliation UFO ignore xcom base defenses?
+	bool ignoreBaseDefenses() const { return _ignoreBaseDefenses; }
+	/// Should the mission site despawn even if targeted?
+	bool despawnEvenIfTargeted() const { return _despawnEvenIfTargeted; }
+	/// Should the spawned alien base be revealed immediately?
+	bool showAlienBase() const { return _showAlienBase; }
+	/// Gets the ID of the research topic that interrupts this mission (if any).
+	const std::string &getInterruptResearch() const { return _interruptResearch; }
+	/// the type of missionSite to spawn (if any)
+	std::string getSiteType() const { return _siteType; }
+	/// From where does this mission operate?
+	AlienMissionOperationType getOperationType() const { return _operationType; }
+	/// Gets the mission zone for spawning the operation base (if necessary).
+	int getOperationSpawnZone() const { return _operationSpawnZone; }
+	/// Gets the type of operation base to spawn (if any).
+	const std::string &getOperationBaseType() const { return _operationBaseType; }
+	/// Gets the odds of this mission targetting an xcom base. Works only for "gen missions" spawned by an alien base.
+	int getTargetBaseOdds() const { return _targetBaseOdds; }
+	/// Does this mission have region weights? Works only for "gen missions" spawned by an alien base.
+	bool hasRegionWeights() const;
+	/// Gets a region based on the game time and the region distribution. Works only for "gen missions" spawned by an alien base.
+	std::string generateRegion(const size_t monthsPassed) const;
 private:
 	/// The mission's type ID.
 	std::string _type;
@@ -113,7 +194,30 @@ private:
 	int _spawnZone;
 	/// The odds that this mission will result in retaliation
 	int _retaliationOdds;
+	/// Should the infiltration end after first cycle or continue indefinitely?
+	bool _endlessInfiltration;
+	/// Should the retaliation mission end after the first base defense or continue until all already spawned UFOs disappear?
+	bool _multiUfoRetaliation;
+	/// Should the retaliation UFO ignore xcom base defenses?
+	bool _ignoreBaseDefenses;
+	/// Should the mission site despawn even if targeted?
+	bool _despawnEvenIfTargeted;
+	/// Should the spawned alien base be revealed immediately?
+	bool _showAlienBase;
+	/// the research topic that interrupts this mission type (when discovered)
+	std::string _interruptResearch;
+	/// the type of missionSite to spawn (if any)
+	std::string _siteType;
+	/// From where does this mission operate?
+	AlienMissionOperationType _operationType;
+	/// The mission zone for spawning the operation base (if necessary).
+	int _operationSpawnZone;
+	/// The type of operation base to spawn (if any).
+	std::string _operationBaseType;
+	/// The odds of this mission targetting an xcom base. Works only for "gen missions" spawned by an alien base.
+	int _targetBaseOdds;
+	/// The region distribution over game time. Works only for "gen missions" spawned by an alien base.
+	std::vector<std::pair<size_t, WeightedOptions*> > _regionWeights;
 };
 
 }
-#endif

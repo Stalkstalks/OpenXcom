@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONS_H
-#define OPENXCOM_OPTIONS_H
-
-#include <SDL.h>
 #include <string>
 #include <vector>
 #include "OptionInfo.h"
 #include "ModInfo.h"
+#include "Language.h"
 
 namespace OpenXcom
 {
@@ -35,17 +33,21 @@ enum KeyboardType { KEYBOARD_OFF, KEYBOARD_ON, KEYBOARD_VIRTUAL };
 /// Savegame sorting modes.
 enum SaveSort { SORT_NAME_ASC, SORT_NAME_DESC, SORT_DATE_ASC, SORT_DATE_DESC };
 /// Music format preferences.
-enum MusicFormat { MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_MIDI };
+enum MusicFormat { MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_GM, MUSIC_MIDI };
 /// Sound format preferences.
 enum SoundFormat { SOUND_AUTO, SOUND_14, SOUND_10 };
 /// Video format preferences.
 enum VideoFormat { VIDEO_FMV, VIDEO_SLIDE };
 /// Path preview modes (can be OR'd together).
 enum PathPreview {
-	PATH_NONE    = 0x00, // 0000 (must always be zero)
-	PATH_ARROWS  = 0x01, // 0001
-	PATH_TU_COST = 0x02, // 0010
-	PATH_FULL    = 0x03  // 0011 (must always be all values combined)
+	PATH_NONE         = 0x00, // 0000 (must always be zero)
+	PATH_ARROWS       = 0x01, // 0001
+	PATH_TU_COST      = 0x02, // 0010
+	PATH_ARROW_TU     = 0x03, // 0011
+	PATH_ENERGY_COST  = 0x04, // 0100
+	PATH_ARROW_ENERGY = 0x05, // 0101
+	PATH_TU_ENERGY    = 0x06, // 0110
+	PATH_FULL         = 0x07  // 0111 (must always be all values combined)
 };
 
 enum ScaleType
@@ -55,7 +57,10 @@ enum ScaleType
 	SCALE_2X,
 	SCALE_SCREEN_DIV_3,
 	SCALE_SCREEN_DIV_2,
-	SCALE_SCREEN
+	SCALE_SCREEN,
+	SCALE_SCREEN_DIV_4,
+	SCALE_SCREEN_DIV_5,
+	SCALE_SCREEN_DIV_6
 };
 /**
  * Container for all the various global game options
@@ -70,13 +75,13 @@ namespace Options
 	/// Creates the options info.
 	void create();
 	/// Restores default options.
-	void resetDefault();
+	void resetDefault(bool includeMods);
 	/// Initializes the options settings.
-	bool init(int argc, char *argv[]);
+	bool init();
 	/// Loads options from YAML.
-	void load(const std::string &filename = "options");
+	bool load(const std::string &filename = "options");
 	/// Saves options to YAML.
-	void save(const std::string &filename = "options");
+	bool save(const std::string &filename = "options");
 	/// Gets the game's data folder.
 	std::string getDataFolder();
 	/// Sets the game's data folder.
@@ -93,22 +98,30 @@ namespace Options
 	const std::vector<OptionInfo> &getOptionInfo();
 	/// Sets the game's data, user and config folders.
 	void setFolders();
-	/// Sets the game's user master folders.
-	void userSplitMasters();
 	/// Update game options from config file and command line.
 	void updateOptions();
 	/// Backup display options.
 	void backupDisplay();
 	/// Switches display options.
 	void switchDisplay();
+	/// Is the password correct?
+	bool isPasswordCorrect();
 	/// returns the id of the active master mod
 	std::string getActiveMaster();
-	/// Maps resources in active mods to the virtual file system
-	void mapResources();
+	/// Gets the master mod info.
+	const ModInfo* getActiveMasterInfo();
 	/// Gets the map of mod ids to mod infos
 	const std::map<std::string, ModInfo> &getModInfos();
+	/// Refreshes the mods.
+	void refreshMods();
+	/// Refreshes the mods and filemaps.
+	void updateMods();
+	/// Gets the list of currently active mods.
+	std::vector<const ModInfo*> getActiveMods();
+	/// If we should skip the main menu and just load the last save
+	bool getLoadLastSave();
+	/// And do it only at startup
+	void expendLoadLastSave();
 }
 
 }
-
-#endif

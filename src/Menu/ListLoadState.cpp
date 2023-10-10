@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,9 +18,10 @@
  */
 #include <algorithm>
 #include "ListLoadState.h"
+#include <algorithm>
 #include "../Engine/Game.h"
-#include "../Engine/LocalizedText.h"
 #include "../Engine/Action.h"
+#include "../Engine/Options.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/TextList.h"
@@ -40,20 +41,12 @@ ListLoadState::ListLoadState(OptionsOrigin origin) : ListGamesState(origin, 0, t
 {
 	// Create objects
 	_btnOld = new TextButton(80, 16, 60, 172);
+	_btnCancel->setX(180);
 
 	add(_btnOld, "button", "saveMenus");
-	
+
 	// Set up objects
 	_txtTitle->setText(tr("STR_SELECT_GAME_TO_LOAD"));
-
-	if (origin != OPT_MENU)
-	{
-		_btnOld->setVisible(false);
-	}
-	else
-	{
-		_btnCancel->setX(180);
-	}
 
 	_btnOld->setText(tr("STR_ORIGINAL_XCOM"));
 	_btnOld->onMouseClick((ActionHandler)&ListLoadState::btnOldClick);
@@ -75,7 +68,7 @@ ListLoadState::~ListLoadState()
  */
 void ListLoadState::btnOldClick(Action *)
 {
-	_game->pushState(new ListLoadOriginalState);
+	_game->pushState(new ListLoadOriginalState(_origin));
 }
 
 /**
@@ -87,23 +80,55 @@ void ListLoadState::lstSavesPress(Action *action)
 	ListGamesState::lstSavesPress(action);
 	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
 	{
-		bool confirm = false;
-		const SaveInfo &saveInfo(_saves[_lstSaves->getSelectedRow()]);
-		for (std::vector<std::string>::const_iterator i = saveInfo.mods.begin(); i != saveInfo.mods.end(); ++i)
+		loadSave(_lstSaves->getSelectedRow());
+	}
+}
+void ListLoadState::loadSave(size_t list_idx)
+{
+	bool confirm = false;
+	const SaveInfo &saveInfo(_saves[list_idx]);
+	for (const auto& modName : saveInfo.mods)
+	{
+		std::string name = SavedGame::sanitizeModName(modName);
+		if (std::find(Options::mods.begin(), Options::mods.end(), std::make_pair(name, true)) == Options::mods.end())
 		{
-			if (std::find(Options::mods.begin(), Options::mods.end(), std::pair<std::string, bool>(*i, true)) == Options::mods.end())
+			confirm = true;
+			break;
+		}
+	}
+	if (confirm)
+	{
+		_game->pushState(new ConfirmLoadState(_origin, saveInfo.fileName));
+	}
+	else
+	{
+		_game->pushState(new LoadGameState(_origin, saveInfo.fileName, _palette));
+	}
+}
+void ListLoadState::init()
+{
+	ListGamesState::init();
+	if (_origin == OPT_MENU && Options::getLoadLastSave())
+	{
+		// make it so that this fires only once
+		Options::expendLoadLastSave();
+		// find the absolutely latest save game including quick and autos
+		time_t timestamp = 0;
+		int idx = -1, i = 0;
+		for (auto it = _saves.begin(); it !=_saves.end(); ++it, ++i)
+		{
+			if ((*it).timestamp > timestamp)
 			{
-				confirm = true;
-				break;
+				idx = i;
+				timestamp = (*it).timestamp;
 			}
 		}
-		if (confirm)
+		if (idx != -1)
 		{
-			_game->pushState(new ConfirmLoadState(_origin, saveInfo.fileName));
-		}
-		else
-		{
-			_game->pushState(new LoadGameState(_origin, saveInfo.fileName, _palette));
+			// hide the ui
+			toggleScreen();
+			hideAll();
+			loadSave(idx);
 		}
 	}
 }

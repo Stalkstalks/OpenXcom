@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,19 +19,19 @@
 
 #include "Options.h"
 #include "../version.h"
+#include "../md5.h"
 #include <SDL.h>
 #include <SDL_keysym.h>
 #include <SDL_mixer.h>
-#include <stdio.h>
-#include <iostream>
 #include <map>
 #include <sstream>
-#include <fstream>
+#include <iostream>
 #include <algorithm>
 #include <yaml-cpp/yaml.h>
 #include "Exception.h"
 #include "Logger.h"
 #include "CrossPlatform.h"
+#include "../Menu/ModConfirmExtendedState.h"
 #include "FileMap.h"
 #include "Screen.h"
 
@@ -52,6 +52,10 @@ std::vector<std::string> _userList;
 std::map<std::string, std::string> _commandLine;
 std::vector<OptionInfo> _info;
 std::map<std::string, ModInfo> _modInfos;
+std::string _masterMod;
+int _passwordCheck = -1;
+bool _loadLastSave = false;
+bool _loadLastSaveExpended = false;
 
 /**
  * Sets up the options by creating their OptionInfo metadata.
@@ -89,8 +93,7 @@ void create()
 	_info.push_back(OptionInfo("useXBRZFilter", &useXBRZFilter, false));
 	_info.push_back(OptionInfo("useOpenGL", &useOpenGL, false));
 	_info.push_back(OptionInfo("checkOpenGLErrors", &checkOpenGLErrors, false));
-	_info.push_back(OptionInfo("useOpenGLShader", &useOpenGLShader, "Shaders/Openxcom.OpenGL.shader"));
-	_info.push_back(OptionInfo("vSyncForOpenGL", &vSyncForOpenGL, true));
+	_info.push_back(OptionInfo("useOpenGLShader", &useOpenGLShader, "Shaders/Raw.OpenGL.shader"));
 	_info.push_back(OptionInfo("useOpenGLSmoothing", &useOpenGLSmoothing, true));
 	_info.push_back(OptionInfo("debug", &debug, false));
 	_info.push_back(OptionInfo("debugUi", &debugUi, false));
@@ -100,7 +103,7 @@ void create()
 	_info.push_back(OptionInfo("language", &language, ""));
 	_info.push_back(OptionInfo("battleScrollSpeed", &battleScrollSpeed, 8));
 	_info.push_back(OptionInfo("battleEdgeScroll", (int*)&battleEdgeScroll, SCROLL_AUTO));
-	_info.push_back(OptionInfo("battleDragScrollButton", &battleDragScrollButton, SDL_BUTTON_MIDDLE));
+	_info.push_back(OptionInfo("battleDragScrollButton", &battleDragScrollButton, 0)); // different default in OXCE
 	_info.push_back(OptionInfo("dragScrollTimeTolerance", &dragScrollTimeTolerance, 300)); // miliSecond
 	_info.push_back(OptionInfo("dragScrollPixelTolerance", &dragScrollPixelTolerance, 10)); // count of pixels
 	_info.push_back(OptionInfo("battleFireSpeed", &battleFireSpeed, 6));
@@ -114,12 +117,13 @@ void create()
 	_info.push_back(OptionInfo("globeAllRadarsOnBaseBuild", &globeAllRadarsOnBaseBuild, true));
 	_info.push_back(OptionInfo("audioSampleRate", &audioSampleRate, 22050));
 	_info.push_back(OptionInfo("audioBitDepth", &audioBitDepth, 16));
+	_info.push_back(OptionInfo("audioChunkSize", &audioChunkSize, 1024));
 	_info.push_back(OptionInfo("pauseMode", &pauseMode, 0));
 	_info.push_back(OptionInfo("battleNotifyDeath", &battleNotifyDeath, false));
 	_info.push_back(OptionInfo("showFundsOnGeoscape", &showFundsOnGeoscape, false));
 	_info.push_back(OptionInfo("allowResize", &allowResize, false));
-	_info.push_back(OptionInfo("windowedModePositionX", &windowedModePositionX, -1));
-	_info.push_back(OptionInfo("windowedModePositionY", &windowedModePositionY, -1));
+	_info.push_back(OptionInfo("windowedModePositionX", &windowedModePositionX, 0));
+	_info.push_back(OptionInfo("windowedModePositionY", &windowedModePositionY, 0));
 	_info.push_back(OptionInfo("borderless", &borderless, false));
 	_info.push_back(OptionInfo("captureMouse", (bool*)&captureMouse, false));
 	_info.push_back(OptionInfo("battleTooltips", &battleTooltips, true));
@@ -136,16 +140,27 @@ void create()
 	_info.push_back(OptionInfo("preferredMusic", (int*)&preferredMusic, MUSIC_AUTO));
 	_info.push_back(OptionInfo("preferredSound", (int*)&preferredSound, SOUND_AUTO));
 	_info.push_back(OptionInfo("preferredVideo", (int*)&preferredVideo, VIDEO_FMV));
+	_info.push_back(OptionInfo("wordwrap", (int*)&wordwrap, WRAP_AUTO));
 	_info.push_back(OptionInfo("musicAlwaysLoop", &musicAlwaysLoop, false));
+	_info.push_back(OptionInfo("touchEnabled", &touchEnabled, false));
+	_info.push_back(OptionInfo("rootWindowedMode", &rootWindowedMode, false));
+	_info.push_back(OptionInfo("backgroundMute", &backgroundMute, false));
 
 	// advanced options
+#ifdef _WIN32
+	_info.push_back(OptionInfo("oxceUpdateCheck", &oxceUpdateCheck, false, "STR_UPDATE_CHECK", "STR_GENERAL"));
+#endif
 	_info.push_back(OptionInfo("playIntro", &playIntro, true, "STR_PLAYINTRO", "STR_GENERAL"));
 	_info.push_back(OptionInfo("autosave", &autosave, true, "STR_AUTOSAVE", "STR_GENERAL"));
 	_info.push_back(OptionInfo("autosaveFrequency", &autosaveFrequency, 5, "STR_AUTOSAVE_FREQUENCY", "STR_GENERAL"));
+	_info.push_back(OptionInfo("autosaveSlots", &autosaveSlots, 1, "STR_AUTOSAVE_SLOTS", "STR_GENERAL")); // OXCE only
 	_info.push_back(OptionInfo("newSeedOnLoad", &newSeedOnLoad, false, "STR_NEWSEEDONLOAD", "STR_GENERAL"));
+	_info.push_back(OptionInfo("lazyLoadResources", &lazyLoadResources, true, "STR_LAZY_LOADING", "STR_GENERAL")); // exposed in OXCE
 	_info.push_back(OptionInfo("mousewheelSpeed", &mousewheelSpeed, 3, "STR_MOUSEWHEEL_SPEED", "STR_GENERAL"));
 	_info.push_back(OptionInfo("changeValueByMouseWheel", &changeValueByMouseWheel, 0, "STR_CHANGEVALUEBYMOUSEWHEEL", "STR_GENERAL"));
-
+	_info.push_back(OptionInfo("soldierDiaries", &soldierDiaries, true));
+	_info.push_back(OptionInfo("showCraftHangar", &showCraftHangar, false, "STR_SHOW_CRAFT_HANGAR", "STR_GENERAL"));	
+	
 // this should probably be any small screen touch-device, i don't know the defines for all of them so i'll cover android and IOS as i imagine they're more common
 #ifdef __ANDROID_API__
 	_info.push_back(OptionInfo("maximizeInfoScreens", &maximizeInfoScreens, true, "STR_MAXIMIZE_INFO_SCREENS", "STR_GENERAL"));
@@ -162,7 +177,8 @@ void create()
 #endif
 
 	_info.push_back(OptionInfo("geoDragScrollInvert", &geoDragScrollInvert, false, "STR_DRAGSCROLLINVERT", "STR_GEOSCAPE")); // true drags away from the cursor, false drags towards (like a grab)
-	_info.push_back(OptionInfo("aggressiveRetaliation", &aggressiveRetaliation, false, "STR_AGGRESSIVERETALIATION", "STR_GEOSCAPE"));
+	_info.push_back(OptionInfo("aggressiveRetaliation", &aggressiveRetaliation, true, "STR_AGGRESSIVERETALIATION", "STR_GEOSCAPE"));
+	_info.push_back(OptionInfo("dogfightAI", &dogfightAI, true, "STR_DOGFIGHTAI", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("customInitialBase", &customInitialBase, false, "STR_CUSTOMINITIALBASE", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("allowBuildingQueue", &allowBuildingQueue, false, "STR_ALLOWBUILDINGQUEUE", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("craftLaunchAlways", &craftLaunchAlways, false, "STR_CRAFTLAUNCHALWAYS", "STR_GEOSCAPE"));
@@ -170,19 +186,21 @@ void create()
 	_info.push_back(OptionInfo("canSellLiveAliens", &canSellLiveAliens, false, "STR_CANSELLLIVEALIENS", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("anytimePsiTraining", &anytimePsiTraining, false, "STR_ANYTIMEPSITRAINING", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("globeSeasons", &globeSeasons, false, "STR_GLOBESEASONS", "STR_GEOSCAPE"));
+	_info.push_back(OptionInfo("globeSurfaceCache", &globeSurfaceCache, true)); //hidden for now
 	_info.push_back(OptionInfo("psiStrengthEval", &psiStrengthEval, false, "STR_PSISTRENGTHEVAL", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("canTransferCraftsWhileAirborne", &canTransferCraftsWhileAirborne, false, "STR_CANTRANSFERCRAFTSWHILEAIRBORNE", "STR_GEOSCAPE")); // When the craft can reach the destination base with its fuel
-	_info.push_back(OptionInfo("canManufactureMoreItemsPerHour", &canManufactureMoreItemsPerHour, false, "STR_CANMANUFACTUREMOREITEMSPERHOUR", "STR_GEOSCAPE"));
-	_info.push_back(OptionInfo("spendResearchedItems", &spendResearchedItems, false, "STR_SPENDRESEARCHEDITEMS", "STR_GEOSCAPE"));
+	_info.push_back(OptionInfo("retainCorpses", &retainCorpses, false, "STR_RETAINCORPSES", "STR_GEOSCAPE"));
 	_info.push_back(OptionInfo("fieldPromotions", &fieldPromotions, false, "STR_FIELDPROMOTIONS", "STR_GEOSCAPE"));
+	//_info.push_back(OptionInfo("meetingPoint", &meetingPoint, false, "STR_MEETINGPOINT", "STR_GEOSCAPE")); // intentionally disabled in OXCE
 
 	_info.push_back(OptionInfo("battleDragScrollInvert", &battleDragScrollInvert, false, "STR_DRAGSCROLLINVERT", "STR_BATTLESCAPE")); // true drags away from the cursor, false drags towards (like a grab)
-	_info.push_back(OptionInfo("sneakyAI", &sneakyAI, false, "STR_SNEAKYAI", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleUFOExtenderAccuracy", &battleUFOExtenderAccuracy, false, "STR_BATTLEUFOEXTENDERACCURACY", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("battleRealisticAccuracy", &battleRealisticAccuracy, false, "STR_BATTLEREALISTICACCURACY", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("showMoreStatsInInventoryView", &showMoreStatsInInventoryView, false, "STR_SHOWMORESTATSININVENTORYVIEW", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleHairBleach", &battleHairBleach, true, "STR_BATTLEHAIRBLEACH", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleInstantGrenade", &battleInstantGrenade, false, "STR_BATTLEINSTANTGRENADE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("includePrimeStateInSavedLayout", &includePrimeStateInSavedLayout, false, "STR_INCLUDE_PRIMESTATE_IN_SAVED_LAYOUT", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("instantPrime", &instantPrime, false, "STR_INSTANTPRIME", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleExplosionHeight", &battleExplosionHeight, 0, "STR_BATTLEEXPLOSIONHEIGHT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleAutoEnd", &battleAutoEnd, false, "STR_BATTLEAUTOEND", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("battleSmoothCamera", &battleSmoothCamera, false, "STR_BATTLESMOOTHCAMERA", "STR_BATTLESCAPE"));
@@ -194,9 +212,95 @@ void create()
 	_info.push_back(OptionInfo("strafe", &strafe, false, "STR_STRAFE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("forceFire", &forceFire, true, "STR_FORCE_FIRE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("skipNextTurnScreen", &skipNextTurnScreen, false, "STR_SKIPNEXTTURNSCREEN", "STR_BATTLESCAPE"));
-	_info.push_back(OptionInfo("TFTDDamage", &TFTDDamage, false, "STR_TFTDDAMAGE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("noAlienPanicMessages", &noAlienPanicMessages, false, "STR_NOALIENPANICMESSAGES", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("alienBleeding", &alienBleeding, false, "STR_ALIENBLEEDING", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("strictBlockedChecking", &strictBlockedChecking, false, "STR_STRICTBLOCKEDCHECKING", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("battleTerrainSquishyness", &battleTerrainSquishyness, 1, "STR_BATTLETERRAINSQUISHYNESS", "STR_BATTLESCAPE"));
+
+	// AI
+	_info.push_back(OptionInfo("sneakyAI", &sneakyAI, false, "STR_SNEAKYAI", "STR_AI"));
+	_info.push_back(OptionInfo("ignoreDelay", &ignoreDelay, true, "STR_IGNOREDELAY", "STR_AI"));
+	_info.push_back(OptionInfo("brutalAI", &brutalAI, true, "STR_BRUTALAI", "STR_AI"));
+	_info.push_back(OptionInfo("cheatOnMovement", &cheatOnMovement, false, "STR_CHEATONMOVEMENT", "STR_AI"));
+	_info.push_back(OptionInfo("allowPreprime", &allowPreprime, true, "STR_ALLOWPREPRIME", "STR_AI"));
+	_info.push_back(OptionInfo("avoidMines", &avoidMines, true, "STR_AVOIDMINES", "STR_AI"));
+	_info.push_back(OptionInfo("aiPeformance", &aiPerformanceOptimization, false, "STR_AI_PERFORMANCE", "STR_AI"));
+	_info.push_back(OptionInfo("aiTargetMode", &aiTargetMode, 3, "STR_AITARGETMODE", "STR_AI"));
+	_info.push_back(OptionInfo("aiAggression", &aiAggression, 2, "STR_AIAGGRESSION", "STR_AI"));
+	_info.push_back(OptionInfo("inheritAggression", &inheritAggression, false, "STR_INHERITAGGRESSION", "STR_AI"));
+	_info.push_back(OptionInfo("brutalCivilians", &brutalCivilians, false, "STR_BRUTALCIVILIANS", "STR_AI"));
+	_info.push_back(OptionInfo("autoCombat", &autoCombat, false, "STR_AUTOCOMBAT", "STR_AI"));
+	_info.push_back(OptionInfo("autoCombatEachCombat", &autoCombatEachCombat, true, "STR_AUTOCOMBAT_EACH_COMBAT", "STR_AI"));
+	_info.push_back(OptionInfo("autoCombatEachTurn",   &autoCombatEachTurn,   true, "STR_AUTOCOMBAT_EACH_TURN",   "STR_AI"));
+	_info.push_back(OptionInfo("autoCombatControlPerUnit", &autoCombatControlPerUnit, true, "STR_AUTOCOMBAT_PER_UNIT", "STR_AI"));
+	_info.push_back(OptionInfo("autoAggression", &autoAggression, 3, "STR_AUTOAGGRESSION", "STR_AI"));
+
+	// OXCE GUI
+#ifdef __MOBILE__
+	_info.push_back(OptionInfo("oxceLinks", &oxceLinks, true, "STR_OXCE_LINKS", "STR_OXCE"));
+#else
+	_info.push_back(OptionInfo("oxceLinks", &oxceLinks, false, "STR_OXCE_LINKS", "STR_OXCE"));
+#endif
+	_info.push_back(OptionInfo("oxceAlternateCraftEquipmentManagement", &oxceAlternateCraftEquipmentManagement, false, "STR_ALTERNATE_CRAFT_EQUIPMENT_MANAGEMENT", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceUfoLandingAlert", &oxceUfoLandingAlert, false, "STR_UFO_LANDING_ALERT", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceWoundedDefendBaseIf", &oxceWoundedDefendBaseIf, 100, "STR_WOUNDED_DEFEND_BASE_IF", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxcePlayBriefingMusicDuringEquipment", &oxcePlayBriefingMusicDuringEquipment, false, "STR_PLAY_BRIEFING_MUSIC_DURING_EQUIPMENT", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceNightVisionColor", &oxceNightVisionColor, 5, "STR_NIGHT_VISION_COLOR", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceFOW", &oxceFOW, 0, "STR_FOW", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceFOWColor", &oxceFOWColor, 1, "STR_FOW_COLOR", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceAutoNightVisionThreshold", &oxceAutoNightVisionThreshold, 15, "STR_AUTO_NIGHT_VISION_THRESHOLD", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceAutoSell", &oxceAutoSell, false, "STR_AUTO_SELL", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceRememberDisabledCraftWeapons", &oxceRememberDisabledCraftWeapons, false, "STR_REMEMBER_DISABLED_CRAFT_WEAPONS", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceEnableOffCentreShooting", &oxceEnableOffCentreShooting, false, "STR_OFF_CENTRE_SHOOTING", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceManualPromotions", &oxceManualPromotions, false, "STR_MANUALPROMOTIONS", "STR_OXCE"));
+	_info.push_back(OptionInfo("oxceAutomaticPromotions", &oxceAutomaticPromotions, true, "STR_AUTOMATICPROMOTIONS", "STR_OXCE"));
+
+	// OXCE hidden
+#ifdef __MOBILE__
+	_info.push_back(OptionInfo("oxceFatFingerLinks", &oxceFatFingerLinks, true));
+#else
+	_info.push_back(OptionInfo("oxceFatFingerLinks", &oxceFatFingerLinks, false));
+#endif
+	_info.push_back(OptionInfo("oxceThrottleMouseMoveEvent", &oxceThrottleMouseMoveEvent, 0));
+	_info.push_back(OptionInfo("oxceHighlightNewTopicsHidden", &oxceHighlightNewTopicsHidden, true));
+	_info.push_back(OptionInfo("oxceInterceptGuiMaintenanceTimeHidden", &oxceInterceptGuiMaintenanceTimeHidden, 2));
+	_info.push_back(OptionInfo("oxceEnableUnitResponseSounds", &oxceEnableUnitResponseSounds, true));
+	_info.push_back(OptionInfo("oxceEnableSlackingIndicator", &oxceEnableSlackingIndicator, true));
+	_info.push_back(OptionInfo("oxceEnablePaletteFlickerFix", &oxceEnablePaletteFlickerFix, false));
+	_info.push_back(OptionInfo("oxceMaxEquipmentLayoutTemplates", &oxceMaxEquipmentLayoutTemplates, 20));
+	_info.push_back(OptionInfo("oxcePersonalLayoutIncludingArmor", &oxcePersonalLayoutIncludingArmor, true));
+	_info.push_back(OptionInfo("oxceManufactureFilterSuppliesOK", &oxceManufactureFilterSuppliesOK, false));
+	_info.push_back(OptionInfo("oxceTogglePersonalLightType", &oxceTogglePersonalLightType, 1)); // per battle
+	_info.push_back(OptionInfo("oxceToggleNightVisionType", &oxceToggleNightVisionType, 1));     // per battle
+	_info.push_back(OptionInfo("oxceToggleBrightnessType", &oxceToggleBrightnessType, 0));       // not persisted
+	_info.push_back(OptionInfo("oxceModValidationLevel", &oxceModValidationLevel, (int)LOG_WARNING));
+
+	_info.push_back(OptionInfo("oxceEmbeddedOnly", &oxceEmbeddedOnly, true));
+	_info.push_back(OptionInfo("oxceListVFSContents", &oxceListVFSContents, false));
+	_info.push_back(OptionInfo("oxceRawScreenShots", &oxceRawScreenShots, false));
+	_info.push_back(OptionInfo("oxceFirstPersonViewFisheyeProjection", &oxceFirstPersonViewFisheyeProjection, false));
+	_info.push_back(OptionInfo("oxceThumbButtons", &oxceThumbButtons, true));
+
+	_info.push_back(OptionInfo("oxceRecommendedOptionsWereSet", &oxceRecommendedOptionsWereSet, false));
+	_info.push_back(OptionInfo("password", &password, "secret"));
+	_info.push_back(OptionInfo("oxceMaxBases", &maxNumberOfBases, 8, "", "HIDDEN"));
+
+	// OXCE hidden but moddable
+	_info.push_back(OptionInfo("oxceStartUpTextMode", &oxceStartUpTextMode, 0, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceManufactureScrollSpeed", &oxceManufactureScrollSpeed, 10, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceManufactureScrollSpeedWithCtrl", &oxceManufactureScrollSpeedWithCtrl, 1, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceResearchScrollSpeed", &oxceResearchScrollSpeed, 10, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceResearchScrollSpeedWithCtrl", &oxceResearchScrollSpeedWithCtrl, 1, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceGeoSlowdownFactor", &oxceGeoSlowdownFactor, 1, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableTechTreeViewer", &oxceDisableTechTreeViewer, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableStatsForNerds", &oxceDisableStatsForNerds, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableProductionDependencyTree", &oxceDisableProductionDependencyTree, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableHitLog", &oxceDisableHitLog, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableAlienInventory", &oxceDisableAlienInventory, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceDisableInventoryTuCost", &oxceDisableInventoryTuCost, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceShowBaseNameInPopups", &oxceShowBaseNameInPopups, false, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceGeoscapeDebugLogMaxEntries", &oxceGeoscapeDebugLogMaxEntries, 1000, "", "HIDDEN"));
+	_info.push_back(OptionInfo("oxceGeoscapeEventsInstantDelivery", &oxceGeoscapeEventsInstantDelivery, true, "", "HIDDEN"));
 
 	// controls
 	_info.push_back(OptionInfo("keyOk", &keyOk, SDLK_RETURN, "STR_OK", "STR_GENERAL"));
@@ -240,7 +344,7 @@ void create()
 	_info.push_back(OptionInfo("keyBattleLevelUp", &keyBattleLevelUp, SDLK_PAGEUP, "STR_VIEW_LEVEL_ABOVE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyBattleLevelDown", &keyBattleLevelDown, SDLK_PAGEDOWN, "STR_VIEW_LEVEL_BELOW", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyBattleCenterUnit", &keyBattleCenterUnit, SDLK_HOME, "STR_CENTER_SELECTED_UNIT", "STR_BATTLESCAPE"));
-	_info.push_back(OptionInfo("keyBattlePrevUnit", &keyBattlePrevUnit, SDLK_LSHIFT, "STR_PREVIOUS_UNIT", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("keyBattlePrevUnit", &keyBattlePrevUnit, SDLK_UNKNOWN, "STR_PREVIOUS_UNIT", "STR_BATTLESCAPE")); // different default in OXCE
 	_info.push_back(OptionInfo("keyBattleNextUnit", &keyBattleNextUnit, SDLK_TAB, "STR_NEXT_UNIT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyBattleDeselectUnit", &keyBattleDeselectUnit, SDLK_BACKSLASH, "STR_DESELECT_UNIT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyBattleUseLeftHand", &keyBattleUseLeftHand, SDLK_q, "STR_USE_LEFT_HAND", "STR_BATTLESCAPE"));
@@ -274,13 +378,74 @@ void create()
 	_info.push_back(OptionInfo("keyInvCreateTemplate", &keyInvCreateTemplate, SDLK_c, "STR_CREATE_INVENTORY_TEMPLATE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyInvApplyTemplate", &keyInvApplyTemplate, SDLK_v, "STR_APPLY_INVENTORY_TEMPLATE", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo("keyInvClear", &keyInvClear, SDLK_x, "STR_CLEAR_INVENTORY", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo("keyInvAutoEquip", &keyInvAutoEquip, SDLK_z, "STR_AUTO_EQUIP", "STR_BATTLESCAPE"));
+
+	// OXCE
+	_info.push_back(OptionInfo("keyBasescapeBuildNewBase", &keyBasescapeBuildNewBase, SDLK_n, "STR_BUILD_NEW_BASE_UC", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeBaseInformation", &keyBasescapeBaseInfo, SDLK_i, "STR_BASE_INFORMATION", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeSoldiers", &keyBasescapeSoldiers, SDLK_s, "STR_SOLDIERS_UC", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeEquipCraft", &keyBasescapeCrafts, SDLK_e, "STR_EQUIP_CRAFT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeBuildFacilities", &keyBasescapeFacilities, SDLK_f, "STR_BUILD_FACILITIES", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeResearch", &keyBasescapeResearch, SDLK_r, "STR_RESEARCH", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeManufacture", &keyBasescapeManufacture, SDLK_m, "STR_MANUFACTURE", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeTransfer", &keyBasescapeTransfer, SDLK_t, "STR_TRANSFER_UC", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapePurchase", &keyBasescapePurchase, SDLK_p, "STR_PURCHASE_RECRUIT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBasescapeSell", &keyBasescapeSell, SDLK_l, "STR_SELL_SACK_UC", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyGeoDailyPilotExperience", &keyGeoDailyPilotExperience, SDLK_e, "STR_DAILY_PILOT_EXPERIENCE", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGeoUfoTracker", &keyGeoUfoTracker, SDLK_t, "STR_UFO_TRACKER", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGeoTechTreeViewer", &keyGeoTechTreeViewer, SDLK_q, "STR_TECH_TREE_VIEWER", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGeoGlobalProduction", &keyGeoGlobalProduction, SDLK_p, "STR_PRODUCTION_OVERVIEW", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGeoGlobalResearch", &keyGeoGlobalResearch, SDLK_c, "STR_RESEARCH_OVERVIEW", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGeoGlobalAlienContainment", &keyGeoGlobalAlienContainment, SDLK_j, "STR_PRISONER_OVERVIEW", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGraphsZoomIn", &keyGraphsZoomIn, SDLK_KP_PLUS, "STR_GRAPHS_ZOOM_IN", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyGraphsZoomOut", &keyGraphsZoomOut, SDLK_KP_MINUS, "STR_GRAPHS_ZOOM_OUT", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyToggleQuickSearch", &keyToggleQuickSearch, SDLK_q, "STR_TOGGLE_QUICK_SEARCH", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyCraftLoadoutSave", &keyCraftLoadoutSave, SDLK_F5, "STR_SAVE_CRAFT_LOADOUT_TEMPLATE", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyCraftLoadoutLoad", &keyCraftLoadoutLoad, SDLK_F9, "STR_LOAD_CRAFT_LOADOUT_TEMPLATE", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyMarkAllAsSeen", &keyMarkAllAsSeen, SDLK_x, "STR_MARK_ALL_AS_SEEN", "STR_OXCE"));
+	_info.push_back(OptionInfo("keySellAll", &keySellAll, SDLK_x, "STR_SELL_ALL", "STR_OXCE"));
+	_info.push_back(OptionInfo("keySellAllButOne", &keySellAllButOne, SDLK_z, "STR_SELL_ALL_BUT_ONE", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyTransferAll", &keyTransferAll, SDLK_x, "STR_TRANSFER_ALL", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveSoldiersFromAllCrafts", &keyRemoveSoldiersFromAllCrafts, SDLK_x, "STR_REMOVE_SOLDIERS_FROM_ALL_CRAFTS", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveSoldiersFromCraft", &keyRemoveSoldiersFromCraft, SDLK_z, "STR_REMOVE_SOLDIERS_FROM_CRAFT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveEquipmentFromCraft", &keyRemoveEquipmentFromCraft, SDLK_x, "STR_REMOVE_EQUIPMENT_FROM_CRAFT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveArmorFromAllCrafts", &keyRemoveArmorFromAllCrafts, SDLK_x, "STR_REMOVE_ARMOR_FROM_ALL_CRAFTS", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveArmorFromCraft", &keyRemoveArmorFromCraft, SDLK_z, "STR_REMOVE_ARMOR_FROM_CRAFT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyRemoveSoldiersFromTraining", &keyRemoveSoldiersFromTraining, SDLK_x, "STR_REMOVE_SOLDIERS_FROM_TRAINING", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyAddSoldiersToTraining", &keyAddSoldiersToTraining, SDLK_z, "STR_ADD_SOLDIERS_TO_TRAINING", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyInventoryArmor", &keyInventoryArmor, SDLK_a, "STR_INVENTORY_ARMOR", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyInventoryAvatar", &keyInventoryAvatar, SDLK_m, "STR_INVENTORY_AVATAR", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyInventorySave", &keyInventorySave, SDLK_F5, "STR_SAVE_EQUIPMENT_TEMPLATE", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyInventoryLoad", &keyInventoryLoad, SDLK_F9, "STR_LOAD_EQUIPMENT_TEMPLATE", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyInvSavePersonalEquipment", &keyInvSavePersonalEquipment, SDLK_s, "STR_SAVE_PERSONAL_EQUIPMENT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyInvLoadPersonalEquipment", &keyInvLoadPersonalEquipment, SDLK_l, "STR_LOAD_PERSONAL_EQUIPMENT", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyInvShowPersonalEquipment", &keyInvShowPersonalEquipment, SDLK_p, "STR_PERSONAL_EQUIPMENT", "STR_OXCE"));
+
+	_info.push_back(OptionInfo("keyBattleShowLayers", &keyBattleShowLayers, SDLK_UNKNOWN, "STR_MULTI_LEVEL_VIEW", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleUseSpecial", &keyBattleUseSpecial, SDLK_w, "STR_USE_SPECIAL_ITEM", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleActionItem1", &keyBattleActionItem1, SDLK_1, "STR_ACTION_ITEM_1", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleActionItem2", &keyBattleActionItem2, SDLK_2, "STR_ACTION_ITEM_2", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleActionItem3", &keyBattleActionItem3, SDLK_3, "STR_ACTION_ITEM_3", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleActionItem4", &keyBattleActionItem4, SDLK_4, "STR_ACTION_ITEM_4", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyBattleActionItem5", &keyBattleActionItem5, SDLK_5, "STR_ACTION_ITEM_5", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyNightVisionToggle", &keyNightVisionToggle, SDLK_SCROLLOCK, "STR_TOGGLE_NIGHT_VISION", "STR_OXCE"));
+	_info.push_back(OptionInfo("keyNightVisionHold", &keyNightVisionHold, SDLK_SPACE, "STR_HOLD_NIGHT_VISION", "STR_OXCE"));
+	_info.push_back(OptionInfo("keySelectMusicTrack", &keySelectMusicTrack, SDLK_END, "STR_SELECT_MUSIC_TRACK", "STR_OXCE"));
+	
+	_info.push_back(OptionInfo("keyAIList", &keyAIList, SDLK_c, "STR_keyAIList", "STR_OXCE"));
 
 #ifdef __MORPHOS__
-	_info.push_back(OptionInfo("FPS", &FPS, 15));
-	_info.push_back(OptionInfo("FPS_INACTIVE", &FPSInactive, 15));
+	_info.push_back(OptionInfo("FPS", &FPS, 15, "STR_FPS_LIMIT", "STR_GENERAL"));
+	_info.push_back(OptionInfo("FPSInactive", &FPSInactive, 15, "STR_FPS_INACTIVE_LIMIT", "STR_GENERAL"));
 #else
 	_info.push_back(OptionInfo("FPS", &FPS, 60, "STR_FPS_LIMIT", "STR_GENERAL"));
 	_info.push_back(OptionInfo("FPSInactive", &FPSInactive, 30, "STR_FPS_INACTIVE_LIMIT", "STR_GENERAL"));
+	_info.push_back(OptionInfo("vSyncForOpenGL", &vSyncForOpenGL, true, "STR_VSYNC_FOR_OPENGL", "STR_GENERAL")); // exposed in OXCE
 #endif
 
 }
@@ -292,11 +457,13 @@ static bool _gameIsInstalled(const std::string &gameName)
 {
 	// look for game data in either the data or user directories
 	std::string dataGameFolder = CrossPlatform::searchDataFolder(gameName);
+	std::string dataGameZipFile = CrossPlatform::searchDataFile(gameName + ".zip");
 	std::string userGameFolder = _userFolder + gameName;
-	return (CrossPlatform::folderExists(dataGameFolder)
-		&& CrossPlatform::getFolderContents(dataGameFolder).size() > 8)
-	    || (CrossPlatform::folderExists(userGameFolder)
-		&& CrossPlatform::getFolderContents(userGameFolder).size() > 8);
+	std::string userGameZipFile = _userFolder + gameName + ".zip";
+	return (CrossPlatform::folderExists(dataGameFolder)	&& CrossPlatform::getFolderContents(dataGameFolder).size() >= 8)
+	    || (CrossPlatform::folderExists(userGameFolder)	&& CrossPlatform::getFolderContents(userGameFolder).size() >= 8)
+		||  CrossPlatform::fileExists( dataGameZipFile )
+		||  CrossPlatform::fileExists( userGameZipFile );
 }
 
 static bool _ufoIsInstalled()
@@ -306,13 +473,11 @@ static bool _ufoIsInstalled()
 
 static bool _tftdIsInstalled()
 {
-	// ensure both the resource data and the mod data is in place
 	return _gameIsInstalled("TFTD");
 }
 
 static void _setDefaultMods()
 {
-	// try to find xcom1
 	bool haveUfo = _ufoIsInstalled();
 	if (haveUfo)
 	{
@@ -327,19 +492,23 @@ static void _setDefaultMods()
 
 /**
  * Resets the options back to their defaults.
+ * @param includeMods Reset mods to default as well.
  */
-void resetDefault()
+void resetDefault(bool includeMods)
 {
-	for (std::vector<OptionInfo>::iterator i = _info.begin(); i != _info.end(); ++i)
+	for (auto& optionInfo : _info)
 	{
-		i->reset();
+		optionInfo.reset();
 	}
 	backupDisplay();
 
-	mods.clear();
-	if (!_dataList.empty())
+	if (includeMods)
 	{
-		_setDefaultMods();
+		mods.clear();
+		if (!_dataList.empty())
+		{
+			_setDefaultMods();
+		}
 	}
 }
 
@@ -349,12 +518,13 @@ void resetDefault()
  * @param argc Number of arguments.
  * @param argv Array of argument strings.
  */
-void loadArgs(int argc, char *argv[])
+static void loadArgs()
 {
-	for (int i = 1; i < argc; ++i)
+	auto& argv = CrossPlatform::getArgs();
+	for (size_t i = 1; i < argv.size(); ++i)
 	{
-		std::string arg = argv[i];
-		if ((arg[0] == '-' || arg[0] == '/') && arg.length() > 1)
+		auto& arg = argv[i];
+		if (arg.size() > 1 && arg[0] == '-')
 		{
 			std::string argname;
 			if (arg[1] == '-' && arg.length() > 2)
@@ -362,21 +532,39 @@ void loadArgs(int argc, char *argv[])
 			else
 				argname = arg.substr(1, arg.length()-1);
 			std::transform(argname.begin(), argname.end(), argname.begin(), ::tolower);
-			if (argc > i + 1)
+			if (argname == "cont" || argname == "continue")
+			{
+				_loadLastSave = true;
+				continue;
+			}
+			if (argv.size() > i + 1)
 			{
 				++i; // we'll be consuming the next argument too
-
+				Log(LOG_DEBUG) << "loadArgs(): "<< argname <<" -> " << argv[i];
 				if (argname == "data")
 				{
-					_dataFolder = CrossPlatform::endPath(argv[i]);
+					_dataFolder = argv[i];
+					if (_dataFolder.size() > 1 && _dataFolder[_dataFolder.size() - 1] != '/') {
+						_dataFolder.push_back('/');
+					}
 				}
 				else if (argname == "user")
 				{
-					_userFolder = CrossPlatform::endPath(argv[i]);
+					_userFolder = argv[i];
+					if (_userFolder.size() > 1 && _userFolder[_userFolder.size() - 1] != '/') {
+						_userFolder.push_back('/');
+					}
 				}
 				else if (argname == "cfg" || argname == "config")
 				{
-					_configFolder = CrossPlatform::endPath(argv[i]);
+					_configFolder = argv[i];
+					if (_configFolder.size() > 1 && _configFolder[_configFolder.size() - 1] != '/') {
+						_configFolder.push_back('/');
+					}
+				}
+				else if (argname == "master")
+				{
+					_masterMod = argv[i];
 				}
 				else
 				{
@@ -397,7 +585,7 @@ void loadArgs(int argc, char *argv[])
  * @param argc Number of arguments.
  * @param argv Array of argument strings.
  */
-bool showHelp(int argc, char *argv[])
+static bool showHelp()
 {
 	std::ostringstream help;
 	help << "OpenXcom v" << OPENXCOM_VERSION_SHORT << std::endl;
@@ -408,14 +596,15 @@ bool showHelp(int argc, char *argv[])
 	help << "        use PATH as the default User Folder instead of auto-detecting" << std::endl << std::endl;
 	help << "-cfg PATH  or  -config PATH" << std::endl;
 	help << "        use PATH as the default Config Folder instead of auto-detecting" << std::endl << std::endl;
+	help << "-master MOD" << std::endl;
+	help << "        set MOD to the current master mod (eg. -master xcom2)" << std::endl << std::endl;
 	help << "-KEY VALUE" << std::endl;
-	help << "        set option KEY to VALUE instead of default/loaded value (eg. -displayWidth 640)" << std::endl << std::endl;
+	help << "        override option KEY with VALUE (eg. -displayWidth 640)" << std::endl << std::endl;
 	help << "-help" << std::endl;
 	help << "-?" << std::endl;
 	help << "        show command-line help" << std::endl;
-	for (int i = 1; i < argc; ++i)
+	for (auto& arg: CrossPlatform::getArgs())
 	{
-		std::string arg = argv[i];
 		if ((arg[0] == '-' || arg[0] == '/') && arg.length() > 1)
 		{
 			std::string argname;
@@ -436,59 +625,21 @@ bool showHelp(int argc, char *argv[])
 
 const std::map<std::string, ModInfo> &getModInfos() { return _modInfos; }
 
-static void _scanMods(const std::string &modsDir)
+/**
+ * Splits the game's User folder by master mod,
+ * creating a subfolder for each one.
+ * Moving the saves from userFolder into subfolders
+ * has been removed.
+ */
+static void userSplitMasters()
 {
-	if (!CrossPlatform::folderExists(modsDir))
-	{
-		Log(LOG_VERBOSE) << "skipping non-existent mod directory: '" << modsDir << "'";
-		return;
-	}
-
-	std::vector<std::string> contents = CrossPlatform::getFolderContents(modsDir);
-	for (std::vector<std::string>::iterator i = contents.begin(); i != contents.end(); ++i)
-	{
-		std::string modPath = modsDir + "/" + *i;
-		if (!CrossPlatform::folderExists(modPath))
-		{
-			// skip non-directories (e.g. README.txt)
-			continue;
+	for (const auto& pair : _modInfos) {
+		if (pair.second.isMaster()) {
+			std::string masterFolder = _userFolder + pair.first;
+			if (!CrossPlatform::folderExists(masterFolder)) {
+				CrossPlatform::createFolder(masterFolder);
+			}
 		}
-
-		Log(LOG_VERBOSE) << "- " << modPath;
-		ModInfo modInfo(modPath);
-
-		std::string metadataPath = modPath + "/metadata.yml";
-		if (!CrossPlatform::fileExists(metadataPath))
-		{
-			Log(LOG_WARNING) << metadataPath << " not found; using default values for mod: " << *i;
-		}
-		else
-		{
-			modInfo.load(metadataPath);
-		}
-
-		Log(LOG_VERBOSE) << "  id: " << modInfo.getId();
-		Log(LOG_VERBOSE) << "  name: " << modInfo.getName();
-		Log(LOG_VERBOSE) << "  version: " << modInfo.getVersion();
-		Log(LOG_VERBOSE) << "  description: " << modInfo.getDescription();
-		Log(LOG_VERBOSE) << "  author: " << modInfo.getAuthor();
-		Log(LOG_VERBOSE) << "  master: " << modInfo.getMaster();
-		Log(LOG_VERBOSE) << "  isMaster: " << modInfo.isMaster();
-		Log(LOG_VERBOSE) << "  loadResources:";
-		std::vector<std::string> externals = modInfo.getExternalResourceDirs();
-		for (std::vector<std::string>::iterator j = externals.begin(); j != externals.end(); ++j)
-		{
-			Log(LOG_VERBOSE) << "    " << *j;
-		}
-
-		if (("xcom1" == modInfo.getId() && !_ufoIsInstalled())
-		 || ("xcom2" == modInfo.getId() && !_tftdIsInstalled()))
-		{
-			Log(LOG_VERBOSE) << "skipping " << modInfo.getId() << " since related game data isn't installed";
-			continue;
-		}
-
-		_modInfos.insert(std::pair<std::string, ModInfo>(modInfo.getId(), modInfo));
 	}
 }
 
@@ -497,80 +648,164 @@ static void _scanMods(const std::string &modsDir)
  * and finding and loading any existing ones.
  * @param argc Number of arguments.
  * @param argv Array of argument strings.
- * @return Was initialized.
+ * @return Do we start the game?
  */
-bool init(int argc, char *argv[])
+bool init()
 {
-	if (showHelp(argc, argv))
+	if (showHelp())
 		return false;
 	create();
-	resetDefault();
-	loadArgs(argc, argv);
+	resetDefault(true);
+	loadArgs();
 	setFolders();
 	_setDefaultMods();
 	updateOptions();
 
-	std::string s = getUserFolder();
-	s += "openxcom.log";
-	Logger::logFile() = s;
-	FILE *file = fopen(Logger::logFile().c_str(), "w");
-	if (!file)
-	{
-		throw Exception(s + " not found");
-	}
-	fflush(file);
-	fclose(file);
+	// set up the logging reportingLevel
+#ifndef NDEBUG
+	Logger::reportingLevel() = LOG_DEBUG;
+#else
+	Logger::reportingLevel() = LOG_INFO;
+#endif
+
+	if (Options::verboseLogging)
+		Logger::reportingLevel() = LOG_VERBOSE;
+
+	// this enables writes to the log file and filters already emitted messages
+	CrossPlatform::setLogFileName(getUserFolder() + "openxcom.log");
+
+	Log(LOG_INFO) << "OpenXcom Version: " << OPENXCOM_VERSION_SHORT << OPENXCOM_VERSION_GIT;
+#ifdef _WIN64
+	Log(LOG_INFO) << "Platform: Windows 64 bit";
+#elif _WIN32
+	Log(LOG_INFO) << "Platform: Windows 32 bit";
+#elif __APPLE__
+	Log(LOG_INFO) << "Platform: OSX";
+#elif  __ANDROID_API__
+	Log(LOG_INFO) << "Platform: Android";
+#elif __linux__
+	Log(LOG_INFO) << "Platform: Linux";
+#else
+	Log(LOG_INFO) << "Platform: Unix-like";
+#endif
+
 	Log(LOG_INFO) << "Data folder is: " << _dataFolder;
 	Log(LOG_INFO) << "Data search is: ";
-	for (std::vector<std::string>::iterator i = _dataList.begin(); i != _dataList.end(); ++i)
+	for (const auto& dataPath : _dataList)
 	{
-		Log(LOG_INFO) << "- " << *i;
+		Log(LOG_INFO) << "- " << dataPath;
 	}
 	Log(LOG_INFO) << "User folder is: " << _userFolder;
 	Log(LOG_INFO) << "Config folder is: " << _configFolder;
 	Log(LOG_INFO) << "Options loaded successfully.";
 
-	std::string modPath = CrossPlatform::searchDataFolder("standard");
-	Log(LOG_INFO) << "Scanning standard mods in '" << modPath << "'...";
-	_scanMods(modPath);
-	modPath = _userFolder + "mods";
-	Log(LOG_INFO) << "Scanning user mods in '" << modPath << "'...";
-	_scanMods(modPath);
+	FileMap::clear(false, Options::oxceEmbeddedOnly);
+	return true;
+}
+
+// called from the dos screen state (StartState)
+void refreshMods()
+{
+	if (Options::reload)
+	{
+		_masterMod = "";
+	}
+
+	_modInfos.clear();
+	SDL_RWops *rwops = CrossPlatform::getEmbeddedAsset("standard.zip");
+	if (rwops) {
+		Log(LOG_INFO) << "Scanning embedded standard mods...";
+		FileMap::scanModZipRW(rwops, "exe:standard.zip");
+	}
+	if (Options::oxceEmbeddedOnly && rwops) {
+		Log(LOG_INFO) << "Modding embedded resources is disabled, set 'oxceEmbeddedOnly: false' in options.cfg to enable.";
+	} else {
+		Log(LOG_INFO) << "Scanning standard mods in '" << getDataFolder() << "'...";
+		FileMap::scanModDir(getDataFolder(), "standard", true);
+	}
+	Log(LOG_INFO) << "Scanning user mods in '" << getUserFolder() << "'...";
+	FileMap::scanModDir(getUserFolder(), "mods", false);
+#ifdef __MOBILE__
+	if (getDataFolder() == getUserFolder())
+	{
+		Log(LOG_INFO) << "Skipped scanning user mods in the data folder, because it's the same folder as the user folder.";
+	}
+	else
+	{
+		Log(LOG_INFO) << "Scanning user mods in '" << getDataFolder() << "'...";
+		FileMap::scanModDir(getDataFolder(), "mods", false);
+	}
+#endif
+
+	// Check mods' dependencies on other mods and extResources (UFO, TFTD, etc),
+	// also breaks circular dependency loops.
+	FileMap::checkModsDependencies();
+
+	// Now we can get the list of ModInfos from the FileMap -
+	// those are the mods that can possibly be loaded.
+	_modInfos = FileMap::getModInfos();
 
 	// remove mods from list that no longer exist
-	for (std::vector< std::pair<std::string, bool> >::iterator i = mods.begin(); i != mods.end(); )
+	bool nonMasterModFound = false;
+	std::map<std::string, bool> corruptedMasters;
+	for (auto i = mods.begin(); i != mods.end();)
 	{
-		std::map<std::string, ModInfo>::const_iterator modIt = _modInfos.find(i->first);
-		if (_modInfos.end() == modIt
-		 || (i->first == "xcom1" && !_ufoIsInstalled())
-		 || (i->first == "xcom2" && !_tftdIsInstalled()))
+		auto modIt = _modInfos.find(i->first);
+		if (_modInfos.end() == modIt)
 		{
-			Log(LOG_INFO) << "removing references to missing mod: " << i->first;
+			Log(LOG_VERBOSE) << "removing references to missing mod: " << i->first;
 			i = mods.erase(i);
 			continue;
 		}
+		else
+		{
+			if ((*modIt).second.isMaster())
+			{
+				if (nonMasterModFound)
+				{
+					Log(LOG_ERROR) << "Removing master mod '" << i->first << "' from the list, because it is on a wrong position. It will be re-added automatically.";
+					corruptedMasters[i->first] = i->second;
+					i = mods.erase(i);
+					continue;
+				}
+			}
+			else
+			{
+				nonMasterModFound = true;
+			}
+		}
 		++i;
+	}
+	// re-insert corrupted masters at the beginning of the list
+	for (const auto& pair : corruptedMasters)
+	{
+		std::pair<std::string, bool> newMod(pair.first, pair.second);
+		mods.insert(mods.begin(), newMod);
 	}
 
 	// add in any new mods picked up from the scan and ensure there is but a single
 	// master active
 	std::string activeMaster;
 	std::string inactiveMaster;
-	for (std::map<std::string, ModInfo>::const_iterator i = _modInfos.begin(); i != _modInfos.end(); ++i)
+	for (auto i = _modInfos.cbegin(); i != _modInfos.cend(); ++i)
 	{
 		bool found = false;
-		for (std::vector< std::pair<std::string, bool> >::iterator j = mods.begin(); j != mods.end(); ++j)
+		for (auto j = mods.begin(); j != mods.end(); ++j)
 		{
 			if (i->first == j->first)
 			{
 				found = true;
 				if (i->second.isMaster())
 				{
+					if (!_masterMod.empty())
+					{
+						j->second = (_masterMod == j->first);
+					}
 					if (j->second)
 					{
 						if (!activeMaster.empty())
 						{
-							Log(LOG_WARNING) << "too many active masters detected; turning off " << j->first;
+							Log(LOG_WARNING) << "Too many active masters detected; turning off " << j->first;
 							j->second = false;
 						}
 						else
@@ -621,108 +856,115 @@ bool init(int argc, char *argv[])
 		if (inactiveMaster.empty())
 		{
 			Log(LOG_ERROR) << "no mod masters available";
+			throw Exception("No X-COM installations found");
 		}
 		else
 		{
 			Log(LOG_INFO) << "no master already active; activating " << inactiveMaster;
 			std::find(mods.begin(), mods.end(), std::pair<std::string, bool>(inactiveMaster, false))->second = true;
+			_masterMod = inactiveMaster;
 		}
 	}
+	else
+	{
+		_masterMod = activeMaster;
+	}
+	save();
+}
 
-	mapResources();
+void updateMods()
+{
+	// pick up stuff in common before-hand
+	FileMap::clear(false, Options::oxceEmbeddedOnly);
+
+	refreshMods();
+
+	// check active mods that don't meet the enforced OXCE requirements
+	auto* masterInf = getActiveMasterInfo();
+	auto activeModsList = getActiveMods();
+	bool forceQuit = false;
+	for (auto* modInf : activeModsList)
+	{
+		if (ModConfirmExtendedState::isModNotValid(modInf, masterInf))
+		{
+			Log(LOG_ERROR) << "- " << modInf->getId() << " v" << modInf->getVersion();
+			if (!modInf->isEngineOk())
+			{
+				forceQuit = true;
+				if (modInf->getRequiredExtendedEngine() != OPENXCOM_VERSION_ENGINE)
+				{
+					Log(LOG_ERROR) << "Mod '" << modInf->getName() << "' require OXC " << modInf->getRequiredExtendedEngine() << " engine to run";
+				}
+				else
+				{
+					Log(LOG_ERROR) << "Mod '" << modInf->getName() << "' enforces at least OXC " << OPENXCOM_VERSION_ENGINE << " v" << modInf->getRequiredExtendedVersion();
+				}
+			}
+			if (!modInf->isParentMasterOk(masterInf))
+			{
+				Log(LOG_ERROR) << "Mod '" << modInf->getName() << "' require version " << modInf->getRequiredMasterVersion() << " of master mod to run (current one is " << masterInf->getVersion() << ")";
+			}
+		}
+	}
+	if (forceQuit)
+	{
+		throw Exception("Incompatible mods are active. Please upgrade OpenXcom.");
+	}
+
+	FileMap::setup(activeModsList, Options::oxceEmbeddedOnly);
 	userSplitMasters();
 
-	return true;
+	Log(LOG_INFO) << "Active mods:";
+	auto activeMods = getActiveMods();
+	for (auto* modInf : activeMods)
+	{
+		Log(LOG_INFO) << "- " << modInf->getId() << " v" << modInf->getVersion();
+	}
 }
 
+/**
+ * Is the password correct?
+ * @return Mostly false.
+ */
+bool isPasswordCorrect()
+{
+	if (_passwordCheck < 0)
+	{
+		std::string md5hash = md5(Options::password);
+		if (md5hash == "52bd8e15118862c40fc0d6107e197f42")
+			_passwordCheck = 1;
+		else
+			_passwordCheck = 0;
+	}
+
+	return _passwordCheck > 0;
+}
+
+/**
+ * Gets the currently active master mod.
+ * @return Mod id.
+ */
 std::string getActiveMaster()
 {
-	std::string curMaster;
-	for (std::vector< std::pair<std::string, bool> >::const_iterator i = mods.begin(); i != mods.end(); ++i)
-	{
-		if (!i->second)
-		{
-			// we're only looking for active mods
-			continue;
-		}
-
-		ModInfo modInfo = _modInfos.find(i->first)->second;
-		if (!modInfo.isMaster())
-		{
-			continue;
-		}
-
-		curMaster = modInfo.getId();
-		break;
-	}
-	if (curMaster.empty())
-	{
-		Log(LOG_ERROR) << "cannot determine current active master";
-	}
-	return curMaster;
+	return _masterMod;
 }
 
-static void _loadMod(const ModInfo &modInfo, std::set<std::string> circDepCheck)
+/**
+ * Gets the master mod info.
+ */
+const ModInfo* getActiveMasterInfo()
 {
-	if (circDepCheck.end() != circDepCheck.find(modInfo.getId()))
-	{
-		Log(LOG_WARNING) << "circular dependency found in master chain: " << modInfo.getId();
-		return;
-	}
-
-	FileMap::load(modInfo.getId(), modInfo.getPath(), false);
-	for (std::vector<std::string>::const_iterator i = modInfo.getExternalResourceDirs().begin(); i != modInfo.getExternalResourceDirs().end(); ++i)
-	{
-		// use external resource folders from the user dir if they exist
-		// and if not, fall back to searching the data dirs
-		std::string extResourceFolder = _userFolder + *i;
-		if (!CrossPlatform::folderExists(extResourceFolder))
-		{
-			extResourceFolder = CrossPlatform::searchDataFolder(*i);
-		}
-
-		// always ignore ruleset files in external resource dirs
-		FileMap::load(modInfo.getId(), extResourceFolder, true);
-	}
-
-	// if this is a master but it has a master of its own, allow it to
-	// chainload the "super" master, including its rulesets
-	if (modInfo.isMaster() && !modInfo.getMaster().empty())
-	{
-		// add self to circDepCheck so we can avoid circular dependencies
-		circDepCheck.insert(modInfo.getId());
-		const ModInfo &masterInfo = _modInfos.find(modInfo.getMaster())->second;
-		_loadMod(masterInfo, circDepCheck);
-	}
+	return &_modInfos.at(_masterMod);
 }
 
-void mapResources()
+bool getLoadLastSave()
 {
-	Log(LOG_INFO) << "Mapping resource files...";
-	FileMap::clear();
+	return _loadLastSave && !_loadLastSaveExpended;
+}
 
-	std::string curMaster = getActiveMaster();
-	for (std::vector< std::pair<std::string, bool> >::reverse_iterator i = mods.rbegin(); i != mods.rend(); ++i)
-	{
-		if (!i->second)
-		{
-			Log(LOG_VERBOSE) << "skipping inactive mod: " << i->first;
-			continue;
-		}
-
-		const ModInfo &modInfo = _modInfos.find(i->first)->second;
-		if (!modInfo.isMaster() && !modInfo.getMaster().empty() && modInfo.getMaster() != curMaster)
-		{
-			Log(LOG_VERBOSE) << "skipping mod for non-current master: " << i->first << "(" << modInfo.getMaster() << " != " << curMaster << ")";
-			continue;
-		}
-
-		std::set<std::string> circDepCheck;
-		_loadMod(modInfo, circDepCheck);
-	}
-	// pick up stuff in common
-	FileMap::load("common", CrossPlatform::searchDataFolder("common"), true);
-	Log(LOG_INFO) << "Resources files mapped successfully.";
+void expendLoadLastSave()
+{
+	_loadLastSaveExpended = true;
 }
 
 /**
@@ -736,11 +978,16 @@ void setFolders()
 	if (!_dataFolder.empty())
 	{
 		_dataList.insert(_dataList.begin(), _dataFolder);
+		Log(LOG_DEBUG) << "setFolders(): inserting " << _dataFolder;
 	}
 	if (_userFolder.empty())
 	{
 		std::vector<std::string> user = CrossPlatform::findUserFolders();
-		_configFolder = CrossPlatform::findConfigFolder();
+
+		if (_configFolder.empty())
+		{
+			_configFolder = CrossPlatform::findConfigFolder();
+		}
 
 		// Look for an existing user folder
 		for (std::vector<std::string>::reverse_iterator i = user.rbegin(); i != user.rend(); ++i)
@@ -755,11 +1002,11 @@ void setFolders()
 		// Set up folders
 		if (_userFolder.empty())
 		{
-			for (std::vector<std::string>::iterator i = user.begin(); i != user.end(); ++i)
+			for (const auto& userFolder : user)
 			{
-				if (CrossPlatform::createFolder(*i))
+				if (CrossPlatform::createFolder(userFolder))
 				{
-					_userFolder = *i;
+					_userFolder = userFolder;
 					break;
 				}
 			}
@@ -778,65 +1025,6 @@ void setFolders()
 }
 
 /**
- * Splits the game's User folder by master mod,
- * creating a subfolder for each one and moving
- * the apppropriate user data among them.
- */
-void userSplitMasters()
-{
-	// get list of master mods
-	const std::map<std::string, ModInfo> &modInfos(Options::getModInfos());
-	if (modInfos.empty())
-	{
-		return;
-	}
-	std::vector<std::string> masters;
-	for (std::vector< std::pair<std::string, bool> >::const_iterator i = Options::mods.begin(); i != Options::mods.end(); ++i)
-	{
-		std::string modId = i->first;
-		ModInfo modInfo = modInfos.find(modId)->second;
-		if (modInfo.isMaster())
-		{
-			masters.push_back(modId);
-		}
-	}
-
-	// create master subfolders if they don't already exist
-	std::vector<std::string> saves;
-	for (std::vector<std::string>::const_iterator i = masters.begin(); i != masters.end(); ++i)
-	{
-		std::string masterFolder = _userFolder + (*i);
-		if (!CrossPlatform::folderExists(masterFolder))
-		{
-			CrossPlatform::createFolder(masterFolder);
-			// move any old saves to the appropriate folders
-			if (saves.empty())
-			{
-				saves = CrossPlatform::getFolderContents(_userFolder, "sav");
-				std::vector<std::string> autosaves = CrossPlatform::getFolderContents(_userFolder, "asav");
-				saves.insert(saves.end(), autosaves.begin(), autosaves.end());
-			}
-			for (std::vector<std::string>::iterator j = saves.begin(); j != saves.end();)
-			{
-				std::string srcFile = _userFolder + (*j);
-				YAML::Node doc = YAML::LoadFile(srcFile);
-				std::vector<std::string> mods = doc["mods"].as<std::vector< std::string> >(std::vector<std::string>());
-				if (std::find(mods.begin(), mods.end(), (*i)) != mods.end())
-				{
-					std::string dstFile = masterFolder + "/" + (*j);
-					CrossPlatform::moveFile(srcFile, dstFile);
-					j = saves.erase(j);
-				}
-				else
-				{
-					++j;
-				}
-			}
-		}
-	}
-}
-
-/**
  * Updates the game's options with those in the configuration
  * file, if it exists yet, and any supplied on the command line.
  */
@@ -848,6 +1036,9 @@ void updateOptions()
 		if (CrossPlatform::fileExists(_configFolder + "options.cfg"))
 		{
 			load();
+#ifndef EMBED_ASSETS
+			Options::oxceEmbeddedOnly = false;
+#endif
 		}
 		else
 		{
@@ -863,30 +1054,31 @@ void updateOptions()
 
 	// now apply options set on the command line, overriding defaults and those loaded from config file
 	//if (!_commandLine.empty())
-	for (std::vector<OptionInfo>::iterator i = _info.begin(); i != _info.end(); ++i)
+	for (auto& optionInfo : _info)
 	{
-		i->load(_commandLine);
+		optionInfo.load(_commandLine, true);
 	}
 }
 
 /**
  * Loads options from a YAML file.
  * @param filename YAML filename.
+ * @return Was the loading successful?
  */
-void load(const std::string &filename)
+bool load(const std::string &filename)
 {
 	std::string s = _configFolder + filename + ".cfg";
 	try
 	{
-		YAML::Node doc = YAML::LoadFile(s);
+		YAML::Node doc = YAML::Load(*CrossPlatform::readFile(s));
 		// Ignore old options files
 		if (doc["options"]["NewBattleMission"])
 		{
-			return;
+			return false;
 		}
-		for (std::vector<OptionInfo>::iterator i = _info.begin(); i != _info.end(); ++i)
+		for (auto& optionInfo : _info)
 		{
-			i->load(doc["options"]);
+			optionInfo.load(doc["options"]);
 		}
 
 		mods.clear();
@@ -901,53 +1093,101 @@ void load(const std::string &filename)
 			_setDefaultMods();
 		}
 	}
-	catch (YAML::Exception e)
+	catch (YAML::Exception &e)
 	{
 		Log(LOG_WARNING) << e.what();
+		return false;
+	}
+	return true;
+}
+
+void writeNode(const YAML::Node& node, YAML::Emitter& emitter)
+{
+	switch (node.Type())
+	{
+		case YAML::NodeType::Sequence:
+		{
+			emitter << YAML::BeginSeq;
+			for (size_t i = 0; i < node.size(); i++)
+			{
+				writeNode(node[i], emitter);
+			}
+			emitter << YAML::EndSeq;
+			break;
+		}
+		case YAML::NodeType::Map:
+		{
+			emitter << YAML::BeginMap;
+
+			// First collect all the keys
+			std::vector<std::string> keys(node.size());
+			int key_it = 0;
+			for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+			{
+				keys[key_it++] = it->first.as<std::string>();
+			}
+
+			// Then sort them
+			std::sort(keys.begin(), keys.end());
+
+			// Then emit all the entries in sorted order.
+			for (size_t i = 0; i < keys.size(); i++)
+			{
+				emitter << YAML::Key;
+				emitter << keys[i];
+				emitter << YAML::Value;
+				writeNode(node[keys[i]], emitter);
+			}
+			emitter << YAML::EndMap;
+			break;
+		}
+		default:
+			emitter << node;
+			break;
 	}
 }
 
 /**
  * Saves options to a YAML file.
  * @param filename YAML filename.
+ * @return Was the saving successful?
  */
-void save(const std::string &filename)
+bool save(const std::string &filename)
 {
-	std::string s = _configFolder + filename + ".cfg";
-	std::ofstream sav(s.c_str());
-	if (!sav)
-	{
-		Log(LOG_WARNING) << "Failed to save " << filename << ".cfg";
-		return;
-	}
+	YAML::Emitter out;
 	try
 	{
-		YAML::Emitter out;
-
 		YAML::Node doc, node;
-		for (std::vector<OptionInfo>::iterator i = _info.begin(); i != _info.end(); ++i)
+		for (const auto& optionInfo : _info)
 		{
-			i->save(node);
+			optionInfo.save(node);
 		}
 		doc["options"] = node;
 
-		for (std::vector< std::pair<std::string, bool> >::iterator i = mods.begin(); i != mods.end(); ++i)
+		for (const auto& pair : mods)
 		{
 			YAML::Node mod;
-			mod["id"] = i->first;
-			mod["active"] = i->second;
+			mod["id"] = pair.first;
+			mod["active"] = pair.second;
 			doc["mods"].push_back(mod);
 		}
 
-		out << doc;
-
-		sav << out.c_str();
+		writeNode(doc, out);
 	}
-	catch (YAML::Exception e)
+	catch (YAML::Exception &e)
 	{
 		Log(LOG_WARNING) << e.what();
+		return false;
 	}
-	sav.close();
+	std::string filepath = _configFolder + filename + ".cfg";
+	std::string data(out.c_str());
+
+	if (!CrossPlatform::writeFile(filepath, data + "\n" ))
+	{
+		Log(LOG_WARNING) << "Failed to save " << filepath;
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -968,6 +1208,7 @@ std::string getDataFolder()
 void setDataFolder(const std::string &folder)
 {
 	_dataFolder = folder;
+	Log(LOG_DEBUG) << "setDataFolder(" << folder <<");";
 }
 
 /**
@@ -1007,7 +1248,7 @@ std::string getConfigFolder()
  */
 std::string getMasterUserFolder()
 {
-	return _userFolder + getActiveMaster() + "/";
+	return _userFolder + _masterMod + "/";
 }
 
 /**
@@ -1017,6 +1258,29 @@ std::string getMasterUserFolder()
 const std::vector<OptionInfo> &getOptionInfo()
 {
 	return _info;
+}
+
+/**
+ * Returns a list of currently active mods.
+ * They must be enabled and activable.
+ * @sa ModInfo::canActivate
+ * @return List of info for the active mods.
+ */
+std::vector<const ModInfo *> getActiveMods()
+{
+	std::vector<const ModInfo*> activeMods;
+	for (const auto& pair : mods)
+	{
+		if (pair.second)
+		{
+			const ModInfo *info = &_modInfos.at(pair.first);
+			if (info->canActivate(_masterMod))
+			{
+				activeMods.push_back(info);
+			}
+		}
+	}
+	return activeMods;
 }
 
 /**
@@ -1034,6 +1298,12 @@ void backupDisplay()
 	Options::newHQXFilter = Options::useHQXFilter;
 	Options::newOpenGLShader = Options::useOpenGLShader;
 	Options::newXBRZFilter = Options::useXBRZFilter;
+	Options::newRootWindowedMode = Options::rootWindowedMode;
+	Options::newWindowedModePositionX = Options::windowedModePositionX;
+	Options::newWindowedModePositionY = Options::windowedModePositionY;
+	Options::newFullscreen = Options::fullscreen;
+	Options::newAllowResize = Options::allowResize;
+	Options::newBorderless = Options::borderless;
 }
 
 /**
@@ -1051,7 +1321,14 @@ void switchDisplay()
 	std::swap(useHQXFilter, newHQXFilter);
 	std::swap(useOpenGLShader, newOpenGLShader);
 	std::swap(useXBRZFilter, newXBRZFilter);
+	std::swap(rootWindowedMode, newRootWindowedMode);
+	std::swap(windowedModePositionX, newWindowedModePositionX);
+	std::swap(windowedModePositionY, newWindowedModePositionY);
+	std::swap(fullscreen, newFullscreen);
+	std::swap(allowResize, newAllowResize);
+	std::swap(borderless, newBorderless);
 }
 
 }
+
 }

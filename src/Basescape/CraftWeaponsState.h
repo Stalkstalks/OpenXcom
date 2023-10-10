@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CRAFTWEAPONSSTATE_H
-#define OPENXCOM_CRAFTWEAPONSSTATE_H
-
 #include <vector>
 #include "../Engine/State.h"
 
@@ -46,7 +44,7 @@ private:
 
 	TextButton *_btnCancel;
 	Window *_window;
-	Text *_txtTitle, *_txtArmament, *_txtQuantity, *_txtAmmunition;
+	Text *_txtTitle, *_txtArmament, *_txtQuantity, *_txtAmmunition, *_txtCurrentWeapon;
 	TextList *_lstWeapons;
 	std::vector<RuleCraftWeapon*> _weapons;
 public:
@@ -58,8 +56,8 @@ public:
 	void btnCancelClick(Action *action);
 	/// Handler for clicking the Weapons list.
 	void lstWeaponsClick(Action *action);
+	/// Handler for middle clicking the Weapons list.
+	void lstWeaponsMiddleClick(Action *action);
 };
 
 }
-
-#endif

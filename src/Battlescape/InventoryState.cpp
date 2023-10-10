@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,13 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "InventoryState.h"
+#include "InventoryLoadState.h"
+#include "InventorySaveState.h"
+#include "InventoryPersonalState.h"
+#include <algorithm>
 #include "Inventory.h"
+#include "../Basescape/SoldierArmorState.h"
+#include "../Basescape/SoldierAvatarState.h"
 #include "../Engine/Game.h"
 #include "../Engine/FileMap.h"
 #include "../Mod/Mod.h"
@@ -25,7 +31,9 @@
 #include "../Engine/Screen.h"
 #include "../Engine/Palette.h"
 #include "../Engine/Surface.h"
+#include "../Engine/Collections.h"
 #include "../Interface/Text.h"
+#include "../Interface/TextEdit.h"
 #include "../Interface/BattlescapeButton.h"
 #include "../Engine/Action.h"
 #include "../Engine/InteractiveSurface.h"
@@ -34,16 +42,23 @@
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Tile.h"
 #include "../Savegame/SavedBattleGame.h"
+#include "../Savegame/Base.h"
 #include "../Savegame/BattleUnit.h"
+#include "../Savegame/Craft.h"
+#include "../Savegame/ItemContainer.h"
 #include "../Savegame/Soldier.h"
 #include "../Mod/RuleItem.h"
 #include "../Mod/RuleInventory.h"
+#include "../Mod/RuleSoldier.h"
 #include "../Mod/Armor.h"
 #include "../Engine/Options.h"
 #include "UnitInfoState.h"
 #include "BattlescapeState.h"
+#include "BattlescapeGenerator.h"
+#include "ExtendedInventoryLinksState.h"
 #include "TileEngine.h"
 #include "../Mod/RuleInterface.h"
+#include "../Ufopaedia/Ufopaedia.h"
 
 namespace OpenXcom
 {
@@ -58,9 +73,24 @@ static const int _applyTemplateBtnY  = 113;
  * @param tu Does Inventory use up Time Units?
  * @param parent Pointer to parent Battlescape.
  */
-InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _parent(parent)
+InventoryState::InventoryState(bool tu, BattlescapeState *parent, Base *base, bool noCraft) :
+	_tu(tu), _noCraft(noCraft), _parent(parent), _base(base),
+	_resetCustomDeploymentBackup(false), _reloadUnit(false), _globalLayoutIndex(-1)
 {
 	_battleGame = _game->getSavedGame()->getSavedBattle();
+
+	if (Options::oxceAlternateCraftEquipmentManagement && !_tu && _base && _noCraft)
+	{
+		// deassign all soldiers
+		for (auto* soldier : *_base->getSoldiers())
+		{
+			_backup[soldier] = soldier->getCraft();
+			if (soldier->getCraft() && soldier->getCraft()->getStatus() != "STR_OUT")
+			{
+				soldier->setCraftAndMoveEquipment(0, _base, _game->getSavedGame()->getMonthsPassed() == -1);
+			}
+		}
+	}
 
 	if (Options::maximizeInfoScreens)
 	{
@@ -68,22 +98,22 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 		Options::baseYResolution = Screen::ORIGINAL_HEIGHT;
 		_game->getScreen()->resetDisplay(false);
 	}
-	else if (!_battleGame->getTileEngine())
+	else if (_battleGame->isBaseCraftInventory())
 	{
-		Screen::updateScale(Options::battlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
+		Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
 		_game->getScreen()->resetDisplay(false);
 	}
 
 	// Create objects
 	_bg = new Surface(320, 200, 0, 0);
 	_soldier = new Surface(320, 200, 0, 0);
-	_txtName = new Text(210, 17, 28, 6);
+	_txtName = new TextEdit(this, 210, 17, 28, 6);
 	_txtTus = new Text(40, 9, 245, 24);
 	_txtWeight = new Text(70, 9, 245, 24);
-	_txtFAcc = new Text(40, 9, 245, 32);
-	_txtReact = new Text(40, 9, 245, 40);
-	_txtPSkill = new Text(40, 9, 245, 48);
-	_txtPStr = new Text(40, 9, 245, 56);
+	_txtStatLine1 = new Text(70, 9, 245, 32);
+	_txtStatLine2 = new Text(70, 9, 245, 40);
+	_txtStatLine3 = new Text(70, 9, 245, 48);
+	_txtStatLine4 = new Text(70, 9, 245, 56);
 	_txtItem = new Text(160, 9, 128, 140);
 	_txtAmmo = new Text(66, 24, 254, 64);
 	_btnOk = new BattlescapeButton(35, 22, 237, 1);
@@ -92,27 +122,40 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	_btnUnload = new BattlescapeButton(32, 25, 288, 32);
 	_btnGround = new BattlescapeButton(32, 15, 289, 137);
 	_btnRank = new BattlescapeButton(26, 23, 0, 0);
+	_btnArmor = new BattlescapeButton(RuleInventory::PAPERDOLL_W, RuleInventory::PAPERDOLL_H, RuleInventory::PAPERDOLL_X, RuleInventory::PAPERDOLL_Y);
 	_btnCreateTemplate = new BattlescapeButton(32, 22, _templateBtnX, _createTemplateBtnY);
 	_btnApplyTemplate = new BattlescapeButton(32, 22, _templateBtnX, _applyTemplateBtnY);
+	auto pixelShift = _game->getMod()->getInterface("inventory")->getElement("buttonLinks");
+	if (pixelShift && pixelShift->TFTDMode)
+	{
+		_btnLinks = new BattlescapeButton(23, 22, 213, 0);
+	}
+	else
+	{
+		_btnLinks = new BattlescapeButton(23, 22, 213, 1);
+	}
 	_selAmmo = new Surface(RuleInventory::HAND_W * RuleInventory::SLOT_W, RuleInventory::HAND_H * RuleInventory::SLOT_H, 272, 88);
 	_inv = new Inventory(_game, 320, 200, 0, 0, _parent == 0);
+	_btnQuickSearch = new TextEdit(this, 40, 9, 244, 140);
 
 	// Set palette
-	setPalette("PAL_BATTLESCAPE");
+	setStandardPalette("PAL_BATTLESCAPE");
 
 	add(_bg);
 
 	// Set up objects
-	_game->getMod()->getSurface("TAC01.SCR")->blit(_bg);
+	_game->getMod()->getSurface("TAC01.SCR")->blitNShade(_bg, 0, 0);
+	add(_btnArmor, "buttonOK", "inventory", _bg);
 
 	add(_soldier);
+	add(_btnQuickSearch, "textItem", "inventory");
 	add(_txtName, "textName", "inventory", _bg);
 	add(_txtTus, "textTUs", "inventory", _bg);
 	add(_txtWeight, "textWeight", "inventory", _bg);
-	add(_txtFAcc, "textFiring", "inventory", _bg);
-	add(_txtReact, "textReaction", "inventory", _bg);
-	add(_txtPSkill, "textPsiSkill", "inventory", _bg);
-	add(_txtPStr, "textPsiStrength", "inventory", _bg);
+	add(_txtStatLine1, "textStatLine1", "inventory", _bg);
+	add(_txtStatLine2, "textStatLine2", "inventory", _bg);
+	add(_txtStatLine3, "textStatLine3", "inventory", _bg);
+	add(_txtStatLine4, "textStatLine4", "inventory", _bg);
 	add(_txtItem, "textItem", "inventory", _bg);
 	add(_txtAmmo, "textAmmo", "inventory", _bg);
 	add(_btnOk, "buttonOK", "inventory", _bg);
@@ -123,6 +166,7 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	add(_btnRank, "rank", "inventory", _bg);
 	add(_btnCreateTemplate, "buttonCreate", "inventory", _bg);
 	add(_btnApplyTemplate, "buttonApply", "inventory", _bg);
+	add(_btnLinks, "buttonLinks", "inventory", _bg);
 	add(_selAmmo);
 	add(_inv);
 
@@ -138,18 +182,20 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 
 	_txtName->setBig();
 	_txtName->setHighContrast(true);
+	_txtName->onChange((ActionHandler)&InventoryState::edtSoldierChange);
+	_txtName->onMousePress((ActionHandler)&InventoryState::edtSoldierPress);
 
 	_txtTus->setHighContrast(true);
 
 	_txtWeight->setHighContrast(true);
 
-	_txtFAcc->setHighContrast(true);
+	_txtStatLine1->setHighContrast(true);
 
-	_txtReact->setHighContrast(true);
+	_txtStatLine2->setHighContrast(true);
 
-	_txtPSkill->setHighContrast(true);
+	_txtStatLine3->setHighContrast(true);
 
-	_txtPStr->setHighContrast(true);
+	_txtStatLine4->setHighContrast(true);
 
 	_txtItem->setHighContrast(true);
 
@@ -159,9 +205,21 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	_btnOk->onMouseClick((ActionHandler)&InventoryState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnOkClick, Options::keyCancel);
 	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnOkClick, Options::keyBattleInventory);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnUfopaediaClick, Options::keyGeoUfopedia);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnArmorClick, Options::keyInventoryArmor);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnArmorClickRight, Options::keyInventoryAvatar);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnInventoryLoadClick, Options::keyInventoryLoad);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnInventorySaveClick, Options::keyInventorySave);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnCreatePersonalTemplateClick, Options::keyInvSavePersonalEquipment);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnApplyPersonalTemplateClick, Options::keyInvLoadPersonalEquipment);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::btnShowPersonalTemplateClick, Options::keyInvShowPersonalEquipment);
 	_btnOk->setTooltip("STR_OK");
 	_btnOk->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
 	_btnOk->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::invMouseOver, SDLK_LALT);
+	_btnOk->onKeyboardRelease((ActionHandler)&InventoryState::invMouseOver, SDLK_LALT);
+	_btnOk->onKeyboardPress((ActionHandler)&InventoryState::invMouseOver, SDLK_RALT);
+	_btnOk->onKeyboardRelease((ActionHandler)&InventoryState::invMouseOver, SDLK_RALT);
 
 	_btnPrev->onMouseClick((ActionHandler)&InventoryState::btnPrevClick);
 	_btnPrev->onKeyboardPress((ActionHandler)&InventoryState::btnPrevClick, Options::keyBattlePrevUnit);
@@ -180,15 +238,27 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	_btnUnload->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
 	_btnUnload->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
 
-	_btnGround->onMouseClick((ActionHandler)&InventoryState::btnGroundClick);
+	_btnGround->onMouseClick((ActionHandler)&InventoryState::btnGroundClickForward, SDL_BUTTON_LEFT);
+	_btnGround->onMouseClick((ActionHandler)&InventoryState::btnGroundClickBackward, SDL_BUTTON_RIGHT);
 	_btnGround->setTooltip("STR_SCROLL_RIGHT");
 	_btnGround->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
 	_btnGround->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
+	_btnGround->onKeyboardPress((ActionHandler)&InventoryState::btnGroundClickBackward, Options::keyBattleLeft);
+	_btnGround->onKeyboardPress((ActionHandler)&InventoryState::btnGroundClickForward, Options::keyBattleRight);
 
 	_btnRank->onMouseClick((ActionHandler)&InventoryState::btnRankClick);
 	_btnRank->setTooltip("STR_UNIT_STATS");
 	_btnRank->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
 	_btnRank->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
+
+	if (!_game->getMod()->getInventoryOverlapsPaperdoll())
+	{
+		_btnArmor->onMouseClick((ActionHandler)&InventoryState::btnArmorClick);
+		_btnArmor->onMouseClick((ActionHandler)&InventoryState::btnArmorClickRight, SDL_BUTTON_RIGHT);
+		_btnArmor->onMouseClick((ActionHandler)&InventoryState::btnArmorClickMiddle, SDL_BUTTON_MIDDLE);
+		_btnArmor->onMouseIn((ActionHandler)&InventoryState::txtArmorTooltipIn);
+		_btnArmor->onMouseOut((ActionHandler)&InventoryState::txtArmorTooltipOut);
+	}
 
 	_btnCreateTemplate->onMouseClick((ActionHandler)&InventoryState::btnCreateTemplateClick);
 	_btnCreateTemplate->onKeyboardPress((ActionHandler)&InventoryState::btnCreateTemplateClick, Options::keyInvCreateTemplate);
@@ -199,10 +269,26 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	_btnApplyTemplate->onMouseClick((ActionHandler)&InventoryState::btnApplyTemplateClick);
 	_btnApplyTemplate->onKeyboardPress((ActionHandler)&InventoryState::btnApplyTemplateClick, Options::keyInvApplyTemplate);
 	_btnApplyTemplate->onKeyboardPress((ActionHandler)&InventoryState::onClearInventory, Options::keyInvClear);
+	_btnApplyTemplate->onKeyboardPress((ActionHandler)&InventoryState::onAutoequip, Options::keyInvAutoEquip);
 	_btnApplyTemplate->setTooltip("STR_APPLY_INVENTORY_TEMPLATE");
 	_btnApplyTemplate->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
 	_btnApplyTemplate->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
 
+	_btnLinks->onMouseClick((ActionHandler)&InventoryState::btnLinksClick);
+	_btnLinks->setTooltip("STR_EXTENDED_LINKS");
+	_btnLinks->onMouseIn((ActionHandler)&InventoryState::txtTooltipIn);
+	_btnLinks->onMouseOut((ActionHandler)&InventoryState::txtTooltipOut);
+
+	_btnQuickSearch->setHighContrast(true);
+	_btnQuickSearch->setText(""); // redraw
+	_btnQuickSearch->onEnter((ActionHandler)&InventoryState::btnQuickSearchApply);
+	_btnQuickSearch->setVisible(false);
+
+	_btnOk->onKeyboardRelease((ActionHandler)&InventoryState::btnQuickSearchToggle, Options::keyToggleQuickSearch);
+
+	_game->getMod()->getSurface("oxceLinksInv")->blitNShade(_btnLinks, 0, 0);
+	_btnLinks->initSurfaces();
+	_btnLinks->setVisible(Options::oxceLinks && !_tu);
 
 	// only use copy/paste buttons in setup (i.e. non-tu) mode
 	if (_tu)
@@ -212,32 +298,38 @@ InventoryState::InventoryState(bool tu, BattlescapeState *parent) : _tu(tu), _pa
 	}
 	else
 	{
-		_updateTemplateButtons(true);
+		updateTemplateButtons(true);
 	}
 
 	_inv->draw();
 	_inv->setTuMode(_tu);
-	_inv->setSelectedUnit(_game->getSavedGame()->getSavedBattle()->getSelectedUnit());
+	_inv->setSelectedUnit(_game->getSavedGame()->getSavedBattle()->getSelectedUnit(), true);
 	_inv->onMouseClick((ActionHandler)&InventoryState::invClick, 0);
 	_inv->onMouseOver((ActionHandler)&InventoryState::invMouseOver);
 	_inv->onMouseOut((ActionHandler)&InventoryState::invMouseOut);
 
+	if (_battleGame->getDebugMode() && _game->isShiftPressed())
+	{
+		// replenish TUs
+		auto unit = _inv->getSelectedUnit();
+		if (unit)
+		{
+			auto missingTUs = unit->getBaseStats()->tu - unit->getTimeUnits();
+			unit->spendTimeUnits(-missingTUs);
+		}
+	}
+
 	_txtTus->setVisible(_tu);
 	_txtWeight->setVisible(Options::showMoreStatsInInventoryView);
-	_txtFAcc->setVisible(Options::showMoreStatsInInventoryView && !_tu);
-	_txtReact->setVisible(Options::showMoreStatsInInventoryView && !_tu);
-	_txtPSkill->setVisible(Options::showMoreStatsInInventoryView && !_tu);
-	_txtPStr->setVisible(Options::showMoreStatsInInventoryView && !_tu);
+	_txtStatLine1->setVisible(Options::showMoreStatsInInventoryView && !_tu);
+	_txtStatLine2->setVisible(Options::showMoreStatsInInventoryView && !_tu);
+	_txtStatLine3->setVisible(Options::showMoreStatsInInventoryView && !_tu);
+	_txtStatLine4->setVisible(Options::showMoreStatsInInventoryView && !_tu);
 }
 
 static void _clearInventoryTemplate(std::vector<EquipmentLayoutItem*> &inventoryTemplate)
 {
-	for (std::vector<EquipmentLayoutItem*>::iterator eraseIt = inventoryTemplate.begin();
-		 eraseIt != inventoryTemplate.end();
-		 eraseIt = inventoryTemplate.erase(eraseIt))
-	{
-		delete *eraseIt;
-	}
+	Collections::deleteAll(inventoryTemplate);
 }
 
 /**
@@ -246,23 +338,38 @@ static void _clearInventoryTemplate(std::vector<EquipmentLayoutItem*> &inventory
 InventoryState::~InventoryState()
 {
 	_clearInventoryTemplate(_curInventoryTemplate);
+	_clearInventoryTemplate(_tempInventoryTemplate);
 
-	if (_battleGame->getTileEngine())
+	if (!_battleGame->isBaseCraftInventory())
 	{
 		if (Options::maximizeInfoScreens)
 		{
-			Screen::updateScale(Options::battlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
+			Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
 			_game->getScreen()->resetDisplay(false);
 		}
-		Tile *inventoryTile = _battleGame->getSelectedUnit()->getTile();
-		_battleGame->getTileEngine()->applyGravity(inventoryTile);
-		_battleGame->getTileEngine()->calculateTerrainLighting(); // dropping/picking up flares
+
+		//fix case when scripts could kill unit before inventory is closed
+		if (BattleUnit* unit =_battleGame->getSelectedUnit())
+		{
+			Tile *inventoryTile = unit->getTile();
+			_battleGame->getTileEngine()->applyGravity(inventoryTile);
+		}
+		_battleGame->getTileEngine()->calculateLighting(LL_ITEMS); // dropping/picking up flares
 		_battleGame->getTileEngine()->recalculateFOV();
 	}
 	else
 	{
-		Screen::updateScale(Options::geoscapeScale, Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
+		Screen::updateScale(Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, true);
 		_game->getScreen()->resetDisplay(false);
+	}
+}
+
+void InventoryState::setGlobalLayoutIndex(int index, bool armorChanged)
+{
+	_globalLayoutIndex = index;
+	if (armorChanged)
+	{
+		_reloadUnit = true;
 	}
 }
 
@@ -285,7 +392,7 @@ void InventoryState::init()
 	{
 		if (_parent)
 		{
-			_parent->selectNextPlayerUnit(false, false, true);
+			_parent->selectNextPlayerUnit(false, false, true, _tu);
 		}
 		else
 		{
@@ -309,54 +416,186 @@ void InventoryState::init()
 
 	_txtName->setBig();
 	_txtName->setText(unit->getName(_game->getLanguage()));
-	_inv->setSelectedUnit(unit);
+
+	_btnLinks->setVisible(Options::oxceLinks && !_tu);
+
+	bool resetGroundOffset = _tu;
+	if (unit->isSummonedPlayerUnit())
+	{
+		resetGroundOffset = true; // this unit is likely not standing on the shared inventory tile, just re-arrange it every time
+	}
+	_inv->setSelectedUnit(unit, resetGroundOffset);
 	Soldier *s = unit->getGeoscapeSoldier();
 	if (s)
 	{
-		SurfaceSet *texture = _game->getMod()->getSurfaceSet("SMOKE.PCK");
-		texture->getFrame(20 + s->getRank())->setX(0);
-		texture->getFrame(20 + s->getRank())->setY(0);
-		texture->getFrame(20 + s->getRank())->blit(_btnRank);
-
-		const std::string look = s->getArmor()->getSpriteInventory();
-		const std::string gender = s->getGender() == GENDER_MALE ? "M" : "F";
-		std::stringstream ss;
-		Surface *surf = 0;
-
-		for (int i = 0; i <= 4; ++i)
+		// reload necessary after the change of armor
+		if (_reloadUnit)
 		{
-			ss.str("");
-			ss << look;
-			ss << gender;
-			ss << (int)s->getLook() + (s->getLookVariant() & (15 >> i)) * 4;
-			ss << ".SPK";
-			std::string debug = ss.str();
-			surf = _game->getMod()->getSurface(ss.str());
-			if (surf)
+			if (Options::oxceAlternateCraftEquipmentManagement && s->getArmor() && unit->getArmor() && s->getArmor()->getSize() > unit->getArmor()->getSize())
 			{
-				break;
+				_resetCustomDeploymentBackup = true;
+			}
+
+			// Step 0: update unit's armor
+			unit->updateArmorFromSoldier(_game->getMod(), s, s->getArmor(), _battleGame->getDepth(), false, nullptr);
+
+			// Step 1: remember the unit's equipment (incl. loaded fixed items)
+			_clearInventoryTemplate(_tempInventoryTemplate);
+			_createInventoryTemplate(_tempInventoryTemplate);
+
+			// Step 2: drop all items (and delete fixed items!!)
+			Tile *groundTile = unit->getTile();
+			_battleGame->getTileEngine()->itemDropInventory(groundTile, unit, true, true);
+
+			// Step 3: equip fixed items // Note: the inventory must be *completely* empty before this step
+			_battleGame->initUnit(unit);
+
+			// Step 4: re-equip original items (unless slots taken by fixed items)
+			_applyInventoryTemplate(_tempInventoryTemplate);
+
+			// refresh ui
+			_inv->arrangeGround(); // calls drawItems() too
+
+			// reset armor tooltip
+			_currentTooltip = "";
+			_txtItem->setText("");
+
+			// reload done
+			_reloadUnit = false;
+		}
+
+		SurfaceSet *texture = _game->getMod()->getSurfaceSet("SMOKE.PCK");
+		auto frame = texture->getFrame(s->getRankSpriteBattlescape());
+		if (frame)
+		{
+			frame->blitNShade(_btnRank, 0, 0);
+		}
+
+		if (s->getArmor()->hasLayersDefinition())
+		{
+			for (const auto& layer : s->getArmorLayers())
+			{
+				_game->getMod()->getSurface(layer, true)->blitNShade(_soldier, 0, 0);
 			}
 		}
-		if (!surf)
+		else
 		{
-			ss.str("");
-			ss << look;
-			ss << ".SPK";
-			surf = _game->getMod()->getSurface(ss.str());
+			const std::string look = s->getArmor()->getSpriteInventory();
+			const std::string gender = s->getGender() == GENDER_MALE ? "M" : "F";
+			Surface *surf = 0;
+			std::stringstream ss;
+
+			for (int i = 0; i <= RuleSoldier::LookVariantBits; ++i)
+			{
+				ss.str("");
+				ss << look;
+				ss << gender;
+				ss << (int)s->getLook() + (s->getLookVariant() & (RuleSoldier::LookVariantMask >> i)) * 4;
+				ss << ".SPK";
+				surf = _game->getMod()->getSurface(ss.str(), false);
+				if (surf)
+				{
+					break;
+				}
+			}
+			if (!surf)
+			{
+				ss.str("");
+				ss << look;
+				ss << ".SPK";
+				surf = _game->getMod()->getSurface(ss.str(), false);
+			}
+			if (!surf)
+			{
+				surf = _game->getMod()->getSurface(look, true);
+			}
+			surf->blitNShade(_soldier, 0, 0);
 		}
-		surf->blit(_soldier);
 	}
 	else
 	{
-		Surface *armorSurface = _game->getMod()->getSurface(unit->getArmor()->getSpriteInventory());
+		Surface *armorSurface = _game->getMod()->getSurface(unit->getArmor()->getSpriteInventory(), false);
+		if (!armorSurface)
+		{
+			armorSurface = _game->getMod()->getSurface(unit->getArmor()->getSpriteInventory() + ".SPK", false);
+		}
+		if (!armorSurface)
+		{
+			armorSurface = _game->getMod()->getSurface(unit->getArmor()->getSpriteInventory() + "M0.SPK", false);
+		}
 		if (armorSurface)
 		{
-			armorSurface->blit(_soldier);
+			armorSurface->blitNShade(_soldier, 0, 0);
 		}
 	}
 
+	// coming from InventoryLoad window...
+	if (_globalLayoutIndex > -1)
+	{
+		loadGlobalLayout((_globalLayoutIndex));
+		_globalLayoutIndex = -1;
+
+		// refresh ui
+		_inv->arrangeGround();
+	}
+
 	updateStats();
-	_refreshMouse();
+	refreshMouse();
+}
+
+/**
+ * Disables the input, if not a soldier. Sets the name without a statstring otherwise.
+ * @param action Pointer to an action.
+ */
+void InventoryState::edtSoldierPress(Action *action)
+{
+	if (_btnLinks->getVisible())
+	{
+		double mx = action->getAbsoluteXMouse();
+		if (mx >= _btnLinks->getX())
+		{
+			_txtName->setFocus(false);
+			return;
+		}
+		else
+		{
+			_btnLinks->setVisible(false);
+		}
+	}
+
+	{
+		BattleUnit *unit = _inv->getSelectedUnit();
+		if (unit != 0)
+		{
+			Soldier *s = unit->getGeoscapeSoldier();
+			if (s)
+			{
+				// set the soldier's name without a statstring
+				_txtName->setText(s->getName());
+			}
+
+		}
+	}
+}
+
+/**
+ * Changes the soldier's name.
+ * @param action Pointer to an action.
+ */
+void InventoryState::edtSoldierChange(Action *)
+{
+	BattleUnit *unit = _inv->getSelectedUnit();
+	if (unit != 0)
+	{
+		Soldier *s = unit->getGeoscapeSoldier();
+		if (s)
+		{
+			// set the soldier's name
+			s->setName(_txtName->getText());
+			// also set the unit's name (with a statstring)
+			unit->setName(s->getName(true));
+		}
+	}
 }
 
 /**
@@ -379,27 +618,70 @@ void InventoryState::updateStats()
 		_txtWeight->setSecondaryColor(_game->getMod()->getInterface("inventory")->getElement("weight")->color);
 	}
 
-	_txtFAcc->setText(tr("STR_ACCURACY_SHORT").arg((int)(unit->getBaseStats()->firing * unit->getHealth()) / unit->getBaseStats()->health));
+	auto psiSkillWithoutAnyBonuses = unit->getBaseStats()->psiSkill;
+	if (unit->getGeoscapeSoldier())
+	{
+		psiSkillWithoutAnyBonuses = unit->getGeoscapeSoldier()->getCurrentStats()->psiSkill;
+	}
+	bool showPsiStrength = (psiSkillWithoutAnyBonuses > 0 || (Options::psiStrengthEval && _game->getSavedGame()->isResearched(_game->getMod()->getPsiRequirements())));
 
-	_txtReact->setText(tr("STR_REACTIONS_SHORT").arg(unit->getBaseStats()->reactions));
+	auto updateStatLine = [&](Text* txtField, const std::string& elementId)
+	{
+		Element *element = _game->getMod()->getInterface("inventory")->getElement(elementId);
+		if (element)
+		{
+			switch (element->custom)
+			{
+				case 1:
+					txtField->setText(tr("STR_ACCURACY_SHORT").arg(unit->getBaseStats()->firing));
+					break;
+				case 2:
+					txtField->setText(tr("STR_REACTIONS_SHORT").arg(unit->getBaseStats()->reactions));
+					break;
+				case 3:
+					if (psiSkillWithoutAnyBonuses > 0)
+						txtField->setText(tr("STR_PSIONIC_SKILL_SHORT").arg(unit->getBaseStats()->psiSkill));
+					else
+						txtField->setText("");
+					break;
+				case 4:
+					if (showPsiStrength)
+						txtField->setText(tr("STR_PSIONIC_STRENGTH_SHORT").arg(unit->getBaseStats()->psiStrength));
+					else
+						txtField->setText("");
+					break;
+				case 11:
+					txtField->setText(tr("STR_FIRING_SHORT").arg(unit->getBaseStats()->firing));
+					break;
+				case 12:
+					txtField->setText(tr("STR_THROWING_SHORT").arg(unit->getBaseStats()->throwing));
+					break;
+				case 13:
+					txtField->setText(tr("STR_MELEE_SHORT").arg(unit->getBaseStats()->melee));
+					break;
+				case 14:
+					if (showPsiStrength)
+					{
+						txtField->setText(tr("STR_PSI_SHORT")
+							.arg(unit->getBaseStats()->psiStrength)
+							.arg(unit->getBaseStats()->psiSkill > 0 ? unit->getBaseStats()->psiSkill : 0));
+					}
+					else
+					{
+						txtField->setText("");
+					}
+					break;
+				default:
+					txtField->setText("");
+					break;
+			}
+		}
+	};
 
-	if (unit->getBaseStats()->psiSkill > 0)
-	{
-		_txtPSkill->setText(tr("STR_PSIONIC_SKILL_SHORT").arg(unit->getBaseStats()->psiSkill));
-	}
-	else
-	{
-		_txtPSkill->setText(L"");
-	}
-
-	if (unit->getBaseStats()->psiSkill > 0 || (Options::psiStrengthEval && _game->getSavedGame()->isResearched(_game->getMod()->getPsiRequirements())))
-	{
-		_txtPStr->setText(tr("STR_PSIONIC_STRENGTH_SHORT").arg(unit->getBaseStats()->psiStrength));
-	}
-	else
-	{
-		_txtPStr->setText(L"");
-	}
+	updateStatLine(_txtStatLine1, "textStatLine1");
+	updateStatLine(_txtStatLine2, "textStatLine2");
+	updateStatLine(_txtStatLine3, "textStatLine3");
+	updateStatLine(_txtStatLine4, "textStatLine4");
 }
 
 /**
@@ -407,38 +689,368 @@ void InventoryState::updateStats()
  */
 void InventoryState::saveEquipmentLayout()
 {
-	for (std::vector<BattleUnit*>::iterator i = _battleGame->getUnits()->begin(); i != _battleGame->getUnits()->end(); ++i)
+	for (auto* bu : *_battleGame->getUnits())
 	{
 		// we need X-Com soldiers only
-		if ((*i)->getGeoscapeSoldier() == 0) continue;
+		if (bu->getGeoscapeSoldier() == 0) continue;
 
-		std::vector<EquipmentLayoutItem*> *layoutItems = (*i)->getGeoscapeSoldier()->getEquipmentLayout();
+		std::vector<EquipmentLayoutItem*> *layoutItems = bu->getGeoscapeSoldier()->getEquipmentLayout();
 
 		// clear the previous save
 		if (!layoutItems->empty())
 		{
-			for (std::vector<EquipmentLayoutItem*>::iterator j = layoutItems->begin(); j != layoutItems->end(); ++j)
-				delete *j;
+			for (auto* equipmentLayoutItem : *layoutItems)
+			{
+				delete equipmentLayoutItem;
+			}
 			layoutItems->clear();
 		}
 
 		// save the soldier's items
 		// note: with using getInventory() we are skipping the ammos loaded, (they're not owned) because we handle the loaded-ammos separately (inside)
-		for (std::vector<BattleItem*>::iterator j = (*i)->getInventory()->begin(); j != (*i)->getInventory()->end(); ++j)
+		for (auto* bi : *bu->getInventory())
 		{
-			std::string ammo;
-			if ((*j)->needsAmmo() && 0 != (*j)->getAmmoItem()) ammo = (*j)->getAmmoItem()->getRules()->getType();
-			else ammo = "NONE";
-			layoutItems->push_back(new EquipmentLayoutItem(
-				(*j)->getRules()->getType(),
-				(*j)->getSlot()->getId(),
-				(*j)->getSlotX(),
-				(*j)->getSlotY(),
-				ammo,
-				(*j)->getFuseTimer()
-			));
+			// skip fixed items
+			if (bi->getRules()->isFixed())
+			{
+				bool loaded = bi->needsAmmoForSlot(0) && bi->getAmmoForSlot(0);
+				if (!loaded) continue;
+			}
+			else if (!bi->getRules()->canBeEquippedToCraftInventory())
+			{
+				// skip other not-allowed items, which somehow made it here (e.g. were spawned instead of equipped)
+				continue;
+			}
+
+			layoutItems->push_back(new EquipmentLayoutItem(bi));
 		}
 	}
+}
+
+/**
+ * Opens the Armor Selection GUI
+ * @param action Pointer to an action.
+ */
+void InventoryState::btnArmorClick(Action *action)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	// only allowed during base equipment
+	if (_base == 0)
+	{
+		return;
+	}
+
+	// equipment in the base
+	BattleUnit *unit = _battleGame->getSelectedUnit();
+	Soldier *s = unit->getGeoscapeSoldier();
+
+	if (!(s->getCraft() && s->getCraft()->getStatus() == "STR_OUT"))
+	{
+		size_t soldierIndex = 0;
+		for (auto soldierIt = _base->getSoldiers()->begin(); soldierIt != _base->getSoldiers()->end(); ++soldierIt)
+		{
+			if ((*soldierIt)->getId() == s->getId())
+			{
+				soldierIndex = soldierIt - _base->getSoldiers()->begin();
+			}
+		}
+
+		_reloadUnit = true;
+		_game->pushState(new SoldierArmorState(_base, soldierIndex, SA_BATTLESCAPE));
+	}
+}
+
+/**
+ * Opens the Avatar Selection GUI
+ * @param action Pointer to an action.
+ */
+void InventoryState::btnArmorClickRight(Action *action)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	// only allowed during base equipment
+	if (_base == 0)
+	{
+		return;
+	}
+
+	// equipment in the base
+	BattleUnit *unit = _battleGame->getSelectedUnit();
+	Soldier *s = unit->getGeoscapeSoldier();
+
+	if (!(s->getCraft() && s->getCraft()->getStatus() == "STR_OUT"))
+	{
+		size_t soldierIndex = 0;
+		for (auto soldierIt = _base->getSoldiers()->begin(); soldierIt != _base->getSoldiers()->end(); ++soldierIt)
+		{
+			if ((*soldierIt)->getId() == s->getId())
+			{
+				soldierIndex = soldierIt - _base->getSoldiers()->begin();
+			}
+		}
+
+		_game->pushState(new SoldierAvatarState(_base, soldierIndex));
+	}
+}
+
+/**
+* Opens Ufopaedia entry for the corresponding armor.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnArmorClickMiddle(Action *action)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	BattleUnit *unit = _inv->getSelectedUnit();
+	if (unit != 0)
+	{
+		std::string articleId = unit->getArmor()->getUfopediaType();
+		Ufopaedia::openArticle(_game, articleId);
+	}
+}
+
+void InventoryState::saveGlobalLayout(int index, bool includingArmor)
+{
+	std::vector<EquipmentLayoutItem*> *tmpl = _game->getSavedGame()->getGlobalEquipmentLayout(index);
+
+	// clear current template
+	_clearInventoryTemplate(*tmpl);
+
+	// create new template
+	_createInventoryTemplate(*tmpl);
+
+	// optionally save armor info too
+	if (includingArmor && _battleGame->getSelectedUnit()->getGeoscapeSoldier())
+	{
+		_game->getSavedGame()->setGlobalEquipmentLayoutArmor(index, _battleGame->getSelectedUnit()->getArmor()->getType());
+	}
+	else
+	{
+		_game->getSavedGame()->setGlobalEquipmentLayoutArmor(index, std::string());
+	}
+}
+
+void InventoryState::loadGlobalLayout(int index)
+{
+	std::vector<EquipmentLayoutItem*> *tmpl = _game->getSavedGame()->getGlobalEquipmentLayout(index);
+
+	_applyInventoryTemplate(*tmpl);
+}
+
+bool InventoryState::loadGlobalLayoutArmor(int index)
+{
+	auto armorName = _game->getSavedGame()->getGlobalEquipmentLayoutArmor(index);
+	return tryArmorChange(armorName);
+}
+
+bool InventoryState::tryArmorChange(const std::string& armorName)
+{
+	Armor* prev = nullptr;
+	Soldier* soldier = nullptr;
+	BattleUnit* unit = _inv->getSelectedUnit();
+	if (unit)
+	{
+		soldier = unit->getGeoscapeSoldier();
+		if (soldier)
+		{
+			prev = soldier->getArmor();
+		}
+	}
+
+	Armor* next = nullptr;
+	{
+		next = _game->getMod()->getArmor(armorName, false);
+	}
+
+	// check armor availability
+	bool armorAvailable = false;
+	if (prev && next && next != prev && soldier && _base)
+	{
+		armorAvailable = true;
+		if (_game->getSavedGame()->getMonthsPassed() != -1)
+		{
+			// is the armor physically available?
+			if (next->getStoreItem() && prev->getStoreItem() != next->getStoreItem())
+			{
+				if (_base->getStorageItems()->getItem(next->getStoreItem()) <= 0)
+				{
+					armorAvailable = false;
+				}
+			}
+			// is the armor unlocked?
+			if (next->getRequiredResearch() && !_game->getSavedGame()->isResearched(next->getRequiredResearch()))
+			{
+				armorAvailable = false;
+			}
+		}
+		// does the armor fit on the current unit?
+		if (!next->getCanBeUsedBy(soldier->getRules()))
+		{
+			armorAvailable = false;
+		}
+	}
+
+	// change armor
+	bool armorChanged = false;
+	if (armorAvailable)
+	{
+		Craft* craft = soldier->getCraft();
+		if (craft)
+		{
+			if (!craft->validateArmorChange(prev->getSize(), next->getSize()))
+			{
+				// STR_NOT_ENOUGH_CRAFT_SPACE
+				return false;
+			}
+		}
+		if (_game->getSavedGame()->getMonthsPassed() != -1)
+		{
+			if (prev->getStoreItem())
+			{
+				_base->getStorageItems()->addItem(prev->getStoreItem());
+			}
+			if (next->getStoreItem())
+			{
+				_base->getStorageItems()->removeItem(next->getStoreItem());
+			}
+		}
+		if (Options::oxceAlternateCraftEquipmentManagement && next->getSize() > prev->getSize())
+		{
+			_resetCustomDeploymentBackup = true;
+		}
+		soldier->setArmor(next, true);
+		armorChanged = true;
+	}
+
+	return armorChanged;
+}
+
+/**
+* Handles global equipment layout actions.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnGlobalEquipmentLayoutClick(Action *action)
+{
+	// cannot use this feature during the mission!
+	if (_tu)
+	{
+		return;
+	}
+
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	// SDLK_0 = 48, SDLK_1 = 49, SDLK_9 = 57
+	// SDLK_0 selects the 10-th inventory layout
+	// by repeating a key you can load a layout from the next decade
+	const int sym = action->getDetails()->key.keysym.sym;
+	const int layout_no = (sym == 48) ? 10 : sym - 48;
+
+	if (sym == _prev_key && !_game->isCtrlPressed())
+	{
+		_key_repeats++;
+	}
+	else
+	{
+		_key_repeats = 0;
+	}
+	_prev_key = sym;
+
+	const int index = 10 * _key_repeats + layout_no - 1;
+
+	if (index < 0 || index >= Options::oxceMaxEquipmentLayoutTemplates)
+	{
+		// do nothing if the layout index is out of bounds
+		return;
+	}
+
+	if (_game->isCtrlPressed())
+	{
+		// can't save layout >10 this way
+		_prev_key = 0, _key_repeats = 0;
+		saveGlobalLayout(index, false);
+
+		// give audio feedback
+		_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
+		refreshMouse();
+	}
+	else
+	{
+		// simulate what happens when loading via the InventoryLoadState dialog
+		bool armorChanged = loadGlobalLayoutArmor(index);
+		setGlobalLayoutIndex(index, armorChanged);
+		init();
+
+		// give audio feedback
+		_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
+	}
+}
+
+/**
+* Opens the InventoryLoad screen.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnInventoryLoadClick(Action *)
+{
+	// cannot use this feature during the mission!
+	if (_tu)
+	{
+		return;
+	}
+
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	_game->pushState(new InventoryLoadState(this));
+}
+
+/**
+* Opens the InventorySave screen.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnInventorySaveClick(Action *)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	_game->pushState(new InventorySaveState(this));
+}
+
+/**
+ * Opens the Ufopaedia.
+ * @param action Pointer to an action.
+ */
+void InventoryState::btnUfopaediaClick(Action *)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	Ufopaedia::open(_game);
 }
 
 /**
@@ -450,30 +1062,31 @@ void InventoryState::btnOkClick(Action *)
 	if (_inv->getSelectedItem() != 0)
 		return;
 	_game->popState();
-	Tile *inventoryTile = _battleGame->getSelectedUnit()->getTile();
 	if (!_tu)
 	{
-		saveEquipmentLayout();
-		_battleGame->resetUnitTiles();
-		if (_battleGame->getTurn() == 1)
+		if (_base || !Options::oxceAlternateCraftEquipmentManagement)
 		{
-			_battleGame->randomizeItemLocations(inventoryTile);
-			if (inventoryTile->getUnit())
+			saveEquipmentLayout();
+		}
+		if (Options::oxceAlternateCraftEquipmentManagement && !_tu && _base && _noCraft)
+		{
+			// assign all soldiers back, if possible
+			for (auto* soldier : *_base->getSoldiers())
 			{
-				// make sure we select the unit closest to the ramp.
-				_battleGame->setSelectedUnit(inventoryTile->getUnit());
+				Craft* c = _backup[soldier];
+				if (!soldier->getCraft() && c && c->getStatus() != "STR_OUT")
+				{
+					auto space = c->getSpaceAvailable();
+					if (c->validateAddingSoldier(space, soldier))
+					{
+						soldier->setCraftAndMoveEquipment(c, _base, _game->getSavedGame()->getMonthsPassed() == -1, _resetCustomDeploymentBackup);
+					}
+				}
 			}
 		}
-
-		// initialize xcom units for battle
-		for (std::vector<BattleUnit*>::iterator j = _battleGame->getUnits()->begin(); j != _battleGame->getUnits()->end(); ++j)
+		if (_parent)
 		{
-			if ((*j)->getOriginalFaction() != FACTION_PLAYER || (*j)->isOut())
-			{
-				continue;
-			}
-
-			(*j)->prepareNewTurn();
+			_battleGame->startFirstTurn();
 		}
 	}
 }
@@ -527,10 +1140,10 @@ void InventoryState::btnNextClick(Action *)
  */
 void InventoryState::btnUnloadClick(Action *)
 {
-	if (_inv->unload())
+	if (_inv->unload(false))
 	{
-		_txtItem->setText(L"");
-		_txtAmmo->setText(L"");
+		_txtItem->setText("");
+		_txtAmmo->setText("");
 		_selAmmo->clear();
 		updateStats();
 		_game->getMod()->getSoundByDepth(0, Mod::ITEM_DROP)->play();
@@ -538,12 +1151,59 @@ void InventoryState::btnUnloadClick(Action *)
 }
 
 /**
+* Quick search toggle.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnQuickSearchToggle(Action *action)
+{
+	if (_btnQuickSearch->getVisible())
+	{
+		_btnQuickSearch->setText("");
+		_btnQuickSearch->setVisible(false);
+		btnQuickSearchApply(action);
+	}
+	else
+	{
+		_btnQuickSearch->setVisible(true);
+		_btnQuickSearch->setFocus(true);
+	}
+}
+
+/**
+* Quick search.
+* @param action Pointer to an action.
+*/
+void InventoryState::btnQuickSearchApply(Action *)
+{
+	_inv->setSearchString(_btnQuickSearch->getText());
+}
+
+/**
  * Shows more ground items / rearranges them.
  * @param action Pointer to an action.
  */
-void InventoryState::btnGroundClick(Action *)
+void InventoryState::btnGroundClickForward(Action *action)
 {
-	_inv->arrangeGround();
+	if (_game->isShiftPressed())
+	{
+		// scroll backwards
+		_inv->arrangeGround(-1);
+	}
+	else
+	{
+		// scroll forward
+		_inv->arrangeGround(1);
+	}
+}
+
+/**
+ * Shows more ground items / rearranges them.
+ * @param action Pointer to an action.
+ */
+void InventoryState::btnGroundClickBackward(Action *action)
+{
+	// scroll backwards
+	_inv->arrangeGround(-1);
 }
 
 /**
@@ -552,7 +1212,47 @@ void InventoryState::btnGroundClick(Action *)
  */
 void InventoryState::btnRankClick(Action *)
 {
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
 	_game->pushState(new UnitInfoState(_battleGame->getSelectedUnit(), _parent, true, false));
+}
+
+void InventoryState::_createInventoryTemplate(std::vector<EquipmentLayoutItem*> &inventoryTemplate)
+{
+	// copy inventory instead of just keeping a pointer to it.  that way
+	// create/apply can be used as an undo button for a single unit and will
+	// also work as expected if inventory is modified after 'create' is clicked
+	for (const auto* bi : *_battleGame->getSelectedUnit()->getInventory())
+	{
+		// skip fixed items
+		if (bi->getRules()->isFixed())
+		{
+			bool loaded = bi->needsAmmoForSlot(0) && bi->getAmmoForSlot(0);
+			if (!loaded) continue;
+		}
+		else if (!bi->getRules()->canBeEquippedToCraftInventory())
+		{
+			// skip other not-allowed items, which somehow made it here (e.g. were spawned instead of equipped)
+			continue;
+		}
+
+		inventoryTemplate.push_back(new EquipmentLayoutItem(bi));
+	}
+}
+
+void InventoryState::btnLinksClick(Action *)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	_game->pushState(new ExtendedInventoryLinksState(this, _battleGame, _base, !_tu));
 }
 
 void InventoryState::btnCreateTemplateClick(Action *)
@@ -566,46 +1266,252 @@ void InventoryState::btnCreateTemplateClick(Action *)
 	// clear current template
 	_clearInventoryTemplate(_curInventoryTemplate);
 
-	// copy inventory instead of just keeping a pointer to it.  that way
-	// create/apply can be used as an undo button for a single unit and will
-	// also work as expected if inventory is modified after 'create' is clicked
-	std::vector<BattleItem*> *unitInv = _battleGame->getSelectedUnit()->getInventory();
-	for (std::vector<BattleItem*>::iterator j = unitInv->begin(); j != unitInv->end(); ++j)
-	{
-		std::string ammo;
-		if ((*j)->needsAmmo() && (*j)->getAmmoItem())
-		{
-			ammo = (*j)->getAmmoItem()->getRules()->getType();
-		}
-		else
-		{
-			ammo = "NONE";
-		}
-
-		_curInventoryTemplate.push_back(new EquipmentLayoutItem(
-				(*j)->getRules()->getType(),
-				(*j)->getSlot()->getId(),
-				(*j)->getSlotX(),
-				(*j)->getSlotY(),
-				ammo,
-				(*j)->getFuseTimer()));
-	}
+	// create new template
+	_createInventoryTemplate(_curInventoryTemplate);
 
 	// give audio feedback
 	_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
-	_refreshMouse();
+	refreshMouse();
 }
 
-static void _clearInventory(Game *game, std::vector<BattleItem*> *unitInv, Tile *groundTile)
+void InventoryState::btnCreatePersonalTemplateClick(Action *)
 {
-	RuleInventory *groundRuleInv = game->getMod()->getInventory("STR_GROUND");
-
-	// clear unit's inventory (i.e. move everything to the ground)
-	for (std::vector<BattleItem*>::iterator i = unitInv->begin(); i != unitInv->end(); )
+	// cannot use this feature during the mission!
+	if (_tu)
 	{
-		(*i)->setOwner(NULL);
-		groundTile->addItem(*i, groundRuleInv);
-		i = unitInv->erase(i);
+		return;
+	}
+
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	auto unit = _battleGame->getSelectedUnit();
+	if (unit && unit->getGeoscapeSoldier())
+	{
+		auto& personalTemplate = *unit->getGeoscapeSoldier()->getPersonalEquipmentLayout();
+
+		// clear current personal template
+		_clearInventoryTemplate(personalTemplate);
+
+		// create new personal template
+		_createInventoryTemplate(personalTemplate);
+
+		// optionally save armor info too
+		if (Options::oxcePersonalLayoutIncludingArmor)
+		{
+			unit->getGeoscapeSoldier()->setPersonalEquipmentArmor(_battleGame->getSelectedUnit()->getArmor());
+		}
+		else
+		{
+			unit->getGeoscapeSoldier()->setPersonalEquipmentArmor(nullptr);
+		}
+
+		// give visual feedback
+		_inv->showWarning(tr("STR_PERSONAL_EQUIPMENT_SAVED"));
+
+		// give audio feedback
+		_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
+		refreshMouse();
+	}
+}
+
+void InventoryState::_applyInventoryTemplate(std::vector<EquipmentLayoutItem*> &inventoryTemplate)
+{
+	BattleUnit               *unit          = _battleGame->getSelectedUnit();
+	Tile                     *groundTile    = unit->getTile();
+	std::vector<BattleItem*> *groundInv     = groundTile->getInventory();
+
+	_battleGame->getTileEngine()->itemDropInventory(groundTile, unit, true, false);
+
+	// attempt to replicate inventory template by grabbing corresponding items
+	// from the ground.  if any item is not found on the ground, display warning
+	// message, but continue attempting to fulfill the template as best we can
+	bool itemMissing = false;
+	for (const auto* equipmentLayoutItem : inventoryTemplate)
+	{
+		// search for template item in ground inventory
+		bool found = false;
+
+		bool needsAmmo[RuleItem::AmmoSlotMax] = { };
+		std::string targetAmmo[RuleItem::AmmoSlotMax] = { };
+		BattleItem *matchedWeapon = nullptr;
+		BattleItem *matchedAmmo[RuleItem::AmmoSlotMax] = { };
+
+		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+		{
+			targetAmmo[slot] = equipmentLayoutItem->getAmmoItemForSlot(slot);
+			needsAmmo[slot] = (targetAmmo[slot] != "NONE");
+			matchedAmmo[slot] = nullptr;
+		}
+
+		for (BattleItem* groundItem : *groundInv)
+		{
+			// if we find the appropriate ammo, remember it for later for if we find
+			// the right weapon but with the wrong ammo
+			const std::string groundItemName = groundItem->getRules()->getType();
+
+			bool skipAmmo = false;
+			for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+			{
+				if (needsAmmo[slot] && !matchedAmmo[slot] && targetAmmo[slot] == groundItemName)
+				{
+					matchedAmmo[slot] = groundItem;
+					skipAmmo = true;
+				}
+			}
+			if (skipAmmo)
+			{
+				continue;
+			}
+
+			if (equipmentLayoutItem->isFixed() == false && equipmentLayoutItem->getItemType() == groundItemName)
+			{
+				// if the loaded ammo doesn't match the template item's,
+				// remember the weapon for later and continue scanning
+				bool skipWeapon = false;
+				for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+				{
+					if (!groundItem->needsAmmoForSlot(slot))
+					{
+						continue;
+					}
+					BattleItem *loadedAmmo = groundItem->getAmmoForSlot(slot);
+					if ((needsAmmo[slot] && (!loadedAmmo || targetAmmo[slot] != loadedAmmo->getRules()->getType()))
+						|| (!needsAmmo[slot] && loadedAmmo))
+					{
+						// remember the last matched weapon for simplicity (but prefer empty weapons if any are found)
+						if (!matchedWeapon || matchedWeapon->getAmmoForSlot(slot))
+						{
+							matchedWeapon = groundItem;
+						}
+						skipWeapon = true;
+					}
+				}
+				if (!skipWeapon)
+				{
+					matchedWeapon = groundItem;
+					found = true; // found = true, even if not equipped
+					break;
+				}
+			}
+		}
+
+		if (equipmentLayoutItem->isFixed())
+		{
+			for (BattleItem* fixedItem : *unit->getInventory())
+			{
+				if (fixedItem->getRules()->isFixed() == false)
+				{
+					// this is not a fixed item, continue searching...
+					continue;
+				}
+				if (fixedItem->getSlot()->getId() == equipmentLayoutItem->getSlot() &&
+					fixedItem->getSlotX() == equipmentLayoutItem->getSlotX() &&
+					fixedItem->getSlotY() == equipmentLayoutItem->getSlotY() &&
+					fixedItem->getRules()->getType() == equipmentLayoutItem->getItemType())
+				{
+					// if the loaded ammo doesn't match the template item's,
+					// remember the weapon for later and continue scanning
+					bool skipWeapon = false;
+					for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+					{
+						if (!fixedItem->needsAmmoForSlot(slot))
+						{
+							continue;
+						}
+						BattleItem* loadedAmmo = fixedItem->getAmmoForSlot(slot);
+						if ((needsAmmo[slot] && (!loadedAmmo || targetAmmo[slot] != loadedAmmo->getRules()->getType()))
+							|| (!needsAmmo[slot] && loadedAmmo))
+						{
+							// remember the last matched weapon for simplicity (but prefer empty weapons if any are found)
+							if (!matchedWeapon || matchedWeapon->getAmmoForSlot(slot))
+							{
+								matchedWeapon = fixedItem;
+							}
+							skipWeapon = true;
+						}
+					}
+					if (!skipWeapon)
+					{
+						matchedWeapon = fixedItem;
+						found = true; // found = true, even if not equipped
+						break;
+					}
+				}
+			}
+		}
+
+		// if we failed to find an exact match, but found unloaded ammo and
+		// the right weapon, unload the target weapon, load the right ammo, and use it
+		if (!found && matchedWeapon)
+		{
+			found = true;
+			auto allMatch = true;
+			for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+			{
+				allMatch &= (needsAmmo[slot] && matchedAmmo[slot]) || (!needsAmmo[slot]);
+			}
+			if (allMatch)
+			{
+				for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+				{
+					if (matchedWeapon->needsAmmoForSlot(slot) && (!needsAmmo[slot] || matchedAmmo[slot]))
+					{
+						// unload the existing ammo (if any) from the weapon
+						BattleItem *loadedAmmo = matchedWeapon->setAmmoForSlot(slot, matchedAmmo[slot]);
+						if (loadedAmmo)
+						{
+							_battleGame->getTileEngine()->itemDrop(groundTile, loadedAmmo, false);
+						}
+					}
+				}
+			}
+			else
+			{
+				// nope we can't do it.
+				found = false;
+				matchedWeapon = nullptr;
+			}
+		}
+
+		if (!found)
+		{
+			itemMissing = true;
+		}
+
+		if (equipmentLayoutItem->isFixed())
+		{
+			// we have loaded the fixed weapon (if possible) and we don't need to do anything else, it's already in the correct slot
+			continue;
+		}
+
+		// check if the slot is not occupied already (e.g. by a fixed weapon)
+		if (matchedWeapon && !_inv->overlapItems(
+			unit,
+			matchedWeapon,
+			_game->getMod()->getInventory(equipmentLayoutItem->getSlot(), true),
+			equipmentLayoutItem->getSlotX(),
+			equipmentLayoutItem->getSlotY()))
+		{
+			// move matched item from ground to the appropriate inventory slot
+			matchedWeapon->moveToOwner(unit);
+			matchedWeapon->setSlot(_game->getMod()->getInventory(equipmentLayoutItem->getSlot()));
+			matchedWeapon->setSlotX(equipmentLayoutItem->getSlotX());
+			matchedWeapon->setSlotY(equipmentLayoutItem->getSlotY());
+			matchedWeapon->setFuseTimer(equipmentLayoutItem->getFuseTimer());
+		}
+		else
+		{
+			// let the user know or not? probably not... should be obvious why
+		}
+	}
+
+	if (itemMissing)
+	{
+		_inv->showWarning(tr("STR_NOT_ENOUGH_ITEMS_FOR_TEMPLATE"));
 	}
 }
 
@@ -619,117 +1525,85 @@ void InventoryState::btnApplyTemplateClick(Action *)
 		return;
 	}
 
-	BattleUnit               *unit          = _battleGame->getSelectedUnit();
-	std::vector<BattleItem*> *unitInv       = unit->getInventory();
-	Tile                     *groundTile    = unit->getTile();
-	std::vector<BattleItem*> *groundInv     = groundTile->getInventory();
-	RuleInventory            *groundRuleInv = _game->getMod()->getInventory("STR_GROUND");
-
-	_clearInventory(_game, unitInv, groundTile);
-
-	// attempt to replicate inventory template by grabbing corresponding items
-	// from the ground.  if any item is not found on the ground, display warning
-	// message, but continue attempting to fulfill the template as best we can
-	bool itemMissing = false;
-	std::vector<EquipmentLayoutItem*>::iterator templateIt;
-	for (templateIt = _curInventoryTemplate.begin(); templateIt != _curInventoryTemplate.end(); ++templateIt)
-	{
-		// search for template item in ground inventory
-		std::vector<BattleItem*>::iterator groundItem;
-		const bool needsAmmo = !_game->getMod()->getItem((*templateIt)->getItemType())->getCompatibleAmmo()->empty();
-		bool found = false;
-		bool rescan = true;
-		while (rescan)
-		{
-			rescan = false;
-
-			const std::string targetAmmo = (*templateIt)->getAmmoItem();
-			BattleItem *matchedWeapon = NULL;
-			BattleItem *matchedAmmo   = NULL;
-			for (groundItem = groundInv->begin(); groundItem != groundInv->end(); ++groundItem)
-			{
-				// if we find the appropriate ammo, remember it for later for if we find
-				// the right weapon but with the wrong ammo
-				const std::string groundItemName = (*groundItem)->getRules()->getType();
-				if (needsAmmo && targetAmmo == groundItemName)
-				{
-					matchedAmmo = *groundItem;
-				}
-
-				if ((*templateIt)->getItemType() == groundItemName)
-				{
-					// if the loaded ammo doesn't match the template item's,
-					// remember the weapon for later and continue scanning
-					BattleItem *loadedAmmo = (*groundItem)->getAmmoItem();
-					if ((needsAmmo && loadedAmmo && targetAmmo != loadedAmmo->getRules()->getType())
-					 || (needsAmmo && !loadedAmmo))
-					{
-						// remember the last matched weapon for simplicity (but prefer empty weapons if any are found)
-						if (!matchedWeapon || matchedWeapon->getAmmoItem())
-						{
-							matchedWeapon = *groundItem;
-						}
-						continue;
-					}
-
-					// move matched item from ground to the appropriate inv slot
-					(*groundItem)->setOwner(unit);
-					(*groundItem)->setSlot(_game->getMod()->getInventory((*templateIt)->getSlot()));
-					(*groundItem)->setSlotX((*templateIt)->getSlotX());
-					(*groundItem)->setSlotY((*templateIt)->getSlotY());
-					(*groundItem)->setFuseTimer((*templateIt)->getFuseTimer());
-					unitInv->push_back(*groundItem);
-					groundInv->erase(groundItem);
-					found = true;
-					break;
-				}
-			}
-
-			// if we failed to find an exact match, but found unloaded ammo and
-			// the right weapon, unload the target weapon, load the right ammo, and use it
-			if (!found && matchedWeapon && (!needsAmmo || matchedAmmo))
-			{
-				// unload the existing ammo (if any) from the weapon
-				BattleItem *loadedAmmo = matchedWeapon->getAmmoItem();
-				if (loadedAmmo)
-				{
-					groundTile->addItem(loadedAmmo, groundRuleInv);
-					matchedWeapon->setAmmoItem(NULL);
-				}
-
-				// load the correct ammo into the weapon
-				if (matchedAmmo)
-				{
-					matchedWeapon->setAmmoItem(matchedAmmo);
-					groundTile->removeItem(matchedAmmo);
-				}
-
-				// rescan and pick up the newly-loaded/unloaded weapon
-				rescan = true;
-			}
-		}
-
-		if (!found)
-		{
-			itemMissing = true;
-		}
-	}
-
-	if (itemMissing)
-	{
-		_inv->showWarning(tr("STR_NOT_ENOUGH_ITEMS_FOR_TEMPLATE"));
-	}
+	_applyInventoryTemplate(_curInventoryTemplate);
 
 	// refresh ui
-	_inv->arrangeGround(false);
+	_inv->arrangeGround();
 	updateStats();
-	_refreshMouse();
+	refreshMouse();
 
 	// give audio feedback
 	_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
 }
 
-void InventoryState::_refreshMouse()
+void InventoryState::btnApplyPersonalTemplateClick(Action *)
+{
+	// cannot use this feature during the mission!
+	if (_tu)
+	{
+		return;
+	}
+
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	auto unit = _battleGame->getSelectedUnit();
+	if (unit && unit->getGeoscapeSoldier())
+	{
+		// optionally load armor too
+		if (Options::oxcePersonalLayoutIncludingArmor)
+		{
+			auto newArmor = unit->getGeoscapeSoldier()->getPersonalEquipmentArmor();
+			if (newArmor && newArmor != unit->getArmor())
+			{
+				bool success = tryArmorChange(newArmor->getType());
+
+				if (success)
+				{
+					_reloadUnit = true;
+					init();
+				}
+				else
+				{
+					// FIXME: a better message? or no message?
+					//_inv->showWarning(tr("STR_NOT_ENOUGH_ITEMS_FOR_TEMPLATE"));
+				}
+			}
+		}
+
+		auto& personalTemplate = *unit->getGeoscapeSoldier()->getPersonalEquipmentLayout();
+
+		_applyInventoryTemplate(personalTemplate);
+
+		// refresh ui
+		_inv->arrangeGround();
+		updateStats();
+		refreshMouse();
+
+		// give audio feedback
+		_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
+	}
+}
+
+void InventoryState::btnShowPersonalTemplateClick(Action *)
+{
+	// don't accept clicks when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	auto unit = _battleGame->getSelectedUnit();
+	if (unit && unit->getGeoscapeSoldier())
+	{
+		_game->pushState(new InventoryPersonalState(unit->getGeoscapeSoldier()));
+	}
+}
+
+void InventoryState::refreshMouse()
 {
 	// send a mouse motion event to refresh any hover actions
 	int x, y;
@@ -742,22 +1616,49 @@ void InventoryState::_refreshMouse()
 
 void InventoryState::onClearInventory(Action *)
 {
-	// don't accept clicks when moving items
+	// don't act when moving items
 	if (_inv->getSelectedItem() != 0)
 	{
 		return;
 	}
 
 	BattleUnit               *unit       = _battleGame->getSelectedUnit();
-	std::vector<BattleItem*> *unitInv    = unit->getInventory();
 	Tile                     *groundTile = unit->getTile();
 
-	_clearInventory(_game, unitInv, groundTile);
+	_battleGame->getTileEngine()->itemDropInventory(groundTile, unit, true, false);
 
 	// refresh ui
-	_inv->arrangeGround(false);
+	_inv->arrangeGround();
 	updateStats();
-	_refreshMouse();
+	refreshMouse();
+
+	// give audio feedback
+	_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
+}
+
+void InventoryState::onAutoequip(Action *)
+{
+	// don't act when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	BattleUnit               *unit          = _battleGame->getSelectedUnit();
+	Tile                     *groundTile    = unit->getTile();
+	std::vector<BattleItem*>  groundInv     = *groundTile->getInventory();
+	Mod                      *mod           = _game->getMod();
+	RuleInventory            *groundRuleInv = mod->getInventoryGround();
+	int                       worldShade    = _battleGame->getGlobalShade();
+
+	std::vector<BattleUnit*> units;
+	units.push_back(unit);
+	BattlescapeGenerator::autoEquip(units, mod, &groundInv, groundRuleInv, worldShade, true, true);
+
+	// refresh ui
+	_inv->arrangeGround();
+	updateStats();
+	refreshMouse();
 
 	// give audio feedback
 	_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
@@ -767,11 +1668,108 @@ void InventoryState::onClearInventory(Action *)
  * Updates item info.
  * @param action Pointer to an action.
  */
-void InventoryState::invClick(Action *)
+void InventoryState::invClick(Action *act)
 {
 	updateStats();
+	_prev_key = 0, _key_repeats = 0;
 }
 
+/**
+ * Calculates item damage info.
+ */
+void InventoryState::calculateCurrentDamageTooltip()
+{
+	// Differences against battlescape indicator:
+	// 1. doesn't consider which action (auto/snap/aim/melee) is used... just takes ammo from primary slot
+	// 2. doesn't show psi success chance (distance is unknown)
+	// 3. doesn't consider range power reduction (distance is unknown)
+
+	const BattleUnit *currentUnit = _inv->getSelectedUnit();
+
+	if (!currentUnit)
+		return;
+
+	if (!_currentDamageTooltipItem)
+		return;
+
+	const BattleItem *damageItem = _currentDamageTooltipItem;
+	const RuleItem *weaponRule = _currentDamageTooltipItem->getRules();
+	const int PRIMARY_SLOT = 0;
+
+	// step 1: determine rule
+	const RuleItem *rule;
+	if (weaponRule->getBattleType() == BT_PSIAMP)
+	{
+		rule = weaponRule;
+	}
+	else if (_currentDamageTooltipItem->needsAmmoForSlot(PRIMARY_SLOT))
+	{
+		auto ammo = _currentDamageTooltipItem->getAmmoForSlot(PRIMARY_SLOT);
+		if (ammo != nullptr)
+		{
+			damageItem = ammo;
+			rule = ammo->getRules();
+		}
+		else
+		{
+			rule = 0; // empty weapon = no rule
+		}
+	}
+	else
+	{
+		rule = weaponRule;
+	}
+
+	// step 2: check if unlocked
+	if (_game->getSavedGame()->getMonthsPassed() == -1)
+	{
+		// new battle mode
+	}
+	else if (rule)
+	{
+		// instead of checking the weapon/ammo itself... we're checking their ufopedia articles here
+		// same as for the battlescape indicator
+		// it's arguable if this is the correct approach, but so far this is what we have
+		ArticleDefinition *article = _game->getMod()->getUfopaediaArticle(rule->getType(), false);
+		if (article && !Ufopaedia::isArticleAvailable(_game->getSavedGame(), article))
+		{
+			// ammo/weapon locked
+			rule = 0;
+		}
+		if (rule && rule->getType() != weaponRule->getType())
+		{
+			article = _game->getMod()->getUfopaediaArticle(weaponRule->getType(), false);
+			if (article && !Ufopaedia::isArticleAvailable(_game->getSavedGame(), article))
+			{
+				// weapon locked
+				rule = 0;
+			}
+		}
+	}
+
+	// step 3: calculate and remember
+	if (rule)
+	{
+		if (rule->getBattleType() != BT_CORPSE)
+		{
+			int totalDamage = 0;
+			totalDamage += rule->getPowerBonus({ BA_NONE, currentUnit, _currentDamageTooltipItem, damageItem }); //TODO: find what exactly attack we can do
+			//totalDamage -= rule->getPowerRangeReduction(distance * 16);
+			if (totalDamage < 0) totalDamage = 0;
+			std::ostringstream ss;
+			ss << rule->getDamageType()->getRandomDamage(totalDamage, 1);
+			ss << "-";
+			ss << rule->getDamageType()->getRandomDamage(totalDamage, 2);
+			if (rule->getDamageType()->RandomType == DRT_UFO_WITH_TWO_DICE)
+				ss << "*";
+			_currentDamageTooltip = tr("STR_DAMAGE_UC_").arg(ss.str());
+		}
+	}
+	else
+	{
+		_currentDamageTooltip = tr("STR_DAMAGE_UC_").arg(tr("STR_UNKNOWN"));
+	}
+}
 /**
  * Shows item info.
  * @param action Pointer to an action.
@@ -783,66 +1781,127 @@ void InventoryState::invMouseOver(Action *)
 		return;
 	}
 
+	bool altPressed = _game->isAltPressed();
+	bool currentDamageTooltipItemChanged = false;
+
 	BattleItem *item = _inv->getMouseOverItem();
+	if (item != _mouseHoverItem)
+	{
+		_mouseHoverItemFrame = _inv->getAnimFrame();
+		_mouseHoverItem = item;
+	}
+	if (altPressed)
+	{
+		if (item != _currentDamageTooltipItem)
+		{
+			currentDamageTooltipItemChanged = true;
+			_currentDamageTooltipItem = item;
+			_currentDamageTooltip = "";
+		}
+	}
+	else
+	{
+		_currentDamageTooltipItem = nullptr;
+		_currentDamageTooltip = "";
+	}
 	if (item != 0)
 	{
+		std::string itemName;
 		if (item->getUnit() && item->getUnit()->getStatus() == STATUS_UNCONSCIOUS)
 		{
-			_txtItem->setText(item->getUnit()->getName(_game->getLanguage()));
+			itemName = item->getUnit()->getName(_game->getLanguage());
 		}
 		else
 		{
-			if (_game->getSavedGame()->isResearched(item->getRules()->getRequirements()))
+			auto save = _game->getSavedGame();
+			if (save->isResearched(item->getRules()->getRequirements()))
 			{
-				_txtItem->setText(tr(item->getRules()->getName()));
+				std::string text = tr(item->getRules()->getName());
+				for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+				{
+					if (!item->needsAmmoForSlot(slot))
+					{
+						continue;
+					}
+
+					auto ammo = item->getAmmoForSlot(slot);
+					if (!ammo || !save->isResearched(ammo->getRules()->getRequirements()))
+					{
+						continue;
+					}
+
+					const auto& ammoName = ammo->getRules()->getNameAsAmmo();
+					if (!ammoName.empty())
+					{
+						text += " ";
+						text += tr(ammoName);
+					}
+				}
+				if (altPressed)
+				{
+					if (currentDamageTooltipItemChanged)
+					{
+						calculateCurrentDamageTooltip();
+					}
+					itemName = _currentDamageTooltip;
+				}
+				else
+				{
+					itemName = text;
+				}
 			}
 			else
 			{
-				_txtItem->setText(tr("STR_ALIEN_ARTIFACT"));
+				itemName = tr("STR_ALIEN_ARTIFACT");
 			}
 		}
-		std::wstring s;
-		if (item->getAmmoItem() != 0 && item->needsAmmo())
+
+		if (!altPressed)
 		{
-			s = tr("STR_AMMO_ROUNDS_LEFT").arg(item->getAmmoItem()->getAmmoQuantity());
-			SDL_Rect r;
-			r.x = 0;
-			r.y = 0;
-			r.w = RuleInventory::HAND_W * RuleInventory::SLOT_W;
-			r.h = RuleInventory::HAND_H * RuleInventory::SLOT_H;
-			_selAmmo->drawRect(&r, _game->getMod()->getInterface("inventory")->getElement("grid")->color);
-			r.x++;
-			r.y++;
-			r.w -= 2;
-			r.h -= 2;
-			_selAmmo->drawRect(&r, Palette::blockOffset(0)+15);
-			item->getAmmoItem()->getRules()->drawHandSprite(_game->getMod()->getSurfaceSet("BIGOBS.PCK"), _selAmmo);
-			_updateTemplateButtons(false);
+			std::ostringstream ss;
+			ss << itemName;
+			ss << " [";
+			ss << item->getTotalWeight();
+			ss << "]";
+			_txtItem->setText(ss.str().c_str());
 		}
 		else
 		{
-			_selAmmo->clear();
-			_updateTemplateButtons(!_tu);
+			_txtItem->setText(itemName);
 		}
-		if (item->getAmmoQuantity() != 0 && item->needsAmmo())
+
+		_selAmmo->clear();
+		bool hasSelfAmmo = item->getRules()->getBattleType() != BT_AMMO && item->getRules()->getClipSize() > 0;
+		if ((item->isWeaponWithAmmo() || hasSelfAmmo) && item->haveAnyAmmo())
 		{
-			s = tr("STR_AMMO_ROUNDS_LEFT").arg(item->getAmmoQuantity());
+			updateTemplateButtons(false);
+			_txtAmmo->setText("");
 		}
-		else if (item->getRules()->getBattleType() == BT_MEDIKIT)
+		else
 		{
-			s = tr("STR_MEDI_KIT_QUANTITIES_LEFT").arg(item->getPainKillerQuantity()).arg(item->getStimulantQuantity()).arg(item->getHealQuantity());
+			_mouseHoverItem = nullptr;
+			updateTemplateButtons(!_tu);
+			std::string s;
+			if (item->getAmmoQuantity() != 0 && item->getRules()->getBattleType() == BT_AMMO)
+			{
+				s = tr("STR_AMMO_ROUNDS_LEFT").arg(item->getAmmoQuantity());
+			}
+			else if (item->getRules()->getBattleType() == BT_MEDIKIT)
+			{
+				s = tr("STR_MEDI_KIT_QUANTITIES_LEFT").arg(item->getPainKillerQuantity()).arg(item->getStimulantQuantity()).arg(item->getHealQuantity());
+			}
+			_txtAmmo->setText(s);
 		}
-		_txtAmmo->setText(s);
 	}
 	else
 	{
 		if (_currentTooltip.empty())
 		{
-			_txtItem->setText(L"");
+			_txtItem->setText("");
 		}
-		_txtAmmo->setText(L"");
+		_txtAmmo->setText("");
 		_selAmmo->clear();
-		_updateTemplateButtons(!_tu);
+		updateTemplateButtons(!_tu);
 	}
 }
 
@@ -852,10 +1911,89 @@ void InventoryState::invMouseOver(Action *)
  */
 void InventoryState::invMouseOut(Action *)
 {
-	_txtItem->setText(L"");
-	_txtAmmo->setText(L"");
+	_txtItem->setText("");
+	_txtAmmo->setText("");
 	_selAmmo->clear();
-	_updateTemplateButtons(!_tu);
+	_inv->setMouseOverItem(0);
+	_mouseHoverItem = nullptr;
+	_currentDamageTooltipItem = nullptr;
+	_currentDamageTooltip = "";
+	updateTemplateButtons(!_tu);
+}
+
+void InventoryState::onMoveGroundInventoryToBase(Action *)
+{
+	// don't act when moving items
+	if (_inv->getSelectedItem() != 0)
+	{
+		return;
+	}
+
+	if (_base == 0)
+	{
+		// equipment just before the mission (=after briefing) or during the mission
+		return;
+	}
+
+	if (_noCraft)
+	{
+		// pre-equipping in the base, but *without* a craft
+		return;
+	}
+
+	// ok, which craft?
+	BattleUnit *unit = _battleGame->getSelectedUnit();
+	Soldier *s = unit->getGeoscapeSoldier();
+	Craft *c = s->getCraft();
+
+	if (c == 0 || c->getStatus() == "STR_OUT")
+	{
+		// we're either not in a craft or not in a hangar (should not happen, but just in case)
+		return;
+	}
+
+	Tile                     *groundTile = unit->getTile();
+	std::vector<BattleItem*> *groundInv = groundTile->getInventory();
+
+	// step 1: move stuff from craft to base
+	for (auto* bi : *groundInv)
+	{
+		const auto& weaponType = bi->getRules()->getType();
+		// check all ammo slots first
+		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+		{
+			if (bi->getAmmoForSlot(slot))
+			{
+				const auto& ammoType = bi->getAmmoForSlot(slot)->getRules()->getType();
+				// only real ammo
+				if (weaponType != ammoType)
+				{
+					c->getItems()->removeItem(ammoType);
+					_base->getStorageItems()->addItem(ammoType);
+				}
+			}
+		}
+		// and the weapon as last
+		c->getItems()->removeItem(weaponType);
+		_base->getStorageItems()->addItem(weaponType);
+	}
+
+	// step 2: clear ground
+	for (auto itemIt = groundInv->begin(); itemIt != groundInv->end(); )
+	{
+		BattleItem* item = (*itemIt);
+		item->setOwner(NULL);
+		itemIt = groundInv->erase(itemIt);
+		_game->getSavedGame()->getSavedBattle()->removeItem(item);
+	}
+
+	// refresh ui
+	_inv->arrangeGround();
+	updateStats();
+	refreshMouse();
+
+	// give audio feedback
+	_game->getMod()->getSoundByDepth(_battleGame->getDepth(), Mod::ITEM_DROP)->play();
 }
 
 /**
@@ -866,9 +2004,32 @@ void InventoryState::handle(Action *action)
 {
 	State::handle(action);
 
+	if (action->getDetails()->type == SDL_KEYDOWN && !_btnQuickSearch->isFocused() && !_txtName->isFocused())
+	{
+		// "ctrl+1..9" - save equipment
+		// "1..9" - load equipment
+		if (action->getDetails()->key.keysym.sym >= SDLK_0 && action->getDetails()->key.keysym.sym <= SDLK_9)
+		{
+			{
+				btnGlobalEquipmentLayoutClick(action);
+			}
+		}
+		else
+		{
+			_prev_key = 0, _key_repeats = 0;
+		}
+
+		if (action->getDetails()->key.keysym.sym == Options::keyInvClear)
+		{
+			if (_game->isCtrlPressed() && _game->isAltPressed())
+			{
+				onMoveGroundInventoryToBase(action);
+			}
+		}
+	}
 
 #ifndef __MORPHOS__
-	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN)
+	if (Options::oxceThumbButtons && action->getDetails()->type == SDL_MOUSEBUTTONDOWN)
 	{
 		if (action->getDetails()->button.button == SDL_BUTTON_X1)
 		{
@@ -880,6 +2041,71 @@ void InventoryState::handle(Action *action)
 		}
 	}
 #endif
+}
+
+/**
+ * Cycle through loaded ammo in hover over item.
+ */
+void InventoryState::think()
+{
+	if (_mouseHoverItem)
+	{
+		auto anim = _inv->getAnimFrame();
+		auto seq = std::max(((anim - _mouseHoverItemFrame) / 10) - 1, 0); // `-1` cause that first item will be show bit more longer
+		auto modulo = 0;
+		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+		{
+			bool showSelfAmmo = slot == 0 && _mouseHoverItem->getRules()->getClipSize() > 0;
+			if ((_mouseHoverItem->needsAmmoForSlot(slot) || showSelfAmmo) && _mouseHoverItem->getAmmoForSlot(slot))
+			{
+				++modulo;
+			}
+		}
+		if (modulo)
+		{
+			seq %= modulo;
+		}
+
+		BattleItem* firstAmmo = nullptr;
+		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
+		{
+			bool showSelfAmmo = slot == 0 && _mouseHoverItem->getRules()->getClipSize() > 0;
+			if ((_mouseHoverItem->needsAmmoForSlot(slot) || showSelfAmmo) && _mouseHoverItem->getAmmoForSlot(slot))
+			{
+				firstAmmo = _mouseHoverItem->getAmmoForSlot(slot);
+				if (slot >= seq)
+				{
+					break;
+				}
+			}
+			else
+			{
+				// this will skip empty slot
+				++seq;
+			}
+		}
+		if (firstAmmo)
+		{
+			_txtAmmo->setText(tr("STR_AMMO_ROUNDS_LEFT").arg(firstAmmo->getAmmoQuantity()));
+			SDL_Rect r;
+			r.x = 0;
+			r.y = 0;
+			r.w = RuleInventory::HAND_W * RuleInventory::SLOT_W;
+			r.h = RuleInventory::HAND_H * RuleInventory::SLOT_H;
+			_selAmmo->drawRect(&r, _game->getMod()->getInterface("inventory")->getElement("grid")->color);
+			r.x++;
+			r.y++;
+			r.w -= 2;
+			r.h -= 2;
+			_selAmmo->drawRect(&r, Palette::blockOffset(0)+15);
+			firstAmmo->getRules()->drawHandSprite(_game->getMod()->getSurfaceSet("BIGOBS.PCK"), _selAmmo, firstAmmo, _game->getSavedGame()->getSavedBattle(), anim);
+		}
+		else
+		{
+			_selAmmo->clear();
+		}
+	}
+	State::think();
 }
 
 /**
@@ -906,27 +2132,82 @@ void InventoryState::txtTooltipOut(Action *action)
 		if (_currentTooltip == action->getSender()->getTooltip())
 		{
 			_currentTooltip = "";
-			_txtItem->setText(L"");
+			_txtItem->setText("");
 		}
 	}
 }
 
-void InventoryState::_updateTemplateButtons(bool isVisible)
+/**
+* Shows a tooltip for the paperdoll's armor.
+* @param action Pointer to an action.
+*/
+void InventoryState::txtArmorTooltipIn(Action *action)
+{
+	if (_inv->getSelectedItem() == 0)
+	{
+		BattleUnit *unit = _inv->getSelectedUnit();
+		if (unit != 0)
+		{
+			action->getSender()->setTooltip(unit->getArmor()->getType());
+			_currentTooltip = action->getSender()->getTooltip();
+			{
+				std::ostringstream ss;
+
+				if (unit->getGeoscapeSoldier())
+				{
+					auto soldierRules = unit->getGeoscapeSoldier()->getRules();
+					if (soldierRules->getShowTypeInInventory())
+					{
+						ss << tr(soldierRules->getType());
+						ss << ": ";
+					}
+				}
+
+				ss << tr(_currentTooltip);
+				if (unit->getArmor()->getWeight() != 0)
+				{
+					ss << " [";
+					ss << unit->getArmor()->getWeight();
+					ss << "]";
+				}
+				_txtItem->setText(ss.str().c_str());
+			}
+		}
+	}
+}
+
+/**
+* Clears the armor tooltip text.
+* @param action Pointer to an action.
+*/
+void InventoryState::txtArmorTooltipOut(Action *action)
+{
+	if (_inv->getSelectedItem() == 0)
+	{
+		if (_currentTooltip == action->getSender()->getTooltip())
+		{
+			_currentTooltip = "";
+			_txtItem->setText("");
+		}
+	}
+}
+
+void InventoryState::updateTemplateButtons(bool isVisible)
 {
 	if (isVisible)
 	{
 		if (_curInventoryTemplate.empty())
 		{
 			// use "empty template" icons
-			_game->getMod()->getSurface("InvCopy")->blit(_btnCreateTemplate);
-			_game->getMod()->getSurface("InvPasteEmpty")->blit(_btnApplyTemplate);
+			_game->getMod()->getSurface("InvCopy")->blitNShade(_btnCreateTemplate, 0, 0);
+			_game->getMod()->getSurface("InvPasteEmpty")->blitNShade(_btnApplyTemplate, 0, 0);
 			_btnApplyTemplate->setTooltip("STR_CLEAR_INVENTORY");
 		}
 		else
 		{
 			// use "active template" icons
-			_game->getMod()->getSurface("InvCopyActive")->blit(_btnCreateTemplate);
-			_game->getMod()->getSurface("InvPaste")->blit(_btnApplyTemplate);
+			_game->getMod()->getSurface("InvCopyActive")->blitNShade(_btnCreateTemplate, 0, 0);
+			_game->getMod()->getSurface("InvPaste")->blitNShade(_btnApplyTemplate, 0, 0);
 			_btnApplyTemplate->setTooltip("STR_APPLY_INVENTORY_TEMPLATE");
 		}
 		_btnCreateTemplate->initSurfaces();
@@ -938,4 +2219,5 @@ void InventoryState::_updateTemplateButtons(bool isVisible)
 		_btnApplyTemplate->clear();
 	}
 }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,7 +18,6 @@
  */
 #include "ResearchCompleteState.h"
 #include "../Engine/Game.h"
-#include "../Engine/LocalizedText.h"
 #include "../Mod/Mod.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -26,16 +25,18 @@
 #include "../Mod/RuleResearch.h"
 #include "../Ufopaedia/Ufopaedia.h"
 #include "../Engine/Options.h"
+#include "../Savegame/Base.h"
 
 namespace OpenXcom
 {
 /**
  * Initializes all the elements in the EndResearch screen.
  * @param game Pointer to the core game.
- * @param research Pointer to the completed research.
+ * @param newResearch Pointer to the completed research (or 0, if the ufopedia article shouldn't popup again).
  * @param bonus Pointer to bonus unlocked research.
+ * @param research Pointer to the research project.
  */
-ResearchCompleteState::ResearchCompleteState(const RuleResearch * research, const RuleResearch * bonus): _research(research), _bonus(bonus)
+ResearchCompleteState::ResearchCompleteState(const RuleResearch *newResearch, const RuleResearch *bonus, const RuleResearch *research, const Base* base) : _research(newResearch), _bonus(bonus)
 {
 	_screen = false;
 
@@ -43,22 +44,24 @@ ResearchCompleteState::ResearchCompleteState(const RuleResearch * research, cons
 	_window = new Window(this, 230, 140, 45, 30, POPUP_BOTH);
 	_btnOk = new TextButton(80, 16, 64, 146);
 	_btnReport = new TextButton(80, 16, 176, 146);
+	_txtBase = new Text(230, 9, 45, 40);
 	_txtTitle = new Text(230, 17, 45, 70);
 	_txtResearch = new Text(230, 32, 45, 96);
 
 	// Set palette
-	setInterface("geoResearch");
+	setInterface("geoResearchComplete");
 
-	add(_window, "window", "geoResearch");
-	add(_btnOk, "button", "geoResearch");
-	add(_btnReport, "button", "geoResearch");
-	add(_txtTitle, "text1", "geoResearch");
-	add(_txtResearch, "text2", "geoResearch");
+	add(_window, "window", "geoResearchComplete");
+	add(_btnOk, "button", "geoResearchComplete");
+	add(_btnReport, "button", "geoResearchComplete");
+	add(_txtBase, "text1", "geoResearchComplete");
+	add(_txtTitle, "text1", "geoResearchComplete");
+	add(_txtResearch, "text2", "geoResearchComplete");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK05.SCR"));
+	setWindowBackground(_window, "geoResearchComplete");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ResearchCompleteState::btnOkClick);
@@ -67,6 +70,10 @@ ResearchCompleteState::ResearchCompleteState(const RuleResearch * research, cons
 	_btnReport->setText(tr("STR_VIEW_REPORTS"));
 	_btnReport->onMouseClick((ActionHandler)&ResearchCompleteState::btnReportClick);
 	_btnReport->onKeyboardPress((ActionHandler)&ResearchCompleteState::btnReportClick, Options::keyOk);
+
+	_txtBase->setAlign(ALIGN_CENTER);
+	_txtBase->setText(base->getName());
+	_txtBase->setVisible(Options::oxceShowBaseNameInPopups);
 
 	_txtTitle->setBig();
 	_txtTitle->setAlign(ALIGN_CENTER);

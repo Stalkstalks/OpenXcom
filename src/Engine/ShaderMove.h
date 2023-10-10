@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_SHADERMOVE_H
-#define	OPENXCOM_SHADERMOVE_H
-
 #include "ShaderDraw.h"
 
 namespace OpenXcom
@@ -36,14 +33,14 @@ public:
 	typedef helper::ShaderBase<Pixel> _base;
 	friend struct helper::controler<ShaderMove<Pixel> >;
 
-	inline ShaderMove(Surface* s):
+	inline ShaderMove(SurfaceRaw<Pixel> s):
 		_base(s),
-		_move_x(s->getX()), _move_y(s->getY())
+		_move_x(0), _move_y(0)
 	{
 
 	}
 
-	inline ShaderMove(Surface* s, int move_x, int move_y):
+	inline ShaderMove(SurfaceRaw<Pixel> s, int move_x, int move_y):
 		_base(s),
 		_move_x(move_x), _move_y(move_y)
 	{
@@ -53,20 +50,6 @@ public:
 	inline ShaderMove(const ShaderMove& f):
 		_base(f),
 		_move_x(f._move_x), _move_y(f._move_y)
-	{
-
-	}
-
-	inline ShaderMove(std::vector<Pixel>& f, int max_x, int max_y):
-		_base(f, max_x, max_y),
-		_move_x(), _move_y()
-	{
-
-	}
-
-	inline ShaderMove(std::vector<Pixel>& f, int max_x, int max_y, int move_x, int move_y):
-		_base(f, max_x, max_y),
-		_move_x(move_x), _move_y(move_y)
 	{
 
 	}
@@ -101,7 +84,7 @@ struct controler<ShaderMove<Pixel> > : public controler_base<typename ShaderMove
 
 	typedef controler_base<PixelPtr, PixelRef> base_type;
 
-	controler(const ShaderMove<Pixel>& f) : base_type(f.ptr(), f.getDomain(), f.getImage(), std::make_pair(1, f.pitch()))
+	controler(const ShaderMove<Pixel>& f) : base_type(f.ptr(), f.getDomain(), f.getImage(), std::make_pair(sizeof(Pixel), f.pitch()))
 	{
 
 	}
@@ -115,7 +98,18 @@ struct controler<ShaderMove<Pixel> > : public controler_base<typename ShaderMove
  * @param s standard 8bit OpenXcom surface
  * @return
  */
-inline ShaderMove<Uint8> ShaderSurface(Surface* s)
+template<typename T>
+inline ShaderMove<T> ShaderSurface(SurfaceRaw<T> s)
+{
+	return ShaderMove<T>(s);
+}
+
+/**
+ * Create warper from Surface
+ * @param s standard 8bit OpenXcom surface
+ * @return
+ */
+inline ShaderMove<Uint8> ShaderSurface(SurfaceRaw<Uint8> s)
 {
 	return ShaderMove<Uint8>(s);
 }
@@ -127,7 +121,7 @@ inline ShaderMove<Uint8> ShaderSurface(Surface* s)
  * @param y offset on y
  * @return
  */
-inline ShaderMove<Uint8> ShaderSurface(Surface* s, int x, int y)
+inline ShaderMove<Uint8> ShaderSurface(SurfaceRaw<Uint8> s, int x, int y)
 {
 	return ShaderMove<Uint8>(s, x, y);
 }
@@ -139,11 +133,11 @@ inline ShaderMove<Uint8> ShaderSurface(Surface* s, int x, int y)
  * @param y offset on y
  * @return
  */
-inline ShaderMove<Uint8> ShaderCrop(Surface* s, int x, int y)
+inline ShaderMove<const Uint8> ShaderCrop(SurfaceCrop s, int x, int y)
 {
-	ShaderMove<Uint8> ret(s, x, y);
-	SDL_Rect* s_crop = s->getCrop();
-	if (s_crop->w && s_crop->h)
+	ShaderMove<const Uint8> ret(s.getSurface(), x, y);
+	SDL_Rect* s_crop = s.getCrop();
+	if (s_crop->w || s_crop->h)
 	{
 		GraphSubset crop(std::make_pair(s_crop->x, s_crop->x + s_crop->w), std::make_pair(s_crop->y, s_crop->y + s_crop->h));
 		ret.setDomain(crop);
@@ -157,11 +151,10 @@ inline ShaderMove<Uint8> ShaderCrop(Surface* s, int x, int y)
  * @param s standard 8bit OpenXcom surface
  * @return
  */
-inline ShaderMove<Uint8> ShaderCrop(Surface* s)
+inline ShaderMove<const Uint8> ShaderCrop(SurfaceCrop s)
 {
-	return ShaderCrop(s, s->getX(), s->getY());
+	return ShaderCrop(s, s.getX(), s.getY());
 }
 
 }//namespace OpenXcom
 
-#endif	/* OPENXCOM_SHADERMOVE_H */

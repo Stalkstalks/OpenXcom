@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,20 +21,28 @@
 #include <yaml-cpp/yaml.h>
 #include "../Engine/RNG.h"
 #include "../Engine/Exception.h"
+#include "../Engine/Logger.h"
+#include "../Mod/RuleTerrain.h"
 
 
 namespace OpenXcom
 {
 
-MapScript::MapScript() : _type(MSC_UNDEFINED), _sizeX(1), _sizeY(1), _sizeZ(0), _executionChances(100), _executions(1), _cumulativeFrequency(0), _label(0), _direction(MD_NONE), _tunnelData(0)
+MapScript::MapScript() :
+	_type(MSC_UNDEFINED), _canBeSkipped(true), _markAsReinforcementsBlock(false),
+	_verticalGroup(MT_NSROAD), _horizontalGroup(MT_EWROAD), _crossingGroup(MT_CROSSING),
+	_sizeX(1), _sizeY(1), _sizeZ(0),
+	_executionChances(100), _executions(1), _cumulativeFrequency(0), _label(0),
+	_direction(MD_NONE),
+	_tunnelData(0), _randomTerrain(), _verticalLevels()
 {
 }
 
 MapScript::~MapScript()
 {
-	for (std::vector<SDL_Rect*>::iterator i = _rects.begin(); i != _rects.end();++i)
+	for (auto* rect : _rects)
 	{
-		delete *i;
+		delete rect;
 	}
 	delete _tunnelData;
 }
@@ -45,9 +53,10 @@ MapScript::~MapScript()
  */
 void MapScript::load(const YAML::Node& node)
 {
+	std::string command;
 	if (const YAML::Node &map = node["type"])
 	{
-		std::string command = map.as<std::string>("");
+		command = map.as<std::string>("");
 		if (command == "addBlock")
 			_type = MSC_ADDBLOCK;
 		else if (command == "addLine")
@@ -146,7 +155,7 @@ void MapScript::load(const YAML::Node& node)
 			_sizeY = _sizeX;
 		}
 	}
-	
+
 	if (const YAML::Node &map = node["groups"])
 	{
 		_groups.clear();
@@ -179,7 +188,7 @@ void MapScript::load(const YAML::Node& node)
 		}
 		selectionSize = _blocks.size();
 	}
-	
+
 	_frequencies.resize(selectionSize, 1);
 	_maxUses.resize(selectionSize, -1);
 
@@ -222,47 +231,68 @@ void MapScript::load(const YAML::Node& node)
 
 	if (const YAML::Node &map = node["direction"])
 	{
-		std::string dir = map.as<std::string>("");
-		if (dir.length())
+		std::string direction = map.as<std::string>("");
+		if (!direction.empty())
 		{
-			std::transform(dir.begin(), dir.end(), dir.begin(), ::toupper);
-			if (dir.substr(0,1) == "V")
+			char dir = toupper(direction[0]);
+			switch (dir)
 			{
+			case 'V':
 				_direction = MD_VERTICAL;
-			}
-			else if (dir.substr(0,1) == "H")
-			{
+				break;
+			case 'H':
 				_direction = MD_HORIZONTAL;
-			}
-			else if (dir.substr(0,1) == "B")
-			{
+				break;
+			case 'B':
 				_direction = MD_BOTH;
-			}
-			else
-			{
-				throw Exception("direction must be [V]ertical, [H]orizontal, or [B]oth, what does " + dir + " mean?");
+				break;
+			default:
+				throw Exception("direction must be [V]ertical, [H]orizontal, or [B]oth, what does " + direction + " mean?");
 			}
 		}
 	}
 
 	if (_direction == MD_NONE)
 	{
-		if (_type == MSC_DIGTUNNEL)
+		if (_type == MSC_DIGTUNNEL || _type == MSC_ADDLINE)
 		{
-			throw Exception("no direction defined for dig tunnel command, must be [V]ertical, [H]orizontal, or [B]oth");
-		}
-		else if (_type == MSC_ADDLINE)
-		{
-			throw Exception("no direction defined for add line command, must be [V]ertical, [H]orizontal, or [B]oth");
+			throw Exception("no direction defined for " + command + " command, must be [V]ertical, [H]orizontal, or [B]oth");
 		}
 	}
 
 
+	_verticalGroup = node["verticalGroup"].as<int>(_verticalGroup);
+	_horizontalGroup = node["horizontalGroup"].as<int>(_horizontalGroup);
+	_crossingGroup = node["crossingGroup"].as<int>(_crossingGroup);
+	_canBeSkipped = node["canBeSkipped"].as<bool>(_canBeSkipped);
+	_markAsReinforcementsBlock = node["markAsReinforcementsBlock"].as<bool>(_markAsReinforcementsBlock);
 	_executionChances = node["executionChances"].as<int>(_executionChances);
 	_executions = node["executions"].as<int>(_executions);
 	_ufoName = node["UFOName"].as<std::string>(_ufoName);
+	_craftName = node["craftName"].as<std::string>(_craftName);
+	if (node["terrain"])
+	{
+		_randomTerrain.clear();
+		_randomTerrain.push_back(node["terrain"].as<std::string>());
+	}
+	_randomTerrain = node["randomTerrain"].as<std::vector<std::string> >(_randomTerrain);
 	// take no chances, don't accept negative values here.
 	_label = std::abs(node["label"].as<int>(_label));
+
+	// Load any VerticalLevels into a map if we have them
+	if (node["verticalLevels"])
+	{
+		_verticalLevels.clear();
+		for (YAML::const_iterator i = node["verticalLevels"].begin(); i != node["verticalLevels"].end(); ++i)
+		{
+			if ((*i)["type"])
+			{
+				VerticalLevel level;
+				level.load(*i);
+				_verticalLevels.push_back(level);
+			}
+		}
+	}
 }
 
 /**
@@ -276,14 +306,34 @@ void MapScript::init()
 	_frequenciesTemp.clear();
 	_maxUsesTemp.clear();
 
-	for (std::vector<int>::const_iterator i = _frequencies.begin(); i != _frequencies.end(); ++i)
+	for (int freq : _frequencies)
 	{
-		_cumulativeFrequency += *i;
+		_cumulativeFrequency += freq;
 	}
 	_blocksTemp = _blocks;
 	_groupsTemp = _groups;
 	_frequenciesTemp = _frequencies;
 	_maxUsesTemp = _maxUses;
+}
+
+/**
+ * Initializes scratch values for working in a vertical level
+ */
+void MapScript::initVerticalLevel(VerticalLevel level)
+{
+	_cumulativeFrequency = 0;
+	_blocksTemp.clear();
+	_groupsTemp.clear();
+	_frequenciesTemp.clear();
+	_maxUsesTemp.clear();
+
+	_blocks = level.levelBlocks;
+	_groups = level.levelGroups;
+	_cumulativeFrequency = std::max(_blocks.size(), _groups.size());
+	_frequenciesTemp.resize(_cumulativeFrequency, 1);
+	_maxUsesTemp.resize(_cumulativeFrequency, -1);
+	_blocksTemp = _blocks;
+	_groupsTemp = _groups;
 }
 
 /**
@@ -382,9 +432,48 @@ MapBlock *MapScript::getNextBlock(RuleTerrain *terrain)
  * Gets the name of the UFO in the case of "setUFO"
  * @return the UFO name.
  */
-std::string MapScript::getUFOName()
+std::string MapScript::getUFOName() const
 {
 	return _ufoName;
+}
+
+/**
+* Gets the name of the craft in the case of "addCraft"
+* @return the craft name.
+*/
+std::string MapScript::getCraftName()
+{
+	return _craftName;
+}
+
+/**
+ * Gets the alternate terrain list for this command.
+ * @return the vector of terrain names.
+ */
+const std::vector<std::string> &MapScript::getRandomAlternateTerrain() const
+{
+	return _randomTerrain;
+}
+
+/**
+ * Gets the vertical levels defined in a map script command
+ * @return the vector of VerticalLevels
+ */
+const std::vector<VerticalLevel> &MapScript::getVerticalLevels() const
+{
+	return _verticalLevels;
+}
+
+/**
+ * For use only with base defense maps as a special case,
+ * set _verticalLevels directly for a new MapScript
+ * @param verticalLevels the vector of VerticalLevels
+ * @param size the size of the facility whose VerticalLevels are being loaded
+ */
+void MapScript::setVerticalLevels(const std::vector<VerticalLevel> &verticalLevels, int size)
+{
+	_verticalLevels = verticalLevels;
+	_sizeX = _sizeY = size;
 }
 
 }

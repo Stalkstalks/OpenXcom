@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +16,13 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <cmath>
 #include "../fmath.h"
 #include "MiniMapView.h"
 #include "MiniMapState.h"
+#include "Pathfinding.h"
 #include "../Savegame/Tile.h"
+#include "../Savegame/BattleItem.h"
+#include "../Savegame/BattleUnit.h"
 #include "Camera.h"
 #include "../Engine/Action.h"
 #include "../Interface/Cursor.h"
@@ -29,6 +31,7 @@
 #include "../Engine/SurfaceSet.h"
 #include "../Mod/Mod.h"
 #include "../Mod/Armor.h"
+#include "../Mod/RuleInterface.h"
 #include "../Engine/Options.h"
 #include "../Engine/Screen.h"
 
@@ -48,9 +51,10 @@ const int MAX_FRAME = 2;
  * @param camera The Battlescape camera.
  * @param battleGame Pointer to the SavedBattleGame.
  */
-MiniMapView::MiniMapView(int w, int h, int x, int y, Game * game, Camera * camera, SavedBattleGame * battleGame) : InteractiveSurface(w, h, x, y), _game(game), _camera(camera), _battleGame(battleGame), _frame(0), _isMouseScrolling(false), _isMouseScrolled(false), _xBeforeMouseScrolling(0), _yBeforeMouseScrolling(0), _mouseScrollX(0), _mouseScrollY(0), _totalMouseMoveX(0), _totalMouseMoveY(0), _mouseMovedOverThreshold(false)
+MiniMapView::MiniMapView(int w, int h, int x, int y, Game * game, Camera * camera, SavedBattleGame * battleGame) : InteractiveSurface(w, h, x, y), _game(game), _camera(camera), _battleGame(battleGame), _frame(0), _isMouseScrolling(false), _isMouseScrolled(false), _xBeforeMouseScrolling(0), _yBeforeMouseScrolling(0), _mouseScrollX(0), _mouseScrollY(0), _mouseScrollingStartTime(0), _totalMouseMoveX(0), _totalMouseMoveY(0), _mouseMovedOverThreshold(false)
 {
 	_set = _game->getMod()->getSurfaceSet("SCANG.DAT");
+	_emptySpaceIndex = _game->getMod()->getInterface("minimap")->getElement("emptySpace")->color;
 }
 
 /**
@@ -66,44 +70,54 @@ void MiniMapView::draw()
 	{
 		return;
 	}
-	drawRect(0, 0, getWidth(), getHeight(), 0);
+	drawRect(0, 0, getWidth(), getHeight(), 15);
 	this->lock();
+	Surface * emptySpace = _set->getFrame(_emptySpaceIndex);
+	bool isAltPressed = _game->isAltPressed(true);
+	if (Options::isPasswordCorrect())
+	{
+		isAltPressed = !isAltPressed;
+	}
 	for (int lvl = 0; lvl <= _camera->getCenterPosition().z; lvl++)
 	{
 		int py = _startY;
-		for (int y = Surface::getY(); y < getHeight() + Surface::getY(); y += CELL_HEIGHT)
+		for (int y = 0; y < getHeight(); y += CELL_HEIGHT)
 		{
 			int px = _startX;
-			for (int x = Surface::getX(); x < getWidth() + Surface::getX(); x += CELL_WIDTH)
+			for (int x = 0; x < getWidth(); x += CELL_WIDTH)
 			{
-				MapData * data = 0;
-				Tile * t = 0;
-				Position p (px, py, lvl);
-				t = _battleGame->getTile(p);
+				Position p(px, py, lvl);
+				Tile *t = _battleGame->getTile(p);
 				if (!t)
 				{
+					if (isAltPressed)
+					{
+						emptySpace->blitNShade(this, x, y, 0);
+					}
 					px++;
 					continue;
 				}
-				if (t->isDiscovered(2))
+				for (int i = O_FLOOR; i < O_MAX; i++)
 				{
-					for (int i = 0; i < 4; i++)
-					{
-						data = t->getMapData(i);
+					MapData *data = t->getMapData((TilePart)i);
 
-						Surface * s = 0;
-						if (data && data->getMiniMapIndex())
-						{
-							s = _set->getFrame (data->getMiniMapIndex()+35);
-						}
+					if (data && data->getMiniMapIndex())
+					{
+						Surface *s = _set->getFrame(data->getMiniMapIndex() + 35);
 						if (s)
 						{
-							s->blitNShade(this, x, y, t->getShade());
+							int shade = 16;
+							if (t->isDiscovered(O_FLOOR))
+							{
+								shade = t->getShade();
+								if (shade > 7) shade = 7; //vanilla
+							}
+							s->blitNShade(this, x, y, shade);
 						}
 					}
 				}
 				// alive units
-				if (t->getUnit() && t->getUnit()->getVisible())
+				if (t->getUnit() && (t->getUnit()->getVisible() || _battleGame->getBughuntMode() || _battleGame->getDebugMode()))
 				{
 					int frame = t->getUnit()->getMiniMapSpriteIndex();
 					int size = t->getUnit()->getArmor()->getSize();
@@ -111,14 +125,48 @@ void MiniMapView::draw()
 					frame += t->getPosition().x - t->getUnit()->getPosition().x;
 					frame += _frame * size * size;
 					Surface * s = _set->getFrame(frame);
-					s->blitNShade(this, x, y, 0);
+					if (size > 1 && t->getUnit()->getFaction() == FACTION_NEUTRAL)
+					{
+						s->blitNShade(this, x, y, 0, false, Pathfinding::red);
+					}
+					else
+					{
+						s->blitNShade(this, x, y, 0);
+					}
 				}
 				// perhaps (at least one) item on this tile?
-				if (t->isDiscovered(2) && !t->getInventory()->empty())
+				if (t->isDiscovered(O_FLOOR) && !t->getInventory()->empty())
 				{
 					int frame = 9 + _frame;
 					Surface * s = _set->getFrame(frame);
-					s->blitNShade(this, x, y, 0);
+					bool allHidden = true;
+					bool atLeastOnePrimed = false;
+					for (const auto* item : *t->getInventory())
+					{
+						if (!item->getRules()->isHiddenOnMinimap())
+						{
+							allHidden = false;
+							if (item->getFuseTimer() >= 0)
+							{
+								atLeastOnePrimed = true;
+								break; // no need to search further
+							}
+						}
+					}
+					if (allHidden)
+					{
+						// empty
+					}
+					else if (atLeastOnePrimed)
+					{
+						// dye red
+						s->blitNShade(this, x, y, 0, false, Pathfinding::red);
+					}
+					else
+					{
+						// vanilla
+						s->blitNShade(this, x, y, 0);
+					}
 				}
 
 				px++;
@@ -245,12 +293,12 @@ void MiniMapView::mouseClick(Action *action, State *state)
 		if (_isMouseScrolled) return;
 	}
 
-	if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	if (_game->isRightClick(action))
 	{
 		((MiniMapState*)(state))->btnOkClick(action);
 	}
 
-	if (action->getDetails()->button.button == SDL_BUTTON_LEFT)
+	if (_game->isLeftClick(action))
 	{
 		int origX = action->getRelativeXMouse() / action->getXScale();
 		int origY = action->getRelativeYMouse() / action->getYScale();
@@ -295,10 +343,13 @@ void MiniMapView::mouseOver(Action *action, State *state)
 
 		_isMouseScrolled = true;
 
-		// Set the mouse cursor back
-		SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
-		SDL_WarpMouse(_xBeforeMouseScrolling, _yBeforeMouseScrolling);
-		SDL_EventState(SDL_MOUSEMOTION, SDL_ENABLE);
+		if (Options::touchEnabled == false)
+		{
+			// Set the mouse cursor back
+			SDL_EventState(SDL_MOUSEMOTION, SDL_IGNORE);
+			SDL_WarpMouse(_xBeforeMouseScrolling, _yBeforeMouseScrolling);
+			SDL_EventState(SDL_MOUSEMOTION, SDL_ENABLE);
+		}
 
 		// Check the threshold
 		_totalMouseMoveX += action->getDetails()->motion.xrel;
@@ -341,23 +392,26 @@ void MiniMapView::mouseOver(Action *action, State *state)
 		_camera->centerOnPosition(Position(newX,newY,_camera->getViewLevel()));
 		_redraw = true;
 
-		// We don't want to look the mouse-cursor jumping :)
-		if (Options::battleDragScrollInvert)
+		if (Options::touchEnabled == false)
 		{
-			action->getDetails()->motion.x = _xBeforeMouseScrolling;
-			action->getDetails()->motion.y = _yBeforeMouseScrolling;
-		}
-		else
-		{
-			Position delta(-scrollX, -scrollY, 0);
-			int barWidth = _game->getScreen()->getCursorLeftBlackBand();
-			int barHeight = _game->getScreen()->getCursorTopBlackBand();
-			int cursorX = _cursorPosition.x + delta.x;
-			int cursorY =_cursorPosition.y + delta.y;
-			_cursorPosition.x = std::min((int)Round((getX() + getWidth()) * action->getXScale()) + barWidth, std::max((int)Round(getX() * action->getXScale()) + barWidth, cursorX));
-			_cursorPosition.y = std::min((int)Round((getY() + getHeight()) * action->getYScale()) + barHeight, std::max((int)Round(getY() * action->getYScale()) + barHeight, cursorY));
-			action->getDetails()->motion.x = _cursorPosition.x;
-			action->getDetails()->motion.y = _cursorPosition.y;
+			// We don't want to see the mouse-cursor jumping :)
+			if (Options::battleDragScrollInvert)
+			{
+				action->getDetails()->motion.x = _xBeforeMouseScrolling;
+				action->getDetails()->motion.y = _yBeforeMouseScrolling;
+			}
+			else
+			{
+				Position delta(-scrollX, -scrollY, 0);
+				int barWidth = _game->getScreen()->getCursorLeftBlackBand();
+				int barHeight = _game->getScreen()->getCursorTopBlackBand();
+				int cursorX = _cursorPosition.x + delta.x;
+				int cursorY =_cursorPosition.y + delta.y;
+				_cursorPosition.x = Clamp(cursorX, (int)Round(getX() * action->getXScale()) + barWidth, (int)Round((getX() + getWidth()) * action->getXScale()) + barWidth);
+				_cursorPosition.y = Clamp(cursorY, (int)Round(getY() * action->getYScale()) + barHeight, (int)Round((getY() + getHeight()) * action->getYScale()) + barHeight);
+				action->getDetails()->motion.x = _cursorPosition.x;
+				action->getDetails()->motion.y = _cursorPosition.y;
+			}
 		}
 		_game->getCursor()->handle(action);
 	}
@@ -395,9 +449,10 @@ void MiniMapView::stopScrolling(Action *action)
 	if (!Options::battleDragScrollInvert)
 	{
 		SDL_WarpMouse(_cursorPosition.x, _cursorPosition.y);
-		action->setMouseAction(_cursorPosition.x/action->getXScale(), _cursorPosition.y/action->getYScale(), _game->getScreen()->getSurface()->getX(), _game->getScreen()->getSurface()->getY());
+		action->setMouseAction(_cursorPosition.x, _cursorPosition.y, getX(), getY());
 	}
 	// reset our "mouse position stored" flag
 	_cursorPosition.z = 0;
 }
+
 }

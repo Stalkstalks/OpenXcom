@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -64,8 +64,8 @@ MedikitView::MedikitView (int w, int h, int x, int y, Game * game, BattleUnit *u
 void MedikitView::draw()
 {
 	SurfaceSet *set = _game->getMod()->getSurfaceSet("MEDIBITS.DAT");
-	int fatal_wound = _unit->getFatalWound(_selectedPart);
-	std::wostringstream ss, ss1;
+	int fatal_wound = _unit->getFatalWound((UnitBodyPart)_selectedPart);
+	std::ostringstream ss, ss1;
 	int green = 0;
 	int red = 3;
 	if (_game->getMod()->getInterface("medikit") && _game->getMod()->getInterface("medikit")->getElement("body"))
@@ -76,10 +76,10 @@ void MedikitView::draw()
 	this->lock();
 	for (unsigned int i = 0; i < set->getTotalFrames(); i++)
 	{
-		int wound = _unit->getFatalWound(i);
+		int wound = _unit->getFatalWound((UnitBodyPart)i);
 		Surface * surface = set->getFrame (i);
 		int baseColor = wound ? red : green;
-		surface->blitNShade(this, Surface::getX(), Surface::getY(), 0, false, baseColor);
+		surface->blitNShade(this, 0, 0, 0, false, baseColor);
 	}
 	this->unlock();
 
@@ -132,13 +132,14 @@ int MedikitView::getSelectedPart() const
  */
 void MedikitView::updateSelectedPart()
 {
-	for (int i = 0; i < 6; ++i)
+	for (int i = 0; i < BODYPART_MAX; ++i)
 	{
-		if (_unit->getFatalWound(i))
+		if (_unit->getFatalWound((UnitBodyPart)i))
 		{
 			_selectedPart = i;
 			break;
 		}
 	}
 }
+
 }

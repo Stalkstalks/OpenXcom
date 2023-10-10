@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,8 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
-#include <cmath>
 #include "UnitSprite.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Mod/RuleItem.h"
@@ -25,11 +23,10 @@
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/Soldier.h"
+#include "../Savegame/SavedBattleGame.h"
 #include "../Mod/RuleInventory.h"
 #include "../Mod/Mod.h"
-#include "../Engine/ShaderDraw.h"
-#include "../Engine/ShaderMove.h"
-#include "../Engine/Options.h"
+#include "../Engine/Exception.h"
 
 namespace OpenXcom
 {
@@ -41,16 +38,18 @@ namespace OpenXcom
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-UnitSprite::UnitSprite(Surface* dest, Mod* mod, int frame, bool helmet) :
-	_unit(0), _itemA(0), _itemB(0),
+UnitSprite::UnitSprite(Surface* dest, const Mod* mod, const SavedBattleGame* save, int frame, bool helmet) :
+	_unit(0), _itemR(0), _itemL(0),
 	_unitSurface(0),
-	_itemSurface(mod->getSurfaceSet("HANDOB.PCK")),
-	_fireSurface(mod->getSurfaceSet("SMOKE.PCK")),
-	_dest(dest), _mod(mod),
+	_itemSurface(const_cast<Mod*>(mod)->getSurfaceSet("HANDOB.PCK")),
+	_fireSurface(const_cast<Mod*>(mod)->getSurfaceSet("SMOKE.PCK")),
+	_breathSurface(const_cast<Mod*>(mod)->getSurfaceSet("BREATH-1.PCK", false)),
+	_facingArrowSurface(const_cast<Mod*>(mod)->getSurfaceSet("DETBLOB.DAT")),
+	_dest(dest), _save(save), _mod(mod),
 	_part(0), _animationFrame(frame), _drawingRoutine(0),
-	_helmet(helmet), _half(false), _color(0), _colorSize(0),
+	_helmet(helmet),
 	_x(0), _y(0), _shade(0), _burn(0),
-	_scriptWorkRef()
+	_mask(0, 0)
 {
 
 }
@@ -66,33 +65,15 @@ UnitSprite::~UnitSprite()
 namespace
 {
 
-struct ColorReplace
-{
-	static inline void loop(Uint8& dest, const Uint8& src, const Uint8& over, int burn, int shade)
-	{
-		const Uint8 temp = (src & helper::ColorShade) + over;
-		helper::BurnShade::func(dest, temp, burn, shade);
-	}
+/**
+ * Placeholder for surface index for body part not used by normal OpenXcom.
+ */
+const int InvalidSpriteIndex = -256;
 
-	static inline void func(Uint8& dest, const Uint8& src, const std::pair<Uint8, Uint8> *color, int size, int burn, int shade)
-	{
-		if (src)
-		{
-			const int group = (src & helper::ColorGroup);
-			for (int i = 0; i < size; ++i)
-			{
-				if (group == color[i].first)
-				{
-					loop(dest, src, color[i].second, burn, shade);
-					return;
-				}
-			}
-			loop(dest, 0, src, burn, shade);
-		}
-	}
-};
-
-BattleItem *getIfVisible(BattleItem *item)
+/**
+ * Get item if can be visible on sprite.
+ */
+const BattleItem *getIfVisible(const BattleItem *item)
 {
 	if (item && (!item->getRules()->isFixed() || item->getRules()->getFixedShow()))
 	{
@@ -108,9 +89,24 @@ BattleItem *getIfVisible(BattleItem *item)
  * @param item item what we want draw.
  * @return Graphic part.
  */
-void UnitSprite::selectItem(Part& p, BattleItem *item, int dir)
+void UnitSprite::selectItem(Part& p, const BattleItem *item, int dir)
 {
-	p.src = _itemSurface->getFrame(item->getRules()->getHandSprite() + dir);
+	const auto* rule = item->getRules();
+	auto index = item->getRules()->getHandSprite();
+
+	//enforce compatibility with basic version
+	if (!_itemSurface->getFrame(index + dir))
+	{
+		throw Exception("Frame(s) missing in 'HANDOB.PCK' for item '" + item->getRules()->getName() + "'");
+	}
+
+	auto result = ModScript::scriptFunc2<ModScript::SelectItemSprite>(
+		rule,
+		index, dir,
+		item, _save, p.bodyPart, _animationFrame, _shade
+	);
+
+	p.src = _itemSurface->getFrame(result);
 }
 
 /**
@@ -120,18 +116,20 @@ void UnitSprite::selectItem(Part& p, BattleItem *item, int dir)
  */
 void UnitSprite::selectUnit(Part& p, int index, int dir)
 {
-	const auto &scr = _unit->getArmor()->getSpriteScript();
-	auto result = 0;
-	if(scr)
+	const auto* armor = _unit->getArmor();
+
+	//enforce compatibility with basic version
+	if (InvalidSpriteIndex != index && !_unitSurface->getFrame(index + dir))
 	{
-		scr.update(&_scriptWorkRef, _unit, p.bodyPart, _animationFrame, _shade, _burn);
-		_scriptWorkRef.shade = _shade;
-		result = _scriptWorkRef.execute(index, dir);
+		throw Exception("Frame(s) missing in '" + armor->getSpriteSheet() + "' for armor '" + armor->getType() + "'");
 	}
-	else
-	{
-		result = index + dir;
-	}
+
+	auto result = ModScript::scriptFunc2<ModScript::SelectUnitSprite>(
+		armor,
+		index, dir,
+		_unit, _save, p.bodyPart, _animationFrame, _shade
+	);
+
 	p.src = _unitSurface->getFrame(result);
 }
 
@@ -141,10 +139,18 @@ void UnitSprite::selectUnit(Part& p, int index, int dir)
  */
 void UnitSprite::blitItem(Part& item)
 {
-	if (item.src)
+	if (!item.src)
 	{
-		item.src->blitNShade(_dest, _x + item.offX, _y + item.offY, _shade, _half);
+		return;
 	}
+	ScriptWorkerBlit work;
+	BattleItem::ScriptFill(&work, (item.bodyPart == BODYPART_ITEM_RIGHTHAND ? _itemR : _itemL), _save, item.bodyPart, _animationFrame, _shade);
+
+	_dest->lock();
+
+	work.executeBlit(item.src, _dest,  _x + item.offX, _y + item.offY, _shade, _mask);
+
+	_dest->unlock();
 }
 
 /**
@@ -157,30 +163,13 @@ void UnitSprite::blitBody(Part& body)
 	{
 		return;
 	}
-	BattleUnit::ScriptFill(&_scriptWorkRef, _unit, body.bodyPart, _animationFrame, _shade, _burn);
+	ScriptWorkerBlit work;
+	BattleUnit::ScriptFill(&work, _unit, _save, body.bodyPart, _animationFrame, _shade, _burn);
+
 	_dest->lock();
-	if(_scriptWorkRef.proc)
-	{
-		_scriptWorkRef.executeBlit(body.src, _dest,  _x + body.offX, _y + body.offY, _half);
-	}
-	else
-	{
-		ShaderMove<Uint8> dest(_dest, 0, 0);
-		if (_half)
-		{
-			GraphSubset g = dest.getDomain();
-			g.beg_x = _x + body.src->getWidth() / 2;
-			dest.setDomain(g);
-		}
-		ShaderDraw<ColorReplace>(
-			dest,
-			ShaderSurface(body.src, _x + body.offX, _y + body.offY),
-			ShaderScalar(_color),
-			ShaderScalar(_colorSize),
-			ShaderScalar(_burn),
-			ShaderScalar(_shade)
-		);
-	}
+
+	work.executeBlit(body.src, _dest,  _x + body.offX, _y + body.offY, _shade, _mask);
+
 	_dest->unlock();
 }
 
@@ -188,7 +177,7 @@ void UnitSprite::blitBody(Part& body)
  * Draws a unit, using the drawing rules of the unit.
  * This function is called by Map, for each unit on the screen.
  */
-void UnitSprite::draw(BattleUnit* unit, int part, int x, int y, int shade, bool half)
+void UnitSprite::draw(const BattleUnit* unit, int part, int x, int y, int shade, GraphSubset mask, bool isAltPressed)
 {
 	_x = x;
 	_y = y;
@@ -196,26 +185,22 @@ void UnitSprite::draw(BattleUnit* unit, int part, int x, int y, int shade, bool 
 	_unit = unit;
 	_part = part;
 	_shade = shade;
-	_half = half;
+	_mask = mask;
 
-	_itemA = getIfVisible(_unit->getItem("STR_RIGHT_HAND"));
-	_itemB = getIfVisible(_unit->getItem("STR_LEFT_HAND"));
-
-	_unitSurface = _mod->getSurfaceSet(_unit->getArmor()->getSpriteSheet());
-
-	_drawingRoutine = _unit->getArmor()->getDrawingRoutine();
-	if (Options::battleHairBleach)
+	if (_unit->isOut())
 	{
-		_colorSize = _unit->getRecolor().size();
-		if (_colorSize)
-		{
-			_color = &(_unit->getRecolor()[0]);
-		}
-		else
-		{
-			_color = 0;
-		}
+		// unit is drawn as an item
+		return;
 	}
+
+	auto* armor = _unit->getArmor();
+
+	_itemR = getIfVisible(_unit->getRightHandWeapon());
+	_itemL = getIfVisible(_unit->getLeftHandWeapon());
+
+	_unitSurface = const_cast<Mod*>(_mod)->getSurfaceSet(armor->getSpriteSheet());
+
+	_drawingRoutine = armor->getDrawingRoutine();
 
 	_burn = 0;
 	int overkill = _unit->getOverKillDamage();
@@ -224,11 +209,11 @@ void UnitSprite::draw(BattleUnit* unit, int part, int x, int y, int shade, bool 
 	{
 		if (overkill > maxHp)
 		{
-			_burn = 16 * (_unit->getFallingPhase() + 1) / _unit->getArmor()->getDeathFrames();
+			_burn = 16 * (_unit->getFallingPhase() + 1) / armor->getDeathFrames();
 		}
 		else
 		{
-			_burn = 16 * overkill * (_unit->getFallingPhase() + 1) / _unit->getArmor()->getDeathFrames() / maxHp;
+			_burn = 16 * overkill * (_unit->getFallingPhase() + 1) / armor->getDeathFrames() / maxHp;
 		}
 	}
 
@@ -257,13 +242,29 @@ void UnitSprite::draw(BattleUnit* unit, int part, int x, int y, int shade, bool 
 		&UnitSprite::drawRoutine19,
 		&UnitSprite::drawRoutine20,
 		&UnitSprite::drawRoutine21,
+		&UnitSprite::drawRoutine3,
 	};
 	// Call the matching routine
 	(this->*(routines[_drawingRoutine]))();
 	// draw fire
 	if (unit->getFire() > 0)
 	{
-		_fireSurface->getFrame(4 + (_animationFrame / 2) % 4)->blitNShade(_dest, _x, _y, 0);
+		_fireSurface->getFrame(4 + (_animationFrame / 2) % 4)->blitNShade(_dest, _x, _y, 0, _mask);
+	}
+	if (_breathSurface && _helmet && unit->getBreathExhaleFrame() >= 0 && armor->drawBubbles() && !unit->getFloorAbove())
+	{
+		auto tmpSurface = _breathSurface->getFrame(unit->getBreathExhaleFrame());
+		if (tmpSurface)
+		{
+			// lower the bubbles for shorter or kneeling units.
+			tmpSurface->blitNShade(_dest, _x, _y- 30 + (22 - unit->getHeight()), shade, _mask);
+		}
+	}
+	if (isAltPressed)
+	{
+		// draw unit facing indicator
+		auto tmpSurface = _facingArrowSurface->getFrame(7 + ((unit->getDirection() + 1) % 8));
+		tmpSurface->blitNShade(_dest, _x, _y, 0);
 	}
 }
 
@@ -276,7 +277,7 @@ void UnitSprite::draw(BattleUnit* unit, int part, int x, int y, int shade, bool 
  */
 void UnitSprite::drawRoutine0()
 {
-	Part torso{ BODYPART_TORSO }, legs{ BODYPART_LEGS }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemA { 0 }, itemB { 0 };
+	Part torso{ BODYPART_TORSO }, legs{ BODYPART_LEGS }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemR { BODYPART_ITEM_RIGHTHAND }, itemL { BODYPART_ITEM_LEFTHAND };
 	// magic numbers
 	const int legsStand = 16, legsKneel = 24;
 	int maleTorso, femaleTorso, die, rarm1H, larm2H, rarm2H, rarmShoot, legsFloat, torsoHandsWeaponY = 0;
@@ -298,7 +299,7 @@ void UnitSprite::drawRoutine0()
 			die = 259; // aquanaut underwater death frame
 			maleTorso = 32; // aquanaut underwater ion armour torso
 
-            if (_unit->getArmor()->getForcedTorso() == TORSO_USE_GENDER)
+			if (_unit->getArmor()->getForcedTorso() == TORSO_USE_GENDER)
 			{
 				femaleTorso = 32; // aquanaut underwater plastic aqua armour torso
 			}
@@ -356,13 +357,8 @@ void UnitSprite::drawRoutine0()
 	const int offX7[8] = { 0, 6, 8, 12, 2, -5, -5, -13 }; // for the left handed rifles (muton)
 	const int offY7[8] = { -4, -6, -1, 0, 3, 0, 1, 0 }; // for the left handed rifles (muton)
 	const int offYKneel = 4;
-	const int offXAiming = 16;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	const int offXAiming = 0;
+	const int soldierHeight = 22;
 
 	const int unitDir = _unit->getDirection();
 	const int walkPhase = _unit->getWalkingPhase();
@@ -402,7 +398,6 @@ void UnitSprite::drawRoutine0()
 	// when walking, torso(fixed sprite) has to be animated up/down
 	if (_unit->getStatus() == STATUS_WALKING)
 	{
-
 		if (_drawingRoutine == 10)
 			torsoHandsWeaponY = mutonYoffWalk[walkPhase];
 		else if (_drawingRoutine == 13 || _drawingRoutine == 14)
@@ -441,41 +436,41 @@ void UnitSprite::drawRoutine0()
 	sortRifles();
 
 	// holding an item
-	if (_itemA)
+	if (_itemR)
 	{
 		// draw handob item
-		if (_unit->getStatus() == STATUS_AIMING && _itemA->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemR->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemA, _itemA, dir);
-			itemA.offX = (offX[unitDir]);
-			itemA.offY = (offY[unitDir]);
+			selectItem(itemR, _itemR, dir);
+			itemR.offX = (offX[unitDir]);
+			itemR.offY = (offY[unitDir]);
 		}
 		else
 		{
-			selectItem(itemA, _itemA, unitDir);
+			selectItem(itemR, _itemR, unitDir);
 			if (_drawingRoutine == 10)
 			{
-				if (_itemA->getRules()->isTwoHanded())
+				if (_itemR->getRules()->isTwoHanded())
 				{
-					itemA.offX = (offX3[unitDir]);
-					itemA.offY = (offY3[unitDir]);
+					itemR.offX = (offX3[unitDir]);
+					itemR.offY = (offY3[unitDir]);
 				}
 				else
 				{
-					itemA.offX = (offX5[unitDir]);
-					itemA.offY = (offY5[unitDir]);
+					itemR.offX = (offX5[unitDir]);
+					itemR.offY = (offY5[unitDir]);
 				}
 			}
 			else
 			{
-				itemA.offX = (0);
-				itemA.offY = (0);
+				itemR.offX = (0);
+				itemR.offY = (0);
 			}
 		}
 
 		// draw arms holding the item
-		if (_itemA->getRules()->isTwoHanded())
+		if (_itemR->getRules()->isTwoHanded())
 		{
 			selectUnit(leftArm, larm2H, unitDir);
 			if (_unit->getStatus() == STATUS_AIMING)
@@ -499,70 +494,71 @@ void UnitSprite::drawRoutine0()
 		// the fixed arm(s) have to be animated up/down when walking
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
-			itemA.offY = (itemA.offY + torsoHandsWeaponY);
+			itemR.offY = (itemR.offY + torsoHandsWeaponY);
 			rightArm.offY = (torsoHandsWeaponY);
-			if (_itemA->getRules()->isTwoHanded())
+			if (_itemR->getRules()->isTwoHanded())
 				leftArm.offY = (torsoHandsWeaponY);
 		}
 	}
 	//if we are left handed or dual wielding...
-	if (_itemB)
+	if (_itemL)
 	{
 		selectUnit(leftArm, larm2H, unitDir);
-		selectItem(itemB, _itemB, unitDir);
-		if (!_itemB->getRules()->isTwoHanded())
+		selectItem(itemL, _itemL, unitDir);
+		if (!_itemL->getRules()->isTwoHanded())
 		{
 			if (_drawingRoutine == 10)
 			{
-				itemB.offX = (offX4[unitDir]);
-				itemB.offY = (offY4[unitDir]);
+				itemL.offX = (offX4[unitDir]);
+				itemL.offY = (offY4[unitDir]);
 			}
 			else
 			{
-				itemB.offX = (offX2[unitDir]);
-				itemB.offY = (offY2[unitDir]);
+				itemL.offX = (offX2[unitDir]);
+				itemL.offY = (offY2[unitDir]);
 			}
 		}
 		else
 		{
-			itemB.offX = (0);
-			itemB.offY = (0);
+			itemL.offX = (0);
+			itemL.offY = (0);
 			selectUnit(rightArm, rarm2H, unitDir);
 		}
 
-		if (_unit->getStatus() == STATUS_AIMING && _itemB->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemL->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemB, _itemB, dir);
+			selectItem(itemL, _itemL, dir);
 			if (_drawingRoutine == 10)
 			{
-				itemB.offX = (offX7[unitDir]);
-				itemB.offY = (offY7[unitDir]);
+				itemL.offX = (offX7[unitDir]);
+				itemL.offY = (offY7[unitDir]);
 			}
 			else
 			{
-				itemB.offX = (offX6[unitDir]);
-				itemB.offY = (offY6[unitDir]);
+				itemL.offX = (offX6[unitDir]);
+				itemL.offY = (offY6[unitDir]);
 			}
 			selectUnit(rightArm, rarmShoot, unitDir);
 		}
 
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
-			itemB.offY = (itemB.offY + torsoHandsWeaponY);
+			itemL.offY = (itemL.offY + torsoHandsWeaponY);
 			leftArm.offY = (torsoHandsWeaponY);
-			if (_itemB->getRules()->isTwoHanded())
+			if (_itemL->getRules()->isTwoHanded())
 				rightArm.offY = (torsoHandsWeaponY);
 		}
 	}
 	// offset everything but legs when kneeled
 	if (_unit->isKneeled())
 	{
-		leftArm.offY = (offYKneel);
-		rightArm.offY = (offYKneel);
-		torso.offY = (offYKneel);
-		itemA.offY = (itemA.offY + offYKneel);
-		itemB.offY = (itemB.offY + offYKneel);
+		int offsetTFTD = (_drawingRoutine == 13) ? 1 : 0; // tftd torsos are stubby.
+		leftArm.offY = (offYKneel + offsetTFTD);
+		rightArm.offY = (offYKneel + offsetTFTD);
+		torso.offY = (offYKneel + offsetTFTD);
+		itemR.offY = (itemR.offY + offYKneel + offsetTFTD);
+		itemL.offY = (itemL.offY + offYKneel + offsetTFTD);
 	}
 	else if (_unit->getStatus() != STATUS_WALKING)
 	{
@@ -572,13 +568,13 @@ void UnitSprite::drawRoutine0()
 	}
 
 	// items are calculated for soldier height (22) - some aliens are smaller, so item is drawn lower.
-	if (itemA)
+	if (itemR)
 	{
-		itemA.offY = (itemA.offY + (22 - _unit->getStandHeight()));
+		itemR.offY = (itemR.offY + (soldierHeight - _unit->getStandHeight()));
 	}
-	if (itemB)
+	if (itemL)
 	{
-		itemB.offY = (itemB.offY + (22 - _unit->getStandHeight()));
+		itemL.offY = (itemL.offY + (soldierHeight - _unit->getStandHeight()));
 	}
 
 	if (_unit->getStatus() == STATUS_AIMING)
@@ -587,12 +583,12 @@ void UnitSprite::drawRoutine0()
 		legs.offX = (offXAiming);
 		leftArm.offX = (offXAiming);
 		rightArm.offX = (offXAiming);
-		if (itemA)
-			itemA.offX = (itemA.offX + offXAiming);
-		if (itemB)
-			itemB.offX = (itemB.offX + offXAiming);
+		if (itemR)
+			itemR.offX = (itemR.offX + offXAiming);
+		if (itemL)
+			itemL.offX = (itemL.offX + offXAiming);
 	}
-	else if (!itemA && _drawingRoutine == 10 && _unit->getStatus() == STATUS_WALKING && unitDir == 2)
+	else if (!itemR && _drawingRoutine == 10 && _unit->getStatus() == STATUS_WALKING && unitDir == 2)
 	{
 		rightArm.offX = (-6);
 	}
@@ -600,39 +596,39 @@ void UnitSprite::drawRoutine0()
 	// blit order depends on unit direction, and whether we are holding a 2 handed weapon.
 	switch (unitDir)
 	{
-	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
-	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemB); blitBody(torso); blitItem(itemA); blitBody(rightArm); break;
-	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitItem(itemB); blitItem(itemA); blitBody(rightArm); break;
+	case 0: blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemL); blitBody(torso); blitItem(itemR); blitBody(rightArm); break;
+	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitItem(itemL); blitItem(itemR); blitBody(rightArm); break;
 	case 3:
-		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
+		if (_unit->getStatus() != STATUS_AIMING  && ((_itemR && _itemR->getRules()->isTwoHanded()) || (_itemL && _itemL->getRules()->isTwoHanded())))
 		{
-			blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); blitBody(rightArm);
+			blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL); blitBody(rightArm);
 		}
 		else
 		{
-			blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB);
+			blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemR); blitItem(itemL);
 		}
 		break;
-	case 4:	blitBody(legs); blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB);	break;
+	case 4:	blitBody(legs); blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL);	break;
 	case 5:
-		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
+		if (_unit->getStatus() != STATUS_AIMING  && ((_itemR && _itemR->getRules()->isTwoHanded()) || (_itemL && _itemL->getRules()->isTwoHanded())))
 		{
-			blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB);
+			blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL);
 		}
 		else
 		{
-			blitBody(rightArm); blitBody(legs); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm);
+			blitBody(rightArm); blitBody(legs); blitItem(itemR); blitItem(itemL); blitBody(torso); blitBody(leftArm);
 		}
 		break;
-	case 6: blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(legs); blitBody(torso); blitBody(leftArm); break;
+	case 6: blitBody(rightArm); blitItem(itemR); blitItem(itemL); blitBody(legs); blitBody(torso); blitBody(leftArm); break;
 	case 7:
-		if (_unit->getStatus() != STATUS_AIMING  && ((_itemA && _itemA->getRules()->isTwoHanded()) || (_itemB && _itemB->getRules()->isTwoHanded())))
+		if (_unit->getStatus() != STATUS_AIMING  && ((_itemR && _itemR->getRules()->isTwoHanded()) || (_itemL && _itemL->getRules()->isTwoHanded())))
 		{
-			blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso);
+			blitBody(rightArm); blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(legs); blitBody(torso);
 		}
 		else
 		{
-			blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso);
+			blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso);
 		}
 		break;
 	}
@@ -644,24 +640,18 @@ void UnitSprite::drawRoutine0()
  */
 void UnitSprite::drawRoutine1()
 {
-	Part torso{ BODYPART_TORSO }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemA{ 0 }, itemB{ 0 };
+	Part torso{ BODYPART_TORSO }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemR{ BODYPART_ITEM_RIGHTHAND }, itemL{ BODYPART_ITEM_LEFTHAND };
 	// magic numbers
-	const int stand = 16, walk = 24, die = 64;
-	const int larm = 8, rarm = 0, larm2H = 67, rarm2H = 75, rarmShoot = 83, rarm1H= 91; // note that arms are switched vs "normal" sheets
-	const int yoffWalk[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // bobbing up and down
-	const int offX[8] = { 8, 10, 7, 4, -9, -11, -7, -3 }; // for the weapons
-	const int offY[8] = { -6, -3, 0, 2, 0, -4, -7, -9 }; // for the weapons
-	const int offX2[8] = { -8, 3, 7, 13, 6, -3, -5, -13 }; // for the weapons
-	const int offY2[8] = { 1, -4, -1, 0, 3, 3, 5, 0 }; // for the weapons
-	const int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
-	const int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
-	const int offXAiming = 16;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int stand = 16, walk = 24, die = 64;
+	constexpr static int larm = 8, rarm = 0, larm2H = 67, rarm2H = 75, rarmShoot = 83, rarm1H= 91; // note that arms are switched vs "normal" sheets
+	constexpr static int yoffWalk[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // bobbing up and down
+	constexpr static int offX[8] = { 8, 10, 7, 4, -9, -11, -7, -3 }; // for the weapons
+	constexpr static int offY[8] = { -6, -3, 0, 2, 0, -4, -7, -9 }; // for the weapons
+	constexpr static int offX2[8] = { -8, 3, 7, 13, 6, -3, -5, -13 }; // for the weapons
+	constexpr static int offY2[8] = { 1, -4, -1, 0, 3, 3, 5, 0 }; // for the weapons
+	constexpr static int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
+	constexpr static int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
+	constexpr static int offXAiming = 0;
 
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
@@ -690,24 +680,24 @@ void UnitSprite::drawRoutine1()
 	sortRifles();
 
 	// holding an item
-	if (_itemA)
+	if (_itemR)
 	{
 		// draw handob item
-		if (_unit->getStatus() == STATUS_AIMING && _itemA->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemR->getRules()->isTwoHanded())
 		{
 			int dir = (_unit->getDirection() + 2)%8;
-			selectItem(itemA, _itemA, dir);
-			itemA.offX = (offX[unitDir]);
-			itemA.offY = (offY[unitDir]);
+			selectItem(itemR, _itemR, dir);
+			itemR.offX = (offX[unitDir]);
+			itemR.offY = (offY[unitDir]);
 		}
 		else
 		{
-			selectItem(itemA, _itemA, unitDir);
-			itemA.offX = (0);
-			itemA.offY = (0);
+			selectItem(itemR, _itemR, unitDir);
+			itemR.offX = (0);
+			itemR.offY = (0);
 		}
 		// draw arms holding the item
-		if (_itemA->getRules()->isTwoHanded())
+		if (_itemR->getRules()->isTwoHanded())
 		{
 			selectUnit(leftArm, larm2H, unitDir);
 			if (_unit->getStatus() == STATUS_AIMING)
@@ -726,36 +716,36 @@ void UnitSprite::drawRoutine1()
 	}
 
 	//if we are left handed or dual wielding...
-	if (_itemB)
+	if (_itemL)
 	{
 		selectUnit(leftArm, larm2H, unitDir);
-		selectItem(itemB, _itemB, unitDir);
-		if (!_itemB->getRules()->isTwoHanded())
+		selectItem(itemL, _itemL, unitDir);
+		if (!_itemL->getRules()->isTwoHanded())
 		{
-			itemB.offX = (offX2[unitDir]);
-			itemB.offY = (offY2[unitDir]);
+			itemL.offX = (offX2[unitDir]);
+			itemL.offY = (offY2[unitDir]);
 		}
 		else
 		{
-			itemB.offX = (0);
-			itemB.offY = (0);
+			itemL.offX = (0);
+			itemL.offY = (0);
 			selectUnit(rightArm, rarm2H, unitDir);
 		}
 
-		if (_unit->getStatus() == STATUS_AIMING && _itemB->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemL->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemB, _itemB, dir);
-			itemB.offX = (offX3[unitDir]);
-			itemB.offY = (offY3[unitDir]);
+			selectItem(itemL, _itemL, dir);
+			itemL.offX = (offX3[unitDir]);
+			itemL.offY = (offY3[unitDir]);
 			selectUnit(rightArm, rarmShoot, unitDir);
 		}
 
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
 			leftArm.offY = (yoffWalk[walkPhase]);
-			itemB.offY = (itemB.offY + yoffWalk[walkPhase]);
-			if (_itemB->getRules()->isTwoHanded())
+			itemL.offY = (itemL.offY + yoffWalk[walkPhase]);
+			if (_itemL->getRules()->isTwoHanded())
 				rightArm.offY = (yoffWalk[walkPhase]);
 		}
 	}
@@ -771,22 +761,22 @@ void UnitSprite::drawRoutine1()
 		torso.offX = (offXAiming);
 		leftArm.offX = (offXAiming);
 		rightArm.offX = (offXAiming);
-		if (itemA)
-			itemA.offX = (itemA.offX + offXAiming);
-		if (itemB)
-			itemB.offX = (itemB.offX + offXAiming);
+		if (itemR)
+			itemR.offX = (itemR.offX + offXAiming);
+		if (itemL)
+			itemL.offX = (itemL.offX + offXAiming);
 	}
 	// blit order depends on unit direction.
 	switch (unitDir)
 	{
-	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(torso); blitBody(rightArm); break;
-	case 1: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 2: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 3:	blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 4:	blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 5:	blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
-	case 6: blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm); break;
-	case 7:	blitBody(rightArm); blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(torso); break;
+	case 0: blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 2: blitBody(leftArm); blitBody(torso); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 3: blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 4: blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 5: blitBody(rightArm); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL); break;
+	case 6: blitBody(rightArm); blitItem(itemR); blitItem(itemL); blitBody(torso); blitBody(leftArm); break;
+	case 7: blitBody(rightArm); blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(torso); break;
 	}
 }
 
@@ -795,18 +785,12 @@ void UnitSprite::drawRoutine1()
  */
 void UnitSprite::drawRoutine2()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int offX[8] = { -2, -7, -5, 0, 5, 7, 2, 0 }; // hovertank offsets
+	constexpr static int offy[8] = { -1, -3, -4, -5, -4, -3, -1, -1 }; // hovertank offsets
 
-	const int offX[8] = { -2, -7, -5, 0, 5, 7, 2, 0 }; // hovertank offsets
-	const int offy[8] = { -1, -3, -4, -5, -4, -3, -1, -1 }; // hovertank offsets
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
-	Part s{ BODYPART_BIG_TORSO + _part };
-
-	const int hoverTank = _unit->getMovementType() == MT_FLY ? 32 : 0;
+	const int hoverTank = _unit->getOriginalMovementType() == MT_FLY ? 32 : 0;
 	const int turret = _unit->getTurretType();
 
 	// draw the animated propulsion below the hwp
@@ -814,15 +798,15 @@ void UnitSprite::drawRoutine2()
 	{
 		if (_part > 0)
 		{
-			Part p{ BODYPART_BIG_PROPULSION + _part };
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
 			selectUnit(p, 104 + ((_part-1) * 8), _animationFrame % 8);
 			blitBody(p);
 		}
 		else
 		{
 			// draw nothing, can be override by script
-			Part p{ BODYPART_BIG_PROPULSION + _part };
-			selectUnit(p, -8, _animationFrame % 8);
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
+			selectUnit(p, InvalidSpriteIndex, _animationFrame % 8);
 			blitBody(p);
 		}
 	}
@@ -834,7 +818,7 @@ void UnitSprite::drawRoutine2()
 	// draw the turret, together with the last part
 	if (_part == 3 && turret != -1)
 	{
-		Part t{ BODYPART_BIG_TURRET };
+		Part t{ BODYPART_LARGE_TURRET };
 		selectUnit(t, 64 + (turret * 8), _unit->getTurretDirection());
 		int turretOffsetX = 0;
 		int turretOffsetY = -4;
@@ -851,36 +835,52 @@ void UnitSprite::drawRoutine2()
 }
 
 /**
- * Drawing routine for cyberdiscs.
+ * Drawing routine for cyberdiscs. (3)
+ * and helicopters (22)
  */
 void UnitSprite::drawRoutine3()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	Part s{ BODYPART_BIG_TORSO + _part };
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
 	// draw the animated propulsion below the hwp
-	if (_part > 0)
+	if (_drawingRoutine == 3)
 	{
-		Part p{ BODYPART_BIG_PROPULSION + _part };
-		selectUnit(p, 32 + ((_part-1) * 8), _animationFrame % 8);
-		blitBody(p);
-	}
-	else
-	{
-		// draw nothing, can be override by script
-		Part p{ BODYPART_BIG_PROPULSION + _part };
-		selectUnit(p, -8, _animationFrame % 8);
-		blitBody(p);
+		if (_part > 0)
+		{
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
+			selectUnit(p, 32 + ((_part-1) * 8), _animationFrame % 8);
+			blitBody(p);
+		}
+		else
+		{
+			// draw nothing, can be override by script
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
+			selectUnit(p, InvalidSpriteIndex, _animationFrame % 8);
+			blitBody(p);
+		}
 	}
 
 	selectUnit(s, (_part * 8), _unit->getDirection());
 
 	blitBody(s);
+
+	// draw the animated propulsion above the hwp
+	if (_drawingRoutine == 22)
+	{
+		if (_part > 0)
+		{
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
+			selectUnit(p, 32 + ((_part-1) * 8), _animationFrame % 8);
+			blitBody(p);
+		}
+		else
+		{
+			// draw nothing, can be override by script
+			Part p{ BODYPART_LARGE_PROPULSION + _part };
+			selectUnit(p, InvalidSpriteIndex, _animationFrame % 8);
+			blitBody(p);
+		}
+	}
 }
 
 /**
@@ -890,22 +890,16 @@ void UnitSprite::drawRoutine3()
  */
 void UnitSprite::drawRoutine4()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	Part s{ BODYPART_TORSO }, itemA{ 0 }, itemB{ 0 };
+	Part s{ BODYPART_TORSO }, itemR{ BODYPART_ITEM_RIGHTHAND }, itemL{ BODYPART_ITEM_LEFTHAND };
 	int stand = 0, walk = 8, die = 72;
-	const int offX[8] = { 8, 10, 7, 4, -9, -11, -7, -3 }; // for the weapons
-	const int offY[8] = { -6, -3, 0, 2, 0, -4, -7, -9 }; // for the weapons
-	const int offX2[8] = { -8, 3, 5, 12, 6, -1, -5, -13 }; // for the weapons
-	const int offY2[8] = { 1, -4, -2, 0, 3, 3, 5, 0 }; // for the weapons
-	const int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
-	const int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
-	const int standConvert[8] = { 3, 2, 1, 0, 7, 6, 5, 4 }; // array for converting stand frames for some tftd civilians
-	const int offXAiming = 16;
+	constexpr static int offX[8] = { 8, 10, 7, 4, -9, -11, -7, -3 }; // for the weapons
+	constexpr static int offY[8] = { -6, -3, 0, 2, 0, -4, -7, -9 }; // for the weapons
+	constexpr static int offX2[8] = { -8, 3, 5, 12, 6, -1, -5, -13 }; // for the weapons
+	constexpr static int offY2[8] = { 1, -4, -2, 0, 3, 3, 5, 0 }; // for the weapons
+	constexpr static int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
+	constexpr static int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
+	constexpr static int standConvert[8] = { 3, 2, 1, 0, 7, 6, 5, 4 }; // array for converting stand frames for some tftd civilians
+	constexpr static int offXAiming = 0;
 
 	if (_drawingRoutine == 17) // tftd civilian - first set
 	{
@@ -917,12 +911,6 @@ void UnitSprite::drawRoutine4()
 		stand = 140;
 		walk = 76;
 		die = 148;
-	}
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
 	}
 
 	const int unitDir = _unit->getDirection();
@@ -949,75 +937,75 @@ void UnitSprite::drawRoutine4()
 
 	sortRifles();
 
-	if (_itemA && !_itemA->getRules()->isFixed())
+	if (_itemR && !_itemR->getRules()->isFixed())
 	{
 		// draw handob item
-		if (_unit->getStatus() == STATUS_AIMING && _itemA->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemR->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemA, _itemA, dir);
-			itemA.offX = (offX[unitDir]);
-			itemA.offY = (offY[unitDir]);
+			selectItem(itemR, _itemR, dir);
+			itemR.offX = (offX[unitDir]);
+			itemR.offY = (offY[unitDir]);
 		}
 		else
 		{
-			if (_itemA->getSlot()->getId() == "STR_RIGHT_HAND")
+			if (_itemR->getSlot()->isRightHand())
 			{
-				selectItem(itemA, _itemA, unitDir);
-				itemA.offX = (0);
-				itemA.offY = (0);
+				selectItem(itemR, _itemR, unitDir);
+				itemR.offX = (0);
+				itemR.offY = (0);
 			}
 			else
 			{
-				selectItem(itemA, _itemA, unitDir);
-				itemA.offX = (offX2[unitDir]);
-				itemA.offY = (offY2[unitDir]);
+				selectItem(itemR, _itemR, unitDir);
+				itemR.offX = (offX2[unitDir]);
+				itemR.offY = (offY2[unitDir]);
 			}
 		}
 	}
 
 	//if we are dual wielding...
-	if (_itemB && !_itemB->getRules()->isFixed())
+	if (_itemL && !_itemL->getRules()->isFixed())
 	{
-		selectItem(itemB, _itemB, unitDir);
-		if (!_itemB->getRules()->isTwoHanded())
+		selectItem(itemL, _itemL, unitDir);
+		if (!_itemL->getRules()->isTwoHanded())
 		{
-			itemB.offX = (offX2[unitDir]);
-			itemB.offY = (offY2[unitDir]);
+			itemL.offX = (offX2[unitDir]);
+			itemL.offY = (offY2[unitDir]);
 		}
 		else
 		{
-			itemB.offX = (0);
-			itemB.offY = (0);
+			itemL.offX = (0);
+			itemL.offY = (0);
 		}
 
-		if (_unit->getStatus() == STATUS_AIMING && _itemB->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemL->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemB, _itemB, dir);
-			itemB.offX = (offX3[unitDir]);
-			itemB.offY = (offY3[unitDir]);
+			selectItem(itemL, _itemL, dir);
+			itemL.offX = (offX3[unitDir]);
+			itemL.offY = (offY3[unitDir]);
 		}
 	}
 
 	if (_unit->getStatus() == STATUS_AIMING)
 	{
 		s.offX = (offXAiming);
-		if (itemA)
-			itemA.offX = (itemA.offX + offXAiming);
-		if (itemB)
-			itemB.offX = (itemB.offX + offXAiming);
+		if (itemR)
+			itemR.offX = (itemR.offX + offXAiming);
+		if (itemL)
+			itemL.offX = (itemL.offX + offXAiming);
 	}
 	switch (unitDir)
 	{
-	case 0: blitItem(itemB); blitItem(itemA); blitBody(s); break;
-	case 1: blitItem(itemB); blitBody(s); blitItem(itemA); break;
-	case 2: blitBody(s); blitItem(itemB); blitItem(itemA); break;
-	case 3: blitBody(s); blitItem(itemA); blitItem(itemB); break;
-	case 4: blitBody(s); blitItem(itemA); blitItem(itemB); break;
-	case 5: blitItem(itemA); blitBody(s); blitItem(itemB); break;
-	case 6: blitItem(itemA); blitBody(s); blitItem(itemB); break;
-	case 7: blitItem(itemA); blitItem(itemB); blitBody(s); break;
+	case 0: blitItem(itemL); blitItem(itemR); blitBody(s); break;
+	case 1: blitItem(itemL); blitBody(s); blitItem(itemR); break;
+	case 2: blitBody(s); blitItem(itemL); blitItem(itemR); break;
+	case 3: blitBody(s); blitItem(itemR); blitItem(itemL); break;
+	case 4: blitBody(s); blitItem(itemR); blitItem(itemL); break;
+	case 5: blitItem(itemR); blitBody(s); blitItem(itemL); break;
+	case 6: blitItem(itemR); blitBody(s); blitItem(itemL); break;
+	case 7: blitItem(itemR); blitItem(itemL); blitBody(s); break;
 	}
 }
 
@@ -1026,13 +1014,7 @@ void UnitSprite::drawRoutine4()
  */
 void UnitSprite::drawRoutine5()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	Part s{ BODYPART_BIG_TORSO + _part };
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
 	if (_unit->getStatus() == STATUS_WALKING)
 	{
@@ -1051,28 +1033,22 @@ void UnitSprite::drawRoutine5()
  */
 void UnitSprite::drawRoutine6()
 {
-	Part torso{ BODYPART_TORSO }, legs{ BODYPART_LEGS }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemA { 0 }, itemB { 0 };
+	Part torso{ BODYPART_TORSO }, legs{ BODYPART_LEGS }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM }, itemR{ BODYPART_ITEM_RIGHTHAND }, itemL{ BODYPART_ITEM_LEFTHAND };
 	// magic numbers
-	const int Torso = 24, legsStand = 16, die = 96;
-	const int larmStand = 0, rarmStand = 8, rarm1H = 99, larm2H = 107, rarm2H = 115, rarmShoot = 123;
-	const int legsWalk = 32;
-	const int yoffWalk[8] = {3, 3, 2, 1, 0, 0, 1, 2}; // bobbing up and down
-	const int xoffWalka[8] = {0, 0, 1, 2, 3, 3, 2, 1};
-	const int xoffWalkb[8] = {0, 0, -1, -2, -3, -3, -2, -1};
-	const int yoffStand[8] = {2, 1, 1, 0, 0, 0, 0, 0};
-	const int offX[8] = { 8, 10, 5, 2, -8, -10, -5, -2 }; // for the weapons
-	const int offY[8] = { -6, -3, 0, 0, 2, -3, -7, -9 }; // for the weapons
-	const int offX2[8] = { -8, 2, 7, 13, 7, 0, -3, -15 }; // for the weapons
-	const int offY2[8] = { 1, -4, -2, 0, 3, 3, 5, 0 }; // for the weapons
-	const int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
-	const int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
-	const int offXAiming = 16;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int Torso = 24, legsStand = 16, die = 96;
+	constexpr static int larmStand = 0, rarmStand = 8, rarm1H = 99, larm2H = 107, rarm2H = 115, rarmShoot = 123;
+	constexpr static int legsWalk = 32;
+	constexpr static int yoffWalk[8] = {3, 3, 2, 1, 0, 0, 1, 2}; // bobbing up and down
+	constexpr static int xoffWalka[8] = {0, 0, 1, 2, 3, 3, 2, 1};
+	constexpr static int xoffWalkb[8] = {0, 0, -1, -2, -3, -3, -2, -1};
+	constexpr static int yoffStand[8] = {2, 1, 1, 0, 0, 0, 0, 0};
+	constexpr static int offX[8] = { 8, 10, 5, 2, -8, -10, -5, -2 }; // for the weapons
+	constexpr static int offY[8] = { -6, -3, 0, 0, 2, -3, -7, -9 }; // for the weapons
+	constexpr static int offX2[8] = { -8, 2, 7, 13, 7, 0, -3, -15 }; // for the weapons
+	constexpr static int offY2[8] = { 1, -4, -2, 0, 3, 3, 5, 0 }; // for the weapons
+	constexpr static int offX3[8] = { 0, 6, 6, 12, -4, -5, -5, -13 }; // for the left handed rifles
+	constexpr static int offY3[8] = { -4, -4, -1, 0, 5, 0, 1, 0 }; // for the left handed rifles
+	constexpr static int offXAiming = 0;
 
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
@@ -1114,30 +1090,30 @@ void UnitSprite::drawRoutine6()
 	sortRifles();
 
 	// holding an item
-	if (_itemA)
+	if (_itemR)
 	{
 		// draw handob item
-		if (_unit->getStatus() == STATUS_AIMING && _itemA->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemR->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemA, _itemA, dir);
-			itemA.offX = (offX[unitDir]);
-			itemA.offY = (offY[unitDir]);
+			selectItem(itemR, _itemR, dir);
+			itemR.offX = (offX[unitDir]);
+			itemR.offY = (offY[unitDir]);
 		}
 		else
 		{
-			selectItem(itemA, _itemA, unitDir);
-			itemA.offX = (0);
-			itemA.offY = (0);
-			if (!_itemA->getRules()->isTwoHanded())
+			selectItem(itemR, _itemR, unitDir);
+			itemR.offX = (0);
+			itemR.offY = (0);
+			if (!_itemR->getRules()->isTwoHanded())
 			{
-				itemA.offY = (yoffStand[unitDir]);
+				itemR.offY = (yoffStand[unitDir]);
 			}
 		}
 
 
 		// draw arms holding the item
-		if (_itemA->getRules()->isTwoHanded())
+		if (_itemR->getRules()->isTwoHanded())
 		{
 			selectUnit(leftArm, larm2H, unitDir);
 			if (_unit->getStatus() == STATUS_AIMING)
@@ -1158,47 +1134,47 @@ void UnitSprite::drawRoutine6()
 		// the fixed arm(s) have to be animated up/down when walking
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
-			itemA.offY = (yoffWalk[walkPhase]);
+			itemR.offY = (yoffWalk[walkPhase]);
 			rightArm.offY = (yoffWalk[walkPhase]);
-			if (_itemA->getRules()->isTwoHanded())
+			if (_itemR->getRules()->isTwoHanded())
 				leftArm.offY = (yoffWalk[walkPhase]);
 		}
 	}
 	//if we are left handed or dual wielding...
-	if (_itemB)
+	if (_itemL)
 	{
 		selectUnit(leftArm, larm2H, unitDir);
-		selectItem(itemB, _itemB, unitDir);
-		if (!_itemB->getRules()->isTwoHanded())
+		selectItem(itemL, _itemL, unitDir);
+		if (!_itemL->getRules()->isTwoHanded())
 		{
-			itemB.offX = (offX2[unitDir]);
-			itemB.offY = (offY2[unitDir]);
+			itemL.offX = (offX2[unitDir]);
+			itemL.offY = (offY2[unitDir]);
 		}
 		else
 		{
-			itemB.offX = (0);
-			itemB.offY = (0);
-			if (!_itemB->getRules()->isTwoHanded())
+			itemL.offX = (0);
+			itemL.offY = (0);
+			if (!_itemL->getRules()->isTwoHanded())
 			{
-				itemB.offY = (yoffStand[unitDir]);
+				itemL.offY = (yoffStand[unitDir]);
 			}
 			selectUnit(rightArm, rarm2H, unitDir);
 		}
 
-		if (_unit->getStatus() == STATUS_AIMING && _itemB->getRules()->isTwoHanded())
+		if (_unit->getStatus() == STATUS_AIMING && _itemL->getRules()->isTwoHanded())
 		{
 			int dir = (unitDir + 2)%8;
-			selectItem(itemB, _itemB, dir);
-			itemB.offX = (offX3[unitDir]);
-			itemB.offY = (offY3[unitDir]);
+			selectItem(itemL, _itemL, dir);
+			itemL.offX = (offX3[unitDir]);
+			itemL.offY = (offY3[unitDir]);
 			selectUnit(rightArm, rarmShoot, unitDir);
 		}
 
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
 			leftArm.offY = (yoffWalk[walkPhase]);
-			itemB.offY = (offY2[unitDir] + yoffWalk[walkPhase]);
-			if (_itemB->getRules()->isTwoHanded())
+			itemL.offY = (offY2[unitDir] + yoffWalk[walkPhase]);
+			if (_itemL->getRules()->isTwoHanded())
 				rightArm.offY = (yoffWalk[walkPhase]);
 		}
 	}
@@ -1215,23 +1191,23 @@ void UnitSprite::drawRoutine6()
 		legs.offX = (offXAiming);
 		leftArm.offX = (offXAiming);
 		rightArm.offX = (offXAiming);
-		if (itemA)
-			itemA.offX = (itemA.offX + offXAiming);
-		if (itemB)
-			itemB.offX = (itemB.offX + offXAiming);
+		if (itemR)
+			itemR.offX = (itemR.offX + offXAiming);
+		if (itemL)
+			itemL.offX = (itemL.offX + offXAiming);
 	}
 
 	// blit order depends on unit direction.
 	switch (unitDir)
 	{
-	case 0: blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
-	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemB); blitBody(torso); blitItem(itemA); blitBody(rightArm); break;
-	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 3: blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemA); blitItem(itemB); break;
-	case 4:	blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
-	case 5:	blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemA); blitItem(itemB); break;
-	case 6: blitBody(rightArm); blitBody(legs); blitItem(itemA); blitItem(itemB); blitBody(torso); blitBody(leftArm); break;
-	case 7:	blitItem(itemA); blitItem(itemB); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso); break;
+	case 0: blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); break;
+	case 1: blitBody(leftArm); blitBody(legs); blitItem(itemL); blitBody(torso); blitItem(itemR); blitBody(rightArm); break;
+	case 2: blitBody(leftArm); blitBody(legs); blitBody(torso); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 3: blitBody(legs); blitBody(torso); blitBody(leftArm); blitBody(rightArm); blitItem(itemR); blitItem(itemL); break;
+	case 4: blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL); break;
+	case 5: blitBody(rightArm); blitBody(legs); blitBody(torso); blitBody(leftArm); blitItem(itemR); blitItem(itemL); break;
+	case 6: blitBody(rightArm); blitBody(legs); blitItem(itemR); blitItem(itemL); blitBody(torso); blitBody(leftArm); break;
+	case 7: blitItem(itemR); blitItem(itemL); blitBody(leftArm); blitBody(rightArm); blitBody(legs); blitBody(torso); break;
 	}
 }
 
@@ -1242,18 +1218,12 @@ void UnitSprite::drawRoutine7()
 {
 	Part torso{ BODYPART_TORSO }, legs{ BODYPART_LEGS }, leftArm{ BODYPART_LEFTARM }, rightArm{ BODYPART_RIGHTARM };
 	// magic numbers
-	const int Torso = 24, legsStand = 16, die = 224;
-	const int larmStand = 0, rarmStand = 8;
-	const int legsWalk = 48;
-	const int larmWalk = 32;
-	const int rarmWalk = 40;
-	const int yoffWalk[8] = {1, 0, -1, 0, 1, 0, -1, 0}; // bobbing up and down
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int Torso = 24, legsStand = 16, die = 224;
+	constexpr static int larmStand = 0, rarmStand = 8;
+	constexpr static int legsWalk = 48;
+	constexpr static int larmWalk = 32;
+	constexpr static int rarmWalk = 40;
+	constexpr static int yoffWalk[8] = {1, 0, -1, 0, 1, 0, -1, 0}; // bobbing up and down
 
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
@@ -1309,14 +1279,8 @@ void UnitSprite::drawRoutine8()
 {
 	Part legs{ BODYPART_TORSO };
 	// magic numbers
-	const int Body = 0, aim = 5, die = 6;
-	const int Pulsate[8] = { 0, 1, 2, 3, 4, 3, 2, 1 };
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int Body = 0, aim = 5, die = 6;
+	constexpr static int Pulsate[8] = { 0, 1, 2, 3, 4, 3, 2, 1 };
 
 	selectUnit(legs, Body, Pulsate[_animationFrame % 8]);
 
@@ -1341,13 +1305,7 @@ void UnitSprite::drawRoutine9()
 {
 	Part torso{ BODYPART_TORSO };
 	// magic numbers
-	const int Body = 0, die = 25;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int Body = 0, die = 25;
 
 	selectUnit(torso, Body, _animationFrame % 8);
 
@@ -1367,25 +1325,20 @@ void UnitSprite::drawRoutine9()
  */
 void UnitSprite::drawRoutine11()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	const int offTurretX[8] = { -2, -6, -5, 0, 5, 6, 2, 0 }; // turret offsets
-	const int offTurretYAbove[8] = { 5, 3, 0, 0, 0, 3, 5, 4 }; // turret offsets
-	const int offTurretYBelow[8] = { -12, -13, -16, -16, -16, -13, -12, -12 }; // turret offsets
+	// magic numbers
+	constexpr static int offTurretX[8] = { -2, -6, -5, 0, 5, 6, 2, 0 }; // turret offsets
+	constexpr static int offTurretYAbove[8] = { 5, 3, 0, 0, 0, 3, 5, 4 }; // turret offsets
+	constexpr static int offTurretYBelow[8] = { -11, -13, -16, -16, -16, -13, -11, -12 }; // turret offsets
 
 	int body = 0;
 	int animFrame = _unit->getWalkingPhase() % 4;
-	if (_unit->getMovementType() == MT_FLY)
+	if (_unit->getOriginalMovementType() == MT_FLY)
 	{
 		body = 128;
 		animFrame = _animationFrame % 4;
 	}
 
-	Part s{ BODYPART_BIG_TORSO + _part };
+	Part s{ BODYPART_LARGE_TORSO + _part };
 	selectUnit(s, body + (_part * 4), 16 * _unit->getDirection() + animFrame);
 	s.offY = (4);
 	blitBody(s);
@@ -1394,7 +1347,7 @@ void UnitSprite::drawRoutine11()
 	// draw the turret, overlapping all 4 parts
 	if ((_part == 3 || _part == 0) && turret != -1 && !_unit->getFloorAbove())
 	{
-		Part t{ BODYPART_BIG_TURRET };
+		Part t{ BODYPART_LARGE_TURRET };
 		selectUnit(t, 256 + (turret * 8), _unit->getTurretDirection());
 		t.offX = (offTurretX[_unit->getDirection()]);
 		if (_part == 3)
@@ -1411,13 +1364,7 @@ void UnitSprite::drawRoutine11()
  */
 void UnitSprite::drawRoutine12()
 {
-	Part s{ BODYPART_BIG_TORSO + _part };
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
 	selectUnit(s, (_part * 8), _animationFrame % 8);
 
@@ -1431,13 +1378,7 @@ void UnitSprite::drawRoutine16()
 {
 	Part s{ BODYPART_TORSO };
 	// magic numbers
-	const int die = 8;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int die = 8;
 
 	selectUnit(s, 0, _animationFrame % 8);
 
@@ -1459,13 +1400,7 @@ void UnitSprite::drawRoutine19()
 {
 	Part s{ BODYPART_TORSO };
 	// magic numbers
-	const int stand = 0, move = 8, die = 16;
-
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
+	constexpr static int stand = 0, move = 8, die = 16;
 
 	if (_unit->getStatus() == STATUS_COLLAPSING)
 	{
@@ -1474,8 +1409,7 @@ void UnitSprite::drawRoutine19()
 		blitBody(coll);
 		return;
 	}
-
-	if (_unit->getStatus() == STATUS_WALKING)
+	else if (_unit->getStatus() == STATUS_WALKING)
 	{
 		selectUnit(s, move, _unit->getDirection());
 	}
@@ -1492,13 +1426,7 @@ void UnitSprite::drawRoutine19()
  */
 void UnitSprite::drawRoutine20()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	Part s{ BODYPART_BIG_TORSO + _part };
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
 	if (_unit->getStatus() == STATUS_WALKING)
 	{
@@ -1517,13 +1445,7 @@ void UnitSprite::drawRoutine20()
  */
 void UnitSprite::drawRoutine21()
 {
-	if (_unit->isOut())
-	{
-		// unit is drawn as an item
-		return;
-	}
-
-	Part s{ BODYPART_BIG_TORSO + _part };
+	Part s{ BODYPART_LARGE_TORSO + _part };
 
 	selectUnit(s, (_part * 4), (_unit->getDirection() * 16) + (_animationFrame % 4));
 
@@ -1535,26 +1457,23 @@ void UnitSprite::drawRoutine21()
  */
 void UnitSprite::sortRifles()
 {
-	if (_itemA && _itemA->getRules()->isTwoHanded())
+	if (_itemR && _itemR->getRules()->isTwoHanded())
 	{
-		if (_itemB && _itemB->getRules()->isTwoHanded())
+		if (_itemL && _itemL->getRules()->isTwoHanded())
 		{
-			if (_unit->getActiveHand() == "STR_LEFT_HAND")
-			{
-				_itemA = _itemB;
-			}
-			_itemB = 0;
+			_itemR = _unit->getActiveHand(_itemL, _itemR);
+			_itemL = 0;
 		}
 		else if (_unit->getStatus() != STATUS_AIMING)
 		{
-			_itemB = 0;
+			_itemL = 0;
 		}
 	}
-	else if (_itemB && _itemB->getRules()->isTwoHanded())
+	else if (_itemL && _itemL->getRules()->isTwoHanded())
 	{
 		if (_unit->getStatus() != STATUS_AIMING)
 		{
-			_itemA = 0;
+			_itemR = 0;
 		}
 	}
 }

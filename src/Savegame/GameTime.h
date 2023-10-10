@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_GAMETIME_H
-#define OPENXCOM_GAMETIME_H
-
 #include <string>
 #include <yaml-cpp/yaml.h>
 
@@ -50,6 +48,8 @@ public:
 	void load(const YAML::Node& node);
 	/// Saves the time to YAML.
 	YAML::Node save() const;
+	/// Checks if it is the last day of the month.
+	bool isLastDayOfMonth();
 	/// Advances the time by 5 seconds.
 	TimeTrigger advance();
 	/// Gets the ingame second.
@@ -65,17 +65,17 @@ public:
 	/// Gets the ingame day.
 	int getDay() const;
 	// Gets a string version of the ingame day.
-	std::wstring getDayString(Language *lang) const;
+	std::string getDayString(Language *lang) const;
 	/// Gets the ingame month.
 	int getMonth() const;
 	// Gets a string version of the ingame month.
 	std::string getMonthString() const;
 	/// Gets the ingame year.
 	int getYear() const;
+	// Gets a string version of the ingame date and time.
+	std::string getFullString() const;
 	/// Gets the position of the daylight according to the ingame time.
 	double getDaylight() const;
 };
 
 }
-
-#endif

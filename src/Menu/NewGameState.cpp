@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,15 +19,17 @@
 #include "NewGameState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/ToggleTextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Geoscape/GeoscapeState.h"
 #include "../Geoscape/BuildNewBaseState.h"
+#include "../Geoscape/BaseNameState.h"
+#include "../Basescape/PlaceLiftState.h"
 #include "../Engine/Options.h"
 #include "../Savegame/SavedGame.h"
+#include "../Savegame/Base.h"
 
 namespace OpenXcom
 {
@@ -51,7 +53,27 @@ NewGameState::NewGameState()
 	_txtTitle = new Text(192, 9, 64, 20);
 	_txtIronman = new Text(90, 24, 162, 135);
 
-	_difficulty = _btnBeginner;
+	switch (_game->getMod()->getStartingDifficulty())
+	{
+	case 0:
+		_difficulty = _btnBeginner;
+		break;
+	case 1:
+		_difficulty = _btnExperienced;
+		break;
+	case 2:
+		_difficulty = _btnVeteran;
+		break;
+	case 3:
+		_difficulty = _btnGenius;
+		break;
+	case 4:
+		_difficulty = _btnSuperhuman;
+		break;
+	default:
+		_difficulty = _btnBeginner;
+		break;
+	}
 
 	// Set palette
 	setInterface("newGameMenu");
@@ -71,7 +93,7 @@ NewGameState::NewGameState()
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "newGameMenu");
 
 	_btnBeginner->setText(tr("STR_1_BEGINNER"));
 	_btnBeginner->setGroup(&_difficulty);
@@ -141,7 +163,11 @@ void NewGameState::btnOkClick(Action *)
 	{
 		diff = DIFF_SUPERHUMAN;
 	}
-	SavedGame *save = _game->getMod()->newSave();
+
+	// Reset touch flags
+	_game->resetTouchButtonFlags();
+
+	SavedGame *save = _game->getMod()->newSave(diff);
 	save->setDifficulty(diff);
 	save->setIronman(_btnIronman->getPressed());
 	_game->setSavedGame(save);
@@ -149,7 +175,29 @@ void NewGameState::btnOkClick(Action *)
 	GeoscapeState *gs = new GeoscapeState;
 	_game->setState(gs);
 	gs->init();
-	_game->pushState(new BuildNewBaseState(_game->getSavedGame()->getBases()->back(), gs->getGlobe(), true));
+
+	auto base = _game->getSavedGame()->getBases()->back();
+	if (base->getMarker() != -1)
+	{
+		// center and rotate 35 degrees down (to see the base location while typoing its name)
+		gs->getGlobe()->center(base->getLongitude(), base->getLatitude() + 0.61);
+
+		if (base->getName().empty())
+		{
+			// fixed location, custom name
+			_game->pushState(new BaseNameState(base, gs->getGlobe(), true, true));
+		}
+		else if (Options::customInitialBase)
+		{
+			// fixed location, fixed name
+			_game->pushState(new PlaceLiftState(base, gs->getGlobe(), true));
+		}
+	}
+	else
+	{
+		// custom location, custom name
+		_game->pushState(new BuildNewBaseState(base, gs->getGlobe(), true));
+	}
 }
 
 /**

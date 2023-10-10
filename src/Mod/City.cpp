@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -28,8 +28,9 @@ namespace OpenXcom
  * @param lon Longitude of the city.
  * @param lat Latitude of the city.
  */
-City::City(const std::string &name, double lon, double lat): Target(), _name(name)
+City::City(const std::string &name, double lon, double lat) : Target()
 {
+	_name = name;
 	_lon = lon;
 	_lat = lat;
 }
@@ -46,7 +47,7 @@ City::~City()
  * @param lang Language to get strings from.
  * @return Full name.
  */
-std::wstring City::getName(Language *lang) const
+std::string City::getName(Language *lang) const
 {
 	return lang->getString(_name);
 }

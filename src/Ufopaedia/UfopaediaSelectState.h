@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_UFOPAEDIASELECTSTATE_H
-#define OPENXCOM_UFOPAEDIASELECTSTATE_H
-
 #include "../Engine/State.h"
 #include "Ufopaedia.h"
 #include <string>
@@ -30,7 +27,9 @@ namespace OpenXcom
 	class Action;
 	class Window;
 	class Text;
+	class TextEdit;
 	class TextButton;
+	class ToggleTextButton;
 	class TextList;
 
 	/**
@@ -40,24 +39,34 @@ namespace OpenXcom
 	class UfopaediaSelectState : public State
 	{
 	public:
-		UfopaediaSelectState(const std::string &section);
+		UfopaediaSelectState(const std::string &section, int heightOffset, int windowOffset);
 		virtual ~UfopaediaSelectState();
-		void init();
+		void init() override;
 	protected:
 		std::string _section;
 		Window *_window;
+		TextEdit *_btnQuickSearch;
 		Text *_txtTitle;
 		TextButton *_btnOk;
+		ToggleTextButton *_btnShowOnlyNew;
 		TextList *_lstSelection;
-		ArticleDefinitionList _article_list;
+		ArticleDefinitionList _article_list, _filtered_article_list;
+		size_t _lstScroll;
+		Uint8 _colorNormal, _colorNew;
 
 		/// Handler for clicking the OK button
 		void btnOkClick(Action *action);
+		/// Handlers for Quick Search.
+		void btnQuickSearchToggle(Action *action);
+		void btnQuickSearchApply(Action *action);
 		/// Handler for clicking the selection list.
 		void lstSelectionClick(Action *action);
+		void lstSelectionClickRight(Action *action);
+		/// Handler for clicking the [Show Only New] button.
+		void btnShowOnlyNewClick(Action *action);
+		/// Handler for clicking the [Mark All As Seen] button.
+		void btnMarkAllAsSeenClick(Action *action);
 		/// load available articles into the selection list
-		void loadSelectionList();
+		void loadSelectionList(bool markAllAsSeen);
 	};
 }
-
-#endif

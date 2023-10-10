@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_INTERCEPTSTATE_H
-#define OPENXCOM_INTERCEPTSTATE_H
-
 #include <vector>
 #include "../Engine/State.h"
 
@@ -49,9 +47,10 @@ private:
 	Base *_base;
 	Target *_target;
 	std::vector<Craft*> _crafts;
+	std::vector<Craft*> _selCrafts;
 public:
 	/// Creates the Intercept state.
-	InterceptState(Globe *globe, Base *base = 0, Target *target = 0);
+	InterceptState(Globe *globe, bool useCustomSound, Base *base = 0, Target *target = 0);
 	/// Cleans up the Intercept state.
 	~InterceptState();
 	/// Handler for clicking the Cancel button.
@@ -62,8 +61,8 @@ public:
 	void lstCraftsLeftClick(Action *action);
 	/// Handler for right clicking the Crafts list.
 	void lstCraftsRightClick(Action *action);
+	/// Handler for middle clicking the Crafts list.
+	void lstCraftsMiddleClick(Action *action);
 };
 
 }
-
-#endif

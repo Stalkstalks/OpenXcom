@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEINTERFACE_H
-#define OPENXCOM_RULEINTERFACE_H
-
 #include <string>
 #include <map>
 #include <yaml-cpp/yaml.h>
@@ -26,10 +24,12 @@
 namespace OpenXcom
 {
 
+class Mod;
+
 struct Element
 {
 	/// basic rect info, and 3 colors.
-	int x, y, w, h, color, color2, border;
+	int x, y, w, h, color, color2, border, custom;
 	/// defines inversion behaviour
 	bool TFTDMode;
 };
@@ -40,7 +40,10 @@ private:
 	std::string _type;
 	std::string _palette;
 	std::string _parent;
+	std::string _backgroundImage;
+	std::string _altBackgroundImage;
 	std::string _music;
+	int _sound;
 
 	std::map <std::string, Element> _elements;
 public:
@@ -49,16 +52,21 @@ public:
 	/// Destructor.
 	~RuleInterface();
 	/// Load from YAML.
-	void load(const YAML::Node& node);
+	void load(const YAML::Node& node, Mod *mod);
 	/// Get an element.
 	Element *getElement(const std::string &id);
 	/// Get palette.
 	const std::string &getPalette() const;
 	/// Get parent interface rule.
 	const std::string &getParent() const;
+	/// Get background image.
+	const std::string &getBackgroundImage() const;
+	/// Get alternative background image (for battlescape theme).
+	const std::string &getAltBackgroundImage() const;
 	/// Get music.
 	const std::string &getMusic() const;
+	/// Get sound.
+	int getSound() const;
 };
 
 }
-#endif

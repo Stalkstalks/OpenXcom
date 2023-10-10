@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,6 +19,13 @@
 #include <algorithm>
 #include "RuleBaseFacility.h"
 #include "Mod.h"
+#include "MapScript.h"
+#include "../Battlescape/Position.h"
+#include "../Battlescape/TileEngine.h"
+#include "../Engine/Exception.h"
+#include "../Engine/Collections.h"
+#include "../Savegame/Base.h"
+
 
 namespace OpenXcom
 {
@@ -28,7 +35,17 @@ namespace OpenXcom
  * type of base facility.
  * @param type String defining the type.
  */
-RuleBaseFacility::RuleBaseFacility(const std::string &type) : _type(type), _spriteShape(-1), _spriteFacility(-1), _lift(false), _hyper(false), _mind(false), _grav(false), _size(1), _buildCost(0), _buildTime(0), _monthlyCost(0), _storage(0), _personnel(0), _aliens(0), _crafts(0), _labs(0), _workshops(0), _psiLabs(0), _radarRange(0), _radarChance(0), _defense(0), _hitRatio(0), _fireSound(0), _hitSound(0), _listOrder(0), _trainingRooms(0)
+RuleBaseFacility::RuleBaseFacility(const std::string &type, int listOrder) :
+	_type(type), _spriteShape(-1), _spriteFacility(-1), _connectorsDisabled(false),
+	_missileAttraction(100), _fakeUnderwater(-1),
+	_lift(false), _hyper(false), _mind(false), _grav(false), _mindPower(1),
+	_size(1), _buildCost(0), _refundValue(0), _buildTime(0), _monthlyCost(0),
+	_storage(0), _personnel(0), _aliens(0), _crafts(0), _labs(0), _workshops(0), _psiLabs(0),
+	_spriteEnabled(false),
+	_sightRange(0), _sightChance(0), _radarRange(0), _radarChance(0),
+	_defense(0), _hitRatio(0), _fireSound(0), _hitSound(0), _placeSound(-1), _ammoNeeded(1), _listOrder(listOrder),
+	_trainingRooms(0), _maxAllowedPerBase(0), _sickBayAbsoluteBonus(0.0f), _sickBayRelativeBonus(0.0f),
+	_prisonType(0), _hangarType(-1), _rightClickActionType(0), _verticalLevels(), _removalTime(0), _canBeBuiltOver(false), _destroyedFacility(0)
 {
 }
 
@@ -45,34 +62,33 @@ RuleBaseFacility::~RuleBaseFacility()
  * @param mod Mod for the facility.
  * @param listOrder The list weight for this facility.
  */
-void RuleBaseFacility::load(const YAML::Node &node, Mod *mod, int listOrder)
+void RuleBaseFacility::load(const YAML::Node &node, Mod *mod)
 {
 	if (const YAML::Node &parent = node["refNode"])
 	{
-		load(parent, mod, listOrder);
+		load(parent, mod);
 	}
-	_type = node["type"].as<std::string>(_type);
-	_requires = node["requires"].as< std::vector<std::string> >(_requires);
-	_requiresBaseFunc = node["requiresBaseFunc"].as< std::vector<std::string> >(_requiresBaseFunc);
-	_provideBaseFunc = node["provideBaseFunc"].as< std::vector<std::string> >(_provideBaseFunc);
 
-	std::sort(_requiresBaseFunc.begin(), _requiresBaseFunc.end());
-	std::sort(_provideBaseFunc.begin(), _provideBaseFunc.end());
+	mod->loadUnorderedNames(_type, _requires, node["requires"]);
 
-	if (node["spriteShape"])
-	{
-		_spriteShape = mod->getSpriteOffset(node["spriteShape"].as<int>(_spriteShape), "BASEBITS.PCK");
-	}
-	if (node["spriteFacility"])
-	{
-		_spriteFacility = mod->getSpriteOffset(node["spriteFacility"].as<int>(_spriteFacility), "BASEBITS.PCK");
-	}
+	mod->loadBaseFunction(_type, _requiresBaseFunc, node["requiresBaseFunc"]);
+	mod->loadBaseFunction(_type, _provideBaseFunc, node["provideBaseFunc"]);
+	mod->loadBaseFunction(_type, _forbiddenBaseFunc, node["forbiddenBaseFunc"]);
+
+	mod->loadSpriteOffset(_type, _spriteShape, node["spriteShape"], "BASEBITS.PCK");
+	mod->loadSpriteOffset(_type, _spriteFacility, node["spriteFacility"], "BASEBITS.PCK");
+
+	_connectorsDisabled = node["connectorsDisabled"].as<bool>(_connectorsDisabled);
+	_fakeUnderwater = node["fakeUnderwater"].as<int>(_fakeUnderwater);
+	_missileAttraction = node["missileAttraction"].as<int>(_missileAttraction);
 	_lift = node["lift"].as<bool>(_lift);
 	_hyper = node["hyper"].as<bool>(_hyper);
 	_mind = node["mind"].as<bool>(_mind);
 	_grav = node["grav"].as<bool>(_grav);
+	_mindPower = node["mindPower"].as<int>(_mindPower);
 	_size = node["size"].as<int>(_size);
 	_buildCost = node["buildCost"].as<int>(_buildCost);
+	_refundValue = node["refundValue"].as<int>(_refundValue);
 	_buildTime = node["buildTime"].as<int>(_buildTime);
 	_monthlyCost = node["monthlyCost"].as<int>(_monthlyCost);
 	_storage = node["storage"].as<int>(_storage);
@@ -82,25 +98,34 @@ void RuleBaseFacility::load(const YAML::Node &node, Mod *mod, int listOrder)
 	_labs = node["labs"].as<int>(_labs);
 	_workshops = node["workshops"].as<int>(_workshops);
 	_psiLabs = node["psiLabs"].as<int>(_psiLabs);
+
+	_spriteEnabled = node["spriteEnabled"].as<bool>(_spriteEnabled);
+
+	_sightRange = node["sightRange"].as<int>(_sightRange);
+	_sightChance = node["sightChance"].as<int>(_sightChance);
 	_radarRange = node["radarRange"].as<int>(_radarRange);
 	_radarChance = node["radarChance"].as<int>(_radarChance);
 	_defense = node["defense"].as<int>(_defense);
 	_hitRatio = node["hitRatio"].as<int>(_hitRatio);
-	if (node["fireSound"])
-	{
-		_fireSound = mod->getSoundOffset(node["fireSound"].as<int>(_fireSound), "GEO.CAT");
-	}
-	if (node["hitSound"])
-	{
-		_hitSound = mod->getSoundOffset(node["hitSound"].as<int>(_hitSound), "GEO.CAT");
-	}
+
+	mod->loadSoundOffset(_type, _fireSound, node["fireSound"], "GEO.CAT");
+	mod->loadSoundOffset(_type, _hitSound, node["hitSound"], "GEO.CAT");
+	mod->loadSoundOffset(_type, _placeSound, node["placeSound"], "GEO.CAT");
+
+	_ammoNeeded = node["ammoNeeded"].as<int>(_ammoNeeded);
+	_ammoItemName = node["ammoItem"].as<std::string>(_ammoItemName);
 	_mapName = node["mapName"].as<std::string>(_mapName);
 	_listOrder = node["listOrder"].as<int>(_listOrder);
 	_trainingRooms = node["trainingRooms"].as<int>(_trainingRooms);
-	if (!_listOrder)
-	{
-		_listOrder = listOrder;
-	}
+	_maxAllowedPerBase = node["maxAllowedPerBase"].as<int>(_maxAllowedPerBase);
+	_manaRecoveryPerDay = node["manaRecoveryPerDay"].as<int>(_manaRecoveryPerDay);
+	_healthRecoveryPerDay = node["healthRecoveryPerDay"].as<int>(_healthRecoveryPerDay);
+	_sickBayAbsoluteBonus = node["sickBayAbsoluteBonus"].as<float>(_sickBayAbsoluteBonus);
+	_sickBayRelativeBonus = node["sickBayRelativeBonus"].as<float>(_sickBayRelativeBonus);
+	_prisonType = node["prisonType"].as<int>(_prisonType);
+	_hangarType = node["hangarType"].as<int>(_hangarType);	
+	_rightClickActionType = node["rightClickActionType"].as<int>(_rightClickActionType);
+
 	if (const YAML::Node &items = node["buildCostItems"])
 	{
 		for (YAML::const_iterator i = items.begin(); i != items.end(); ++i)
@@ -111,16 +136,139 @@ void RuleBaseFacility::load(const YAML::Node &node, Mod *mod, int listOrder)
 			cost.first = i->second["build"].as<int>(cost.first);
 			cost.second = i->second["refund"].as<int>(cost.second);
 
-			if (cost.first < cost.second)
-			{
-				cost.second = cost.first;
-			}
-			if (cost.first <= 0)
+			if (cost.first <= 0 && cost.second <= 0)
 			{
 				_buildCostItems.erase(id);
 			}
 		}
 	}
+
+	// Load any VerticalLevels into a map if we have them
+	if (node["verticalLevels"])
+	{
+		_verticalLevels.clear();
+		for (YAML::const_iterator i = node["verticalLevels"].begin(); i != node["verticalLevels"].end(); ++i)
+		{
+			if ((*i)["type"])
+			{
+				VerticalLevel level;
+				level.load(*i);
+				_verticalLevels.push_back(level);
+			}
+		}
+	}
+
+	mod->loadNames(_type, _leavesBehindOnSellNames, node["leavesBehindOnSell"]);
+	_removalTime = node["removalTime"].as<int>(_removalTime);
+	_canBeBuiltOver = node["canBeBuiltOver"].as<bool>(_canBeBuiltOver);
+	mod->loadUnorderedNames(_type, _buildOverFacilitiesNames, node["buildOverFacilities"]);
+	std::sort(_buildOverFacilities.begin(), _buildOverFacilities.end());
+
+	_storageTiles = node["storageTiles"].as<std::vector<Position> >(_storageTiles);
+	_craftSlots = node["craftSlots"].as<std::vector<Position> >(_craftSlots);		
+	_destroyedFacilityName = node["destroyedFacility"].as<std::string>(_destroyedFacilityName);
+}
+
+/**
+ * Cross link with other Rules.
+ */
+void RuleBaseFacility::afterLoad(const Mod* mod)
+{
+	mod->verifySpriteOffset(_type, _spriteShape, "BASEBITS.PCK");
+	mod->verifySpriteOffset(_type, _spriteFacility, "BASEBITS.PCK");
+	mod->verifySoundOffset(_type, _fireSound, "GEO.CAT");
+	mod->verifySoundOffset(_type, _hitSound, "GEO.CAT");
+	mod->verifySoundOffset(_type, _placeSound, "GEO.CAT");
+
+	mod->linkRule(_ammoItem, _ammoItemName);
+
+	if (!_destroyedFacilityName.empty())
+	{
+		mod->linkRule(_destroyedFacility, _destroyedFacilityName);
+		if (_destroyedFacility->getSize() != _size)
+		{
+			throw Exception("Destroyed version of a facility must have the same size as the original facility.");
+		}
+	}
+	if (_leavesBehindOnSellNames.size())
+	{
+		_leavesBehindOnSell.reserve(_leavesBehindOnSellNames.size());
+		auto first = mod->getBaseFacility(_leavesBehindOnSellNames.at(0), true);
+		if (first->getSize() == _size)
+		{
+			if (_leavesBehindOnSellNames.size() != 1)
+			{
+				throw Exception("Only one replacement facility allowed (when using the same size as the original facility).");
+			}
+			_leavesBehindOnSell.push_back(first);
+		}
+		else
+		{
+			for (const auto& n : _leavesBehindOnSellNames)
+			{
+				auto r = mod->getBaseFacility(n, true);
+				if (r->getSize() != 1)
+				{
+					throw Exception("All replacement facilities must have size=1 (when using different size as the original facility).");
+				}
+				_leavesBehindOnSell.push_back(r);
+			}
+		}
+	}
+	if (_buildOverFacilitiesNames.size())
+	{
+		mod->linkRule(_buildOverFacilities, _buildOverFacilitiesNames);
+		Collections::sortVector(_buildOverFacilities);
+	}
+	if (_mapName.empty())
+	{
+		throw Exception("Battlescape map name is missing.");
+	}
+	if (_storageTiles.size() > 0)
+	{
+		if (_storageTiles.size() != 1 || _storageTiles[0] != TileEngine::invalid)
+		{
+			const auto size = 10 * _size;
+			for (const auto& p : _storageTiles)
+			{
+				if (p.x < 0 || p.x > size ||
+					p.y < 0 || p.y > size ||
+					p.z < 0 || p.z > 8) // accurate max z will be check during map creation when we know map heigth, now we only check for very bad values.
+				{
+					if (p == TileEngine::invalid)
+					{
+						throw Exception("Invalid tile position (-1, -1, -1) can be only one in storage position list.");
+					}
+					else
+					{
+						throw Exception("Tile position (" + std::to_string(p.x) + ", " + std::to_string(p.y)+ ", " + std::to_string(p.z) + ") is outside the facility area.");
+					}
+				}
+			}
+		}
+	}
+
+	if (_crafts > 1 && _craftSlots.size() != _crafts)
+	{
+		Log(LOG_ERROR) << _type << " can hold " << _crafts << " crafts but has " << _craftSlots.size() << " craft-slots defined. Will draw all crafts in the center.";
+		while (_craftSlots.size() < _crafts)
+		{
+			Position pos;
+			_craftSlots.push_back(pos);
+		}
+	}
+
+	if (_crafts == 1 && _craftSlots.size() > 1)
+	{
+		_crafts = _craftSlots.size();
+		Log(LOG_WARNING) << _type << " had more craft-slots than craft-capacity. Increased craft-capacity to match craft-slots.";
+	}
+
+	if (_craftSlots.empty()){ 
+		_craftSlots.push_back(Position());                     
+	}
+
+	Collections::removeAll(_leavesBehindOnSellNames);
 }
 
 /**
@@ -129,7 +277,7 @@ void RuleBaseFacility::load(const YAML::Node &node, Mod *mod, int listOrder)
  * has a unique name.
  * @return The facility's name.
  */
-std::string RuleBaseFacility::getType() const
+const std::string& RuleBaseFacility::getType() const
 {
 	return _type;
 }
@@ -144,23 +292,6 @@ const std::vector<std::string> &RuleBaseFacility::getRequirements() const
 	return _requires;
 }
 
-/**
- * Gets the list of required functions in base to build thins building.
- * @return List of function IDs.
- */
-const std::vector<std::string> &RuleBaseFacility::getRequireBaseFunc() const
-{
-	return _requiresBaseFunc;
-}
-
-/**
- * Get the list of provided functions by this building.
- * @return List of function IDs.
- */
-const std::vector<std::string> &RuleBaseFacility::getProvidedBaseFunc() const
-{
-	return _provideBaseFunc;
-}
 /**
  * Gets the ID of the sprite used to draw the
  * base structure of the facility that defines its shape.
@@ -188,6 +319,31 @@ int RuleBaseFacility::getSpriteFacility() const
 int RuleBaseFacility::getSize() const
 {
 	return _size;
+}
+
+/**
+ * Is sprite over shape behavior retained for bigger facility?
+ * @return True if retained.
+ */
+bool RuleBaseFacility::getSpriteEnabled() const
+{
+	return getSize() == 1 || _spriteEnabled;
+}
+
+/**
+ * Is this facility allowed for a given type of base?
+ * @return True if allowed.
+ */
+bool RuleBaseFacility::isAllowedForBaseType(bool fakeUnderwaterBase) const
+{
+	if (_fakeUnderwater == -1)
+		return true;
+	else if (_fakeUnderwater == 0 && !fakeUnderwaterBase)
+		return true;
+	else if (_fakeUnderwater == 1 && fakeUnderwaterBase)
+		return true;
+
+	return false;
 }
 
 /**
@@ -222,6 +378,15 @@ bool RuleBaseFacility::isMindShield() const
 }
 
 /**
+ * Gets the mind shield power.
+ * @return Mind shield power.
+ */
+int RuleBaseFacility::getMindShieldPower() const
+{
+	return _mindPower;
+}
+
+/**
  * Checks if this facility has a grav shield,
  * which doubles base defense's fire ratio.
  * @return True if it has a grav shield.
@@ -239,6 +404,16 @@ bool RuleBaseFacility::isGravShield() const
 int RuleBaseFacility::getBuildCost() const
 {
 	return _buildCost;
+}
+
+/**
+ * Gets the amount that is refunded when the facility
+ * is dismantled.
+ * @return The refund value.
+ */
+int RuleBaseFacility::getRefundValue() const
+{
+	return _refundValue;
 }
 
 /**
@@ -424,6 +599,126 @@ int RuleBaseFacility::getListOrder() const
 int RuleBaseFacility::getTrainingFacilities() const
 {
 	return _trainingRooms;
+}
+
+/**
+* Gets the maximum allowed number of facilities per base.
+* @return The number of facilities.
+*/
+int RuleBaseFacility::getMaxAllowedPerBase() const
+{
+	return _maxAllowedPerBase;
+}
+
+/**
+* Gets the prison type.
+* @return 0=alien containment, 1=prison, 2=animal cages, etc.
+*/
+int RuleBaseFacility::getPrisonType() const
+{
+	return _prisonType;
+}
+
+/**
+ * Gets the hangar type
+ * @return 0: garage, 1: craft hangar, 2: minisub dock, 3: rocket hangar, etc...
+ */
+int RuleBaseFacility::getHangarType() const
+{
+	return _hangarType;
+}
+
+
+/**
+* Gets the action type to perform on right click.
+* @return 0=default, 1 = prison, 2 = manufacture, 3 = research, 4 = training, 5 = psi training, 6 = soldiers, 7 = sell
+*/
+int RuleBaseFacility::getRightClickActionType() const
+{
+	return _rightClickActionType;
+}
+
+/*
+ * Gets the vertical levels for a base facility map
+ * @return the vector of VerticalLevels
+ */
+const std::vector<VerticalLevel> &RuleBaseFacility::getVerticalLevels() const
+{
+	return _verticalLevels;
+}
+
+/**
+ * Gets how long facilities left behind when this one is sold should take to build
+ * @return the number of days, -1 = from other facilities' rulesets, 0 = instant, > 0 is that many days
+ */
+int RuleBaseFacility::getRemovalTime() const
+{
+	return _removalTime;
+}
+
+/**
+ * Gets whether or not this facility can be built over
+ * @return can we build over this?
+ */
+bool RuleBaseFacility::getCanBeBuiltOver() const
+{
+	return _canBeBuiltOver;
+}
+
+/**
+ * Check if a given facility `fac` can be replaced by this facility.
+ */
+BasePlacementErrors RuleBaseFacility::getCanBuildOverOtherFacility(const RuleBaseFacility* fac) const
+{
+	if (fac->getCanBeBuiltOver() == true)
+	{
+		// the old facility allows unrestricted build-over.
+		return BPE_None;
+	}
+	else if (_buildOverFacilities.empty())
+	{
+		// the old facility does not allow unrestricted build-over and we do not have any exception list
+		return BPE_UpgradeDisallowed;
+	}
+	else if (Collections::sortVectorHave(_buildOverFacilities, fac))
+	{
+		// the old facility is on the exception list
+		return BPE_None;
+	}
+	else
+	{
+		// we have an exception list, but this facility is not on it.
+		return BPE_UpgradeRequireSpecific;
+	}
+}
+
+/**
+ * Gets the list of tile positions where to place items in this facility's storage
+ * If empty, vanilla checkerboard pattern will be used
+ * @return the list of positions
+ */
+const std::vector<Position> &RuleBaseFacility::getStorageTiles() const
+{
+	return _storageTiles;
+}
+
+/**
+ * Gets the list of positions where to place craft sprites overthis facility's sprite
+ * If empty, craft sprite will be at the center of the facility sprute
+ * @return the list of positions
+ */
+const std::vector<Position> &RuleBaseFacility::getCraftSlots() const
+{
+	return _craftSlots;
+}
+
+/*
+ * Gets the ruleset for the destroyed version of this facility.
+ * @return Facility ruleset or null.
+ */
+const RuleBaseFacility* RuleBaseFacility::getDestroyedFacility() const
+{
+	return _destroyedFacility;
 }
 
 }

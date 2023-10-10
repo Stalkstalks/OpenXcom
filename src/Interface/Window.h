@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_WINDOW_H
-#define OPENXCOM_WINDOW_H
-
 #include "../Engine/Surface.h"
 
 namespace OpenXcom
@@ -44,13 +42,15 @@ class Window : public Surface
 private:
 	static const double POPUP_SPEED;
 	int _dx, _dy;
-	Surface *_bg;
+	const Surface *_bg;
 	Uint8 _color;
 	WindowPopup _popup;
 	double _popupStep;
 	Timer *_timer;
 	State *_state;
 	bool _contrast, _screen, _thinBorder;
+	Uint8 _innerColor;
+	bool _mute;
 public:
 	static Sound *soundPopup[3];
 	/// Creates a new window with the specified size and position.
@@ -58,27 +58,29 @@ public:
 	/// Cleans up the window.
 	~Window();
 	/// Sets the background surface.
-	void setBackground(Surface *bg);
+	void setBackground(const Surface *bg);
 	/// Sets the border color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the border color.
 	Uint8 getColor() const;
 	/// Sets the high contrast color setting.
-	void setHighContrast(bool contrast);
+	void setHighContrast(bool contrast) override;
 	/// Handles the timers.
-	void think();
+	void think() override;
 	/// Popups the window.
 	void popup();
 	/// Draws the window.
-	void draw();
+	void draw() override;
 	/// sets the X delta.
 	void setDX(int dx);
 	/// sets the Y delta.
 	void setDY(int dy);
 	/// Give this window a thin border.
 	void setThinBorder();
+	/// Give this window a custom inner color.
+	void setInnerColor(Uint8 innerColor);
+	/// Mute the window.
+	void mute() { _mute = true; }
 };
 
 }
-
-#endif

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_RULEINVENTORY_H
-#define OPENXCOM_RULEINVENTORY_H
-
 #include <string>
 #include <vector>
 #include <map>
@@ -35,6 +33,7 @@ struct RuleSlot
 enum InventoryType { INV_SLOT, INV_HAND, INV_GROUND };
 
 class RuleItem;
+class ScriptParserBase;
 
 /**
  * Represents a specific section of the inventory,
@@ -50,36 +49,49 @@ private:
 	std::vector<RuleSlot> _slots;
 	std::map<std::string, int> _costs;
 	int _listOrder;
+	int _hand;
 public:
 	static const int SLOT_W = 16;
 	static const int SLOT_H = 16;
 	static const int HAND_W = 2;
 	static const int HAND_H = 3;
+	static const int PAPERDOLL_W = 40;
+	static const int PAPERDOLL_H = 70;
+	static const int PAPERDOLL_X = 60;
+	static const int PAPERDOLL_Y = 65;
+
+	/// Name of class used in script.
+	static constexpr const char *ScriptName = "RuleInventory";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+
 	/// Creates a blank inventory ruleset.
-	RuleInventory(const std::string &id);
+	RuleInventory(const std::string &id, int listOrder);
 	/// Cleans up the inventory ruleset.
 	~RuleInventory();
 	/// Loads inventory data from YAML.
-	void load(const YAML::Node& node, int listOrder);
+	void load(const YAML::Node& node);
 	/// Gets the inventory's id.
-	std::string getId() const;
+	const std::string& getId() const;
 	/// Gets the X position of the inventory.
 	int getX() const;
 	/// Gets the Y position of the inventory.
 	int getY() const;
 	/// Gets the inventory type.
 	InventoryType getType() const;
+	/// Gets if this slot is right hand;
+	bool isRightHand() const;
+	/// Gets if this slot is left hand;
+	bool isLeftHand() const;
 	/// Gets all the slots in the inventory.
 	std::vector<struct RuleSlot> *getSlots();
 	/// Checks for a slot in a certain position.
 	bool checkSlotInPosition(int *x, int *y) const;
 	/// Checks if an item fits in a slot.
-	bool fitItemInSlot(RuleItem *item, int x, int y) const;
+	bool fitItemInSlot(const RuleItem *item, int x, int y) const;
 	/// Gets a certain cost in the inventory.
-	int getCost(RuleInventory *slot) const;
+	int getCost(const RuleInventory *slot) const;
 	int getListOrder() const;
 };
 
 }
-
-#endif

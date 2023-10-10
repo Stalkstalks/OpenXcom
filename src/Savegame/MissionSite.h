@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MISSIONSITE_H
-#define OPENXCOM_MISSIONSITE_H
-
 #include "Target.h"
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -38,35 +36,31 @@ private:
 	const RuleAlienMission *_rules;
 	const AlienDeployment *_deployment;
 	const AlienDeployment *_missionCustomDeploy;
-	int _id, _texture;
+	int _texture;
 	size_t _secondsRemaining;
 	std::string _race, _city;
 	bool _inBattlescape, _detected;
 public:
 	/// Creates a mission site.
-	MissionSite(const RuleAlienMission *rules, const AlienDeployment *deployment, const AlienDeployment *alienWeaponDeploy = 0);
+	MissionSite(const RuleAlienMission *rules, const AlienDeployment *deployment, const AlienDeployment *alienWeaponDeploy);
 	/// Cleans up the mission site.
 	~MissionSite();
 	/// Loads the mission site from YAML.
-	void load(const YAML::Node& node);
+	void load(const YAML::Node& node) override;
 	/// Saves the mission site to YAML.
-	YAML::Node save() const;
-	/// Saves the mission site's ID to YAML.
-	YAML::Node saveId() const;
+	YAML::Node save() const override;
+	/// Gets the waypoint's type.
+	std::string getType() const override;
 	/// Gets the mission site's ruleset.
 	const RuleAlienMission *getRules() const;
 	/// Gets the mission site's deployment.
 	const AlienDeployment *getDeployment() const;
 	/// Gets the optional alien weapon deployment for site.
 	const AlienDeployment *getMissionCustomDeploy() const;
-	/// Gets the mission site's ID.
-	int getId() const;
-	/// Sets the mission site's ID.
-	void setId(int id);
-	/// Gets the mission site's name.
-	std::wstring getName(Language *lang) const;
-	/// Gets the mission site's marker.
-	int getMarker() const;
+	/// Gets the mission site's marker name.
+	std::string getMarkerName() const override;
+	/// Gets the mission site's marker sprite.
+	int getMarker() const override;
 	/// Gets the seconds until this mission site expires.
 	size_t getSecondsRemaining() const;
 	/// Sets the seconds until this mission site expires.
@@ -84,15 +78,13 @@ public:
 	/// Sets the mission site's texture.
 	void setTexture(int texture);
 	/// Gets the mission site's city.
-	std::string getCity() const;
+	const std::string& getCity() const;
 	/// Sets the mission site's city.
 	void setCity(const std::string &city);
 	/// Gets the mission site's detection state.
-	bool getDetected();
+	bool getDetected() const;
 	/// Sets the mission site's detection state.
 	void setDetected(bool detected);
 };
 
 }
-
-#endif

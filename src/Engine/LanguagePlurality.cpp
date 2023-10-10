@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -29,7 +29,7 @@ namespace OpenXcom
 class OneSingular: public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new OneSingular; }
 };
 
@@ -50,7 +50,7 @@ const char *OneSingular::getSuffix(unsigned n) const
 class ZeroOneSingular : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new ZeroOneSingular; }
 };
 
@@ -71,7 +71,7 @@ const char *ZeroOneSingular::getSuffix(unsigned n) const
 class NoSingular : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new NoSingular; }
 };
 
@@ -87,7 +87,7 @@ const char *NoSingular::getSuffix(unsigned) const
 class CyrillicPlurality : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new CyrillicPlurality; }
 };
 
@@ -118,7 +118,7 @@ const char *CyrillicPlurality::getSuffix(unsigned n) const
 class CzechPlurality : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new CzechPlurality; }
 };
 
@@ -142,7 +142,7 @@ const char *CzechPlurality::getSuffix(unsigned n) const
 class PolishPlurality : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new PolishPlurality; }
 };
 
@@ -173,7 +173,7 @@ const char *PolishPlurality::getSuffix(unsigned n) const
 class RomanianPlurality : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new RomanianPlurality; }
 };
 
@@ -198,7 +198,7 @@ const char *RomanianPlurality::getSuffix(unsigned n) const
 class CroatianPlurality : public LanguagePlurality
 {
 public:
-	virtual const char *getSuffix(unsigned n) const;
+	virtual const char *getSuffix(unsigned n) const override;
 	static LanguagePlurality *create() { return new CroatianPlurality; }
 };
 
@@ -235,6 +235,7 @@ LanguagePlurality *LanguagePlurality::create(const std::string &language)
 	if (s_factoryFunctions.empty())
 	{
 		s_factoryFunctions.insert(std::make_pair("fr", &ZeroOneSingular::create));
+		s_factoryFunctions.insert(std::make_pair("fr-CA", &ZeroOneSingular::create));
 		s_factoryFunctions.insert(std::make_pair("hu", &NoSingular::create));
 		s_factoryFunctions.insert(std::make_pair("tr", &NoSingular::create));
 		s_factoryFunctions.insert(std::make_pair("cs", &CzechPlurality::create));
@@ -250,7 +251,7 @@ LanguagePlurality *LanguagePlurality::create(const std::string &language)
 		s_factoryFunctions.insert(std::make_pair("hr", &CroatianPlurality::create));
 	}
 	PFCreate creator = &OneSingular::create;
-	std::map<std::string, PFCreate>::const_iterator found = s_factoryFunctions.find(language);
+	auto found = s_factoryFunctions.find(language);
 	if (found != s_factoryFunctions.end())
 	{
 		creator = found->second;

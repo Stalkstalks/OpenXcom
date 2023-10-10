@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,60 +17,56 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Sound.h"
-#include "Exception.h"
 #include "Options.h"
 #include "Logger.h"
-#include "Language.h"
+#include "Unicode.h"
+#include "FileMap.h"
 
 namespace OpenXcom
 {
 
 /**
- * Initializes a new sound effect.
- */
-Sound::Sound() : _sound(0)
-{
-}
-
-/**
  * Deletes the loaded sound content.
  */
-Sound::~Sound()
+void Sound::UniqueSoundDeleter::operator ()(Mix_Chunk* sound)
 {
-	Mix_FreeChunk(_sound);
+	Mix_FreeChunk(sound);
+}
+
+Sound::UniqueSoundPtr Sound::NewSound(Mix_Chunk* sound)
+{
+	return Sound::UniqueSoundPtr(sound);
 }
 
 /**
  * Loads a sound file from a specified filename.
  * @param filename Filename of the sound file.
  */
-void Sound::load(const std::string &filename)
-{
-	// SDL only takes UTF-8 filenames
-	// so here's an ugly hack to match this ugly reasoning
-	std::string utf8 = Language::wstrToUtf8(Language::fsToWstr(filename));
-
-	_sound = Mix_LoadWAV(utf8.c_str());
-	if (_sound == 0)
+void Sound::load(const std::string &filename) {
+	auto rw = FileMap::getRWops(filename);
+	auto s = NewSound(Mix_LoadWAV_RW(rw, SDL_TRUE));
+	if (!s)
 	{
-		std::string err = filename + ":" + Mix_GetError();
-		throw Exception(err);
+		Log(LOG_ERROR) << "Sound::load(" << filename << "): mix error=" << Mix_GetError();
 	}
+
+	//always overwrite
+	_sound = std::move(s);
 }
 
 /**
- * Loads a sound file from a specified memory chunk.
- * @param data Pointer to the sound file in memory
- * @param size Size of the sound file in bytes.
+ * Loads a sound file from a specified rwops.
+ * @param rw SDL_RWops of the sound data.
  */
-void Sound::load(const void *data, unsigned int size)
-{
-	SDL_RWops *rw = SDL_RWFromConstMem(data, size);
-	_sound = Mix_LoadWAV_RW(rw, 1);
-	if (_sound == 0)
+void Sound::load(SDL_RWops *rw) {
+	auto s = NewSound(Mix_LoadWAV_RW(rw, SDL_TRUE));
+	if (!s)
 	{
-		throw Exception(Mix_GetError());
+		Log(LOG_ERROR) << "Sound::load(data): mix error=" << Mix_GetError();
 	}
+
+	//always overwrite
+	_sound = std::move(s);
 }
 
 /**
@@ -79,9 +75,9 @@ void Sound::load(const void *data, unsigned int size)
  */
 void Sound::play(int channel, int angle, int distance) const
  {
-	if (!Options::mute && _sound != 0)
+	if (!Options::mute && _sound)
  	{
-		int chan = Mix_PlayChannel(channel, _sound, 0);
+		int chan = Mix_PlayChannel(channel, _sound.get(), 0);
 		if (chan == -1)
 		{
 			Log(LOG_WARNING) << Mix_GetError();
@@ -112,9 +108,9 @@ void Sound::stop()
  */
 void Sound::loop()
 {
-	if (!Options::mute && _sound != 0 && Mix_Playing(3) == 0)
+	if (!Options::mute && _sound && Mix_Playing(3) == 0)
 	{
-		int chan = Mix_PlayChannel(3, _sound, -1);
+		int chan = Mix_PlayChannel(3, _sound.get(), -1);
 		if (chan == -1)
 		{
 			Log(LOG_WARNING) << Mix_GetError();

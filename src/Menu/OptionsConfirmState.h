@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONSCONFIRMSTATE_H
-#define OPENXCOM_OPTIONSCONFIRMSTATE_H
-
 #include "../Engine/State.h"
 #include "OptionsBaseState.h"
 
@@ -49,7 +47,7 @@ public:
 	/// Cleans up the Confirm Display Options state.
 	~OptionsConfirmState();
 	/// Handle timers.
-	void think();
+	void think() override;
 	/// Countdown for reverting options.
 	void countdown();
 	/// Handler for clicking the Yes button.
@@ -59,5 +57,3 @@ public:
 };
 
 }
-
-#endif

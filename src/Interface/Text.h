@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TEXT_H
-#define OPENXCOM_TEXT_H
-
-#include "../Engine/Surface.h"
+#include "../Engine/InteractiveSurface.h"
 #include <vector>
 #include <string>
-#include <stdint.h>
+#include "../Engine/Unicode.h"
 
 namespace OpenXcom
 {
@@ -39,17 +37,19 @@ enum TextVAlign { ALIGN_TOP, ALIGN_MIDDLE, ALIGN_BOTTOM };
  * to display a string of text, taking care of any required aligning
  * or wrapping.
  */
-class Text : public Surface
+class Text : public InteractiveSurface
 {
 private:
-	Font *_big, *_small, *_font;
+	Font *_big, *_small, *_font, *_fontOrig;
 	Language *_lang;
-	std::wstring _text, _wrappedText;
+	std::string _text;
+	UString _processedText;
 	std::vector<int> _lineWidth, _lineHeight;
-	bool _wrap, _invert, _contrast, _indent;
+	bool _wrap, _invert, _contrast, _indent, _scroll, _ignoreSeparators;
 	TextHAlign _align;
 	TextVAlign _valign;
 	Uint8 _color, _color2;
+	int _scrollY;
 
 	/// Processes the contained text.
 	void processText();
@@ -60,12 +60,6 @@ public:
 	Text(int width, int height, int x = 0, int y = 0);
 	/// Cleans up the text.
 	~Text();
-	/// Formats an integer value as number with separators.
-	static std::wstring formatNumber(int64_t value, const std::wstring &currency = L"");
-	/// Formats an integer value as currency.
-	static std::wstring formatFunding(int64_t funds);
-	/// Formats an integer value as percentage.
-	static std::wstring formatPercentage(int value);
 	/// Sets the text size to big.
 	void setBig();
 	/// Sets the text size to small.
@@ -73,29 +67,31 @@ public:
 	/// Gets the text's current font.
 	Font *getFont() const;
 	/// Initializes the resources for the text.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the text's string.
-	void setText(const std::wstring &text);
+	void setText(const std::string &text);
 	/// Gets the text's string.
-	std::wstring getText() const;
+	std::string getText() const;
 	/// Sets the text's wordwrap setting.
-	void setWordWrap(bool wrap, bool indent = false);
+	void setWordWrap(bool wrap, bool indent = false, bool ignoreSeparators = false);
 	/// Sets the text's color invert setting.
 	void setInvert(bool invert);
 	/// Sets the text's high contrast color setting.
-	void setHighContrast(bool contrast);
+	void setHighContrast(bool contrast) override;
 	/// Sets the text's horizontal alignment.
 	void setAlign(TextHAlign align);
 	/// Gets the text's horizontal alignment.
 	TextHAlign getAlign() const;
 	/// Sets the text's vertical alignment.
 	void setVerticalAlign(TextVAlign valign);
+	/// Gets the text's vertical alignment.
+	TextVAlign getVerticalAlign() const;
 	/// Sets the text's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the text's color.
 	Uint8 getColor() const;
 	/// Sets the text's secondary color.
-	void setSecondaryColor(Uint8 color);
+	void setSecondaryColor(Uint8 color) override;
 	/// Gets the text's secondary color.
 	Uint8 getSecondaryColor() const;
 	/// Gets the number of lines in the (wrapped, if wrapping is enabled) text
@@ -105,9 +101,11 @@ public:
 	/// Gets the rendered text's height.
 	int getTextHeight(int line = -1) const;
 	/// Draws the text.
-	void draw();
+	void draw() override;
+	/// Sets the text's scrollable setting.
+	void setScrollable(bool scroll);
+	/// Special handling for mouse presses.
+	void mousePress(Action* action, State* state) override;
 };
 
 }
-
-#endif

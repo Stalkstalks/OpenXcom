@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,10 +18,11 @@
  */
 #include "ManufactureState.h"
 #include <sstream>
+#include "../Engine/Action.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/Language.h"
-#include "../Engine/Options.h"
+#include "../Engine/LocalizedText.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -31,7 +32,11 @@
 #include "../Mod/RuleManufacture.h"
 #include "../Savegame/Production.h"
 #include "NewManufactureListState.h"
+#include "GlobalManufactureState.h"
 #include "ManufactureInfoState.h"
+#include "TechTreeViewerState.h"
+#include "../Ufopaedia/Ufopaedia.h"
+#include <algorithm>
 
 namespace OpenXcom
 {
@@ -57,7 +62,7 @@ ManufactureState::ManufactureState(Base *base) : _base(base)
 	_txtProduced = new Text(56, 18, 168, 44);
 	_txtCost = new Text(44, 27, 222, 44);
 	_txtTimeLeft = new Text(60, 27, 260, 44);
-	_lstManufacture = new TextList(288, 90, 8, 80);
+	_lstManufacture = new TextList(288, 88, 8, 80);
 
 	// Set palette
 	setInterface("manufactureMenu");
@@ -80,10 +85,12 @@ ManufactureState::ManufactureState(Base *base) : _base(base)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK17.SCR"));
+	setWindowBackground(_window, "manufactureMenu");
 
 	_btnNew->setText(tr("STR_NEW_PRODUCTION"));
 	_btnNew->onMouseClick((ActionHandler)&ManufactureState::btnNewProductionClick);
+	_btnNew->onKeyboardPress((ActionHandler)&ManufactureState::btnNewProductionClick, Options::keyToggleQuickSearch);
+	_btnNew->onKeyboardPress((ActionHandler)&ManufactureState::onCurrentGlobalProductionClick, Options::keyGeoGlobalProduction);
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ManufactureState::btnOkClick);
@@ -93,7 +100,7 @@ ManufactureState::ManufactureState(Base *base) : _base(base)
 	_txtTitle->setAlign(ALIGN_CENTER);
 	_txtTitle->setText(tr("STR_CURRENT_PRODUCTION"));
 
-	_txtFunds->setText(tr("STR_CURRENT_FUNDS").arg(Text::formatFunding(_game->getSavedGame()->getFunds())));
+	_txtFunds->setText(tr("STR_CURRENT_FUNDS").arg(Unicode::formatFunding(_game->getSavedGame()->getFunds())));
 
 	_txtItem->setText(tr("STR_ITEM"));
 
@@ -109,15 +116,16 @@ ManufactureState::ManufactureState(Base *base) : _base(base)
 	_txtTimeLeft->setText(tr("STR_DAYS_HOURS_LEFT"));
 	_txtTimeLeft->setWordWrap(true);
 
-	_lstManufacture->setColumns(5, 115, 15, 52, 56, 48);
+	_lstManufacture->setColumns(5, 114, 16, 52, 56, 48);
 	_lstManufacture->setAlign(ALIGN_RIGHT);
 	_lstManufacture->setAlign(ALIGN_LEFT, 0);
 	_lstManufacture->setSelectable(true);
 	_lstManufacture->setBackground(_window);
 	_lstManufacture->setMargin(2);
 	_lstManufacture->setWordWrap(true);
-	_lstManufacture->onMouseClick((ActionHandler)&ManufactureState::lstManufactureClick);
-	fillProductionList();
+	_lstManufacture->onMouseClick((ActionHandler)&ManufactureState::lstManufactureClickLeft, SDL_BUTTON_LEFT);
+	_lstManufacture->onMouseClick((ActionHandler)&ManufactureState::lstManufactureClickMiddle, SDL_BUTTON_MIDDLE);
+	_lstManufacture->onMousePress((ActionHandler)&ManufactureState::lstManufactureMousePress);
 }
 
 /**
@@ -135,7 +143,17 @@ ManufactureState::~ManufactureState()
 void ManufactureState::init()
 {
 	State::init();
-	fillProductionList();
+	fillProductionList(0);
+
+	if (Options::oxceManufactureScrollSpeed > 0 || Options::oxceManufactureScrollSpeedWithCtrl > 0)
+	{
+		// 140 +/- 20
+		_lstManufacture->setNoScrollArea(_txtAllocated->getX() - 40, _txtAllocated->getX());
+	}
+	else
+	{
+		_lstManufacture->setNoScrollArea(0, 0);
+	}
 }
 
 /**
@@ -145,6 +163,15 @@ void ManufactureState::init()
 void ManufactureState::btnOkClick(Action *)
 {
 	_game->popState();
+}
+
+/**
+ * Opens the Global Production UI.
+ * @param action Pointer to an action.
+ */
+void ManufactureState::onCurrentGlobalProductionClick(Action *)
+{
+	_game->pushState(new GlobalManufactureState(true));
 }
 
 /**
@@ -159,34 +186,29 @@ void ManufactureState::btnNewProductionClick(Action *)
 /**
  * Fills the list of base productions.
  */
-void ManufactureState::fillProductionList()
+void ManufactureState::fillProductionList(size_t scrl)
 {
-	const std::vector<Production *> productions(_base->getProductions());
 	_lstManufacture->clearList();
-	for (std::vector<Production *>::const_iterator iter = productions.begin(); iter != productions.end(); ++iter)
+	for (const auto* prod : _base->getProductions())
 	{
-		std::wostringstream s1;
-		s1 << (*iter)->getAssignedEngineers();
-		std::wostringstream s2;
-		if ((*iter)->getSellItems()) s2 << "$";
-		s2 << (*iter)->getAmountProduced() << "/";
-		if ((*iter)->getInfiniteAmount()) s2 << Language::utf8ToWstr("∞");
-		else s2 << (*iter)->getAmountTotal();
-		std::wostringstream s3;
-		s3 << Text::formatFunding((*iter)->getRules()->getManufactureCost());
-		std::wostringstream s4;
-		if ((*iter)->getInfiniteAmount())
+		std::ostringstream s1;
+		s1 << prod->getAssignedEngineers();
+		std::ostringstream s2;
+		s2 << prod->getAmountProduced() << "/";
+		if (prod->getInfiniteAmount()) s2 << "∞";
+		else s2 << prod->getAmountTotal();
+		if (prod->getSellItems()) s2 << " $";
+		std::ostringstream s3;
+		s3 << Unicode::formatFunding(prod->getRules()->getManufactureCost());
+		std::ostringstream s4;
+		if (prod->getInfiniteAmount())
 		{
-			s4 << Language::utf8ToWstr("∞");
+			s4 << "∞";
 		}
-		else if ((*iter)->getAssignedEngineers() > 0)
+		else if (prod->getAssignedEngineers() > 0)
 		{
-			int timeLeft = (*iter)->getAmountTotal() * (*iter)->getRules()->getManufactureTime() - (*iter)->getTimeSpent();
-			int numEffectiveEngineers = (*iter)->getAssignedEngineers();
-			if (!Options::canManufactureMoreItemsPerHour)
-			{
-				numEffectiveEngineers = std::min(numEffectiveEngineers, (*iter)->getRules()->getManufactureTime());
-			}
+			int timeLeft = prod->getAmountTotal() * prod->getRules()->getManufactureTime() - prod->getTimeSpent();
+			int numEffectiveEngineers = prod->getAssignedEngineers();
 			// ensure we round up since it takes an entire hour to manufacture any part of that hour's capacity
 			int hoursLeft = (timeLeft + numEffectiveEngineers - 1) / numEffectiveEngineers;
 			int daysLeft = hoursLeft / 24;
@@ -196,23 +218,87 @@ void ManufactureState::fillProductionList()
 		else
 		{
 
-			s4 << L"-";
+			s4 << "-";
 		}
-		_lstManufacture->addRow(5, tr((*iter)->getRules()->getName()).c_str(), s1.str().c_str(), s2.str().c_str(), s3.str().c_str(), s4.str().c_str());
+		_lstManufacture->addRow(5, tr(prod->getRules()->getName()).c_str(), s1.str().c_str(), s2.str().c_str(), s3.str().c_str(), s4.str().c_str());
 	}
 	_txtAvailable->setText(tr("STR_ENGINEERS_AVAILABLE").arg(_base->getAvailableEngineers()));
 	_txtAllocated->setText(tr("STR_ENGINEERS_ALLOCATED").arg(_base->getAllocatedEngineers()));
 	_txtSpace->setText(tr("STR_WORKSHOP_SPACE_AVAILABLE").arg(_base->getFreeWorkshops()));
+
+	if (scrl)
+		_lstManufacture->scrollTo(scrl);
 }
 
 /**
  * Opens the screen displaying production settings.
  * @param action Pointer to an action.
  */
-void ManufactureState::lstManufactureClick(Action *)
+void ManufactureState::lstManufactureClickLeft(Action *)
 {
 	const std::vector<Production*> productions(_base->getProductions());
 	_game->pushState(new ManufactureInfoState(_base, productions[_lstManufacture->getSelectedRow()]));
+}
+
+/**
+* Opens the TechTreeViewer for the corresponding topic.
+* @param action Pointer to an action.
+*/
+void ManufactureState::lstManufactureClickMiddle(Action *)
+{
+	const std::vector<Production*> productions(_base->getProductions());
+	const RuleManufacture *selectedTopic = productions[_lstManufacture->getSelectedRow()]->getRules();
+	if (_game->isCtrlPressed())
+	{
+		std::string articleId = selectedTopic->getName();
+		Ufopaedia::openArticle(_game, articleId);
+	}
+	else
+	{
+		_game->pushState(new TechTreeViewerState(0, selectedTopic));
+	}
+}
+
+/**
+ * Handles the mouse-wheels.
+ * @param action Pointer to an action.
+ */
+void ManufactureState::lstManufactureMousePress(Action *action)
+{
+	if (!_lstManufacture->isInsideNoScrollArea(action->getAbsoluteXMouse()))
+	{
+		return;
+	}
+
+	int change = Options::oxceManufactureScrollSpeed;
+	if (_game->isCtrlPressed())
+		change = Options::oxceManufactureScrollSpeedWithCtrl;
+
+	Production *selectedProject = _base->getProductions()[_lstManufacture->getSelectedRow()];
+	if (action->getDetails()->button.button == SDL_BUTTON_WHEELUP)
+	{
+		int additionalWorkShopsForItemNotWorkingOnYetRequired = 0;
+		if (selectedProject->getAssignedEngineers() == 0 && selectedProject->getTimeSpent() == 0)
+			additionalWorkShopsForItemNotWorkingOnYetRequired = selectedProject->getRules()->getRequiredSpace();
+		change = std::min(change, _base->getAvailableEngineers());
+		change = std::min(change, _base->getFreeWorkshops() - additionalWorkShopsForItemNotWorkingOnYetRequired);
+		if (change > 0)
+		{
+			selectedProject->setAssignedEngineers(selectedProject->getAssignedEngineers() + change);
+			_base->setEngineers(_base->getEngineers() - change);
+			fillProductionList(_lstManufacture->getScroll());
+		}
+	}
+	else if (action->getDetails()->button.button == SDL_BUTTON_WHEELDOWN)
+	{
+		change = std::min(change, selectedProject->getAssignedEngineers());
+		if (change > 0)
+		{
+			selectedProject->setAssignedEngineers(selectedProject->getAssignedEngineers() - change);
+			_base->setEngineers(_base->getEngineers() + change);
+			fillProductionList(_lstManufacture->getScroll());
+		}
+	}
 }
 
 }

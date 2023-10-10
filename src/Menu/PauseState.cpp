@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 #include "PauseState.h"
 #include "../Engine/Game.h"
 #include "../Mod/Mod.h"
-#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -31,6 +30,8 @@
 #include "OptionsGeoscapeState.h"
 #include "OptionsBattlescapeState.h"
 #include "../Savegame/SavedGame.h"
+#include "../Savegame/SavedBattleGame.h"
+#include "../Battlescape/BattlescapeGame.h"
 
 namespace OpenXcom
 {
@@ -77,7 +78,7 @@ PauseState::PauseState(OptionsOrigin origin) : _origin(origin)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getMod()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "pauseMenu");
 
 	_btnLoad->setText(tr("STR_LOAD_GAME"));
 	_btnLoad->onMouseClick((ActionHandler)&PauseState::btnLoadClick);
@@ -101,6 +102,10 @@ PauseState::PauseState(OptionsOrigin origin) : _origin(origin)
 	else if (origin == OPT_BATTLESCAPE)
 	{
 		_btnCancel->onKeyboardPress((ActionHandler)&PauseState::btnCancelClick, Options::keyBattleOptions);
+		if (!_game->getSavedGame()->getSavedBattle()->getBattleGame()->getStates().empty())
+		{
+			_btnOptions->setVisible(false);
+		}
 	}
 
 	_txtTitle->setAlign(ALIGN_CENTER);
@@ -109,7 +114,7 @@ PauseState::PauseState(OptionsOrigin origin) : _origin(origin)
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("pauseMenu");
 	}
 
 	if (_game->getSavedGame()->isIronman())
