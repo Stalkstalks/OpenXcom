@@ -3995,9 +3995,9 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 	int healthLossOriginal = _stats.health - _health;
 	int manaLoss = mod->getReplenishManaAfterMission() ? 0 : manaLossOriginal;
 	int healthLoss = mod->getReplenishHealthAfterMission() ? 0 : healthLossOriginal;
-  healthLoss *= 21;
+  	healthLoss *= 21;
 	healthLoss /= _stats.health;
- 	if (healthLoss < 0)
+
   	auto recovery = (int)RNG::generate((healthLossOriginal*0.5),(healthLossOriginal*1.5));
 
   //  Additional code to make leveling less grindy in tactical
@@ -4016,7 +4016,7 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 
 	if (_exp.bravery && stats->bravery < caps.bravery)
 	{
-		if (_expBravery > 1) stats->bravery += 10;
+		if (_exp.bravery > 1) stats->bravery += improveStatAlternate(iterations, stats->bravery/10, caps.bravery/10)*10;
 	}
 	if (_exp.reactions && stats->reactions < caps.reactions)
 	{
