@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,6 +19,7 @@
 #include "WarningMessage.h"
 #include <SDL.h>
 #include <string>
+#include "../fmath.h"
 #include "../Engine/Timer.h"
 #include "../Interface/Text.h"
 
@@ -93,7 +94,7 @@ void WarningMessage::initText(Font *big, Font *small, Language *lang)
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void WarningMessage::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void WarningMessage::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_text->setPalette(colors, firstcolor, ncolors);
@@ -102,11 +103,12 @@ void WarningMessage::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
 /**
  * Displays the warning message.
  * @param msg Message string.
+ * @param time How long message will be visible.
  */
-void WarningMessage::showMessage(const std::wstring &msg)
+void WarningMessage::showMessage(const std::string &msg, int time)
 {
 	_text->setText(msg);
-	_fade = 0;
+	_fade = time * 12;
 	_redraw = true;
 	setVisible(true);
 	_timer->start();
@@ -125,9 +127,9 @@ void WarningMessage::think()
  */
 void WarningMessage::fade()
 {
-	_fade++;
+	_fade--;
 	_redraw = true;
-	if (_fade == 24)
+	if (_fade == 0)
 	{
 		setVisible(false);
 		_timer->stop();
@@ -140,8 +142,8 @@ void WarningMessage::fade()
 void WarningMessage::draw()
 {
 	Surface::draw();
-	drawRect(0, 0, getWidth(), getHeight(), _color + (_fade > 12 ? 12 : _fade));
-	_text->blit(this);
+	drawRect(0, 0, getWidth(), getHeight(), _color + Clamp(24 - _fade, 0, 12));
+	_text->blit(this->getSurface());
 }
 
 }

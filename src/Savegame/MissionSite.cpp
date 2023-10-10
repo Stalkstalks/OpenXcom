@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,10 +17,9 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "MissionSite.h"
-#include <sstream>
 #include "../Engine/Language.h"
-#include "../Ruleset/RuleAlienMission.h"
-#include "../Ruleset/AlienDeployment.h"
+#include "../Mod/RuleAlienMission.h"
+#include "../Mod/AlienDeployment.h"
 
 namespace OpenXcom
 {
@@ -28,7 +27,7 @@ namespace OpenXcom
 /**
  * Initializes a mission site.
  */
-MissionSite::MissionSite(const RuleAlienMission *rules, const AlienDeployment *deployment, const AlienDeployment *alienCustomDeploy) : Target(), _rules(rules), _deployment(deployment), _missionCustomDeploy(alienCustomDeploy), _id(0), _texture(-1), _secondsRemaining(0), _inBattlescape(false)
+MissionSite::MissionSite(const RuleAlienMission *rules, const AlienDeployment *deployment, const AlienDeployment *alienCustomDeploy) : Target(), _rules(rules), _deployment(deployment), _missionCustomDeploy(alienCustomDeploy), _texture(-1), _secondsRemaining(0), _inBattlescape(false), _detected(false)
 {
 }
 
@@ -46,11 +45,12 @@ MissionSite::~MissionSite()
 void MissionSite::load(const YAML::Node &node)
 {
 	Target::load(node);
-	_id = node["id"].as<int>(_id);
 	_texture = node["texture"].as<int>(_texture);
 	_secondsRemaining = node["secondsRemaining"].as<size_t>(_secondsRemaining);
 	_race = node["race"].as<std::string>(_race);
 	_inBattlescape = node["inBattlescape"].as<bool>(_inBattlescape);
+	_detected = node["detected"].as<bool>(_detected);
+	//_missionCustomDeploy loaded outside
 }
 
 /**
@@ -64,26 +64,24 @@ YAML::Node MissionSite::save() const
 	node["deployment"] = _deployment->getType();
 	if (_missionCustomDeploy)
 		node["missionCustomDeploy"] = _missionCustomDeploy->getType();
-	node["id"] = _id;
 	node["texture"] = _texture;
 	if (_secondsRemaining)
 		node["secondsRemaining"] = _secondsRemaining;
 	node["race"] = _race;
 	if (_inBattlescape)
 		node["inBattlescape"] = _inBattlescape;
+	node["detected"] = _detected;
 	return node;
 }
 
 /**
- * Saves the mission site's unique identifiers to a YAML file.
- * @return YAML node.
+ * Returns the mission's unique type used for
+ * savegame purposes.
+ * @return ID.
  */
-YAML::Node MissionSite::saveId() const
+std::string MissionSite::getType() const
 {
-	YAML::Node node = Target::saveId();
-	node["type"] = _deployment->getMarkerName();
-	node["id"] = _id;
-	return node;
+	return _deployment->getMarkerName();
 }
 
 /**
@@ -114,31 +112,12 @@ const AlienDeployment *MissionSite::getMissionCustomDeploy() const
 }
 
 /**
- * Returns the mission site's unique ID.
- * @return Unique ID.
+ * Returns the name on the globe for the mission.
+ * @return String ID.
  */
-int MissionSite::getId() const
+std::string MissionSite::getMarkerName() const
 {
-	return _id;
-}
-
-/**
- * Changes the mission site's unique ID.
- * @param id Unique ID.
- */
-void MissionSite::setId(int id)
-{
-	_id = id;
-}
-
-/**
- * Returns the mission site's unique identifying name.
- * @param lang Language to get strings from.
- * @return Full name.
- */
-std::wstring MissionSite::getName(Language *lang) const
-{
-	return lang->getString(_deployment->getMarkerName()).arg(_id);
+	return getType();
 }
 
 /**
@@ -147,6 +126,8 @@ std::wstring MissionSite::getName(Language *lang) const
  */
 int MissionSite::getMarker() const
 {
+	if (!_detected)
+		return -1;
 	if (_deployment->getMarkerIcon() == -1)
 		return 5;
 	return _deployment->getMarkerIcon();
@@ -228,7 +209,7 @@ void MissionSite::setTexture(int texture)
  * Gets the mission site's associated city, if any.
  * @return String ID for the city, "" if none.
  */
-std::string MissionSite::getCity() const
+const std::string& MissionSite::getCity() const
 {
 	return _city;
 }
@@ -240,6 +221,25 @@ std::string MissionSite::getCity() const
 void MissionSite::setCity(const std::string &city)
 {
 	_city = city;
+}
+
+/**
+ * Gets the detection state for this mission site.
+ * used for popups of sites spawned directly rather than by UFOs.
+ * @return whether or not this site has been detected.
+ */
+bool MissionSite::getDetected() const
+{
+	return _detected;
+}
+
+/**
+ * Sets the mission site's detection state.
+ * @param detected whether we want this site to show on the geoscape or not.
+ */
+void MissionSite::setDetected(bool detected)
+{
+	_detected = detected;
 }
 
 }

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CROSSPLATFORM_H
-#define OPENXCOM_CROSSPLATFORM_H
-
+#include <istream>
 #include <SDL.h>
 #include <string>
 #include <vector>
-#include <utility>
+#include <array>
+#include <memory>
 
 namespace OpenXcom
 {
@@ -33,6 +33,12 @@ namespace OpenXcom
  */
 namespace CrossPlatform
 {
+	/// Retrieve and decode command-line arguments
+	void processArgs (int argc, char *argv[]);
+	/// Returns the command-line arguments
+	const std::vector<std::string>& getArgs();
+	/// Gets the available error dialog.
+	void getErrorDialog();
 	/// Displays an error message.
 	void showError(const std::string &error);
 	/// Finds the game's data folders in the system.
@@ -52,9 +58,9 @@ namespace CrossPlatform
 	/// Creates a folder.
 	bool createFolder(const std::string &path);
 	/// Terminates a path.
-	std::string endPath(const std::string &path);
-	/// Returns the list of files in a folder.
-	std::vector<std::string> getFolderContents(const std::string &path, const std::string &ext = "");
+	std::string convertPath(const std::string &path);
+	/// Returns the list of files in a folder as a vector of tuples (filename, id_dir, mtime)
+	std::vector<std::tuple<std::string, bool, time_t>> getFolderContents(const std::string &path, const std::string &ext = "");
 	/// Checks if the path is an existing folder.
 	bool folderExists(const std::string &path);
 	/// Checks if the path is an existing file.
@@ -65,8 +71,12 @@ namespace CrossPlatform
 	std::string baseFilename(const std::string &path);
 	/// Sanitizes the characters in a filename.
 	std::string sanitizeFilename(const std::string &filename);
-	/// Removes the extension from a file.
+	/// Removes the extension from a filename.
 	std::string noExt(const std::string &file);
+	/// Gets the extension from a filename.
+	std::string getExt(const std::string &file);
+	/// Compares the extension of a filename.
+	bool compareExt(const std::string &file, const std::string &extension);
 	/// Gets the system locale.
 	std::string getLocale();
 	/// Checks if an event is a quit shortcut.
@@ -74,19 +84,65 @@ namespace CrossPlatform
 	/// Gets the modified date of a file.
 	time_t getDateModified(const std::string &path);
 	/// Converts a timestamp to a string.
-	std::pair<std::wstring, std::wstring> timeToString(time_t time);
-	/// Compares two strings by natural order.
-	bool naturalCompare(const std::wstring &a, const std::wstring &b);
+	std::pair<std::string, std::string> timeToString(time_t time);
 	/// Move/rename a file between paths.
 	bool moveFile(const std::string &src, const std::string &dest);
+	/// Copy a file between paths.
+	bool copyFile(const std::string &src, const std::string &dest);
+	/// Writes out a file
+	bool writeFile(const std::string& filename, const std::string& data);
+	bool writeFile(const std::string& filename, const std::vector<unsigned char>& data);
+	/// Reads in a file
+	std::unique_ptr<std::istream> readFile(const std::string& filename);
+	/// Reads file until "\n---" sequence is met or to the end. To be used only for savegames.
+	std::unique_ptr<std::istream> getYamlSaveHeader (const std::string& filename);
 	/// Flashes the game window.
 	void flashWindow();
 	/// Gets the DOS-style executable path.
 	std::string getDosPath();
 	/// Sets the window icon.
 	void setWindowIcon(int winResource, const std::string &unixPath);
+	/// Produces a stack trace.
+	void stackTrace(void *ctx);
+	/// Produces a quick timestamp.
+	std::string now();
+	/// Produces a crash dump.
+	void crashDump(void *ex, const std::string &err);
+	/// Opens a URL.
+	bool openExplorer(const std::string &url);
+	/// Log something.
+	void log(int, const std::ostringstream& msg);
+	/// The log file name
+	void setLogFileName(const std::string &path);
+	const std::string& getLogFileName();
+	/// Get an SDL_RWops to an embedded asset. NULL if not there.
+	SDL_RWops *getEmbeddedAsset(const std::string& assetName);
+	/// Tests the internet connection.
+	bool testInternetConnection(const std::string& url);
+	/// Downloads a file from a given URL to the filesystem.
+	bool downloadFile(const std::string& url, const std::string& filename);
+	/// Parse string with version number.
+	std::array<int, 4> parseVersion(const std::string& newVersion);
+	/// Is the given version number higher than the current version number?
+	bool isHigherThanCurrentVersion(const std::string& newVersion);
+	/// Is the given version number higher than the given version number?
+	bool isHigherThanCurrentVersion(const std::array<int, 4>& newVersion, const int (&ver)[4]);
+	/// Gets the path to the executable file.
+	std::string getExeFolder();
+	/// Gets the file name of the executable file.
+	std::string getExeFilename(bool includingPath);
+	/// Starts the update process.
+	void startUpdateProcess();
+
+	// in Release, do nothing. in Debug, crash out
+	[[noreturn]] inline void unreachable()
+	{
+	#ifdef _WIN32 // MSVC
+	    __assume(false);
+	#else  // GCC, Clang
+		__builtin_unreachable();
+	#endif
+	}
 }
 
 }
-
-#endif

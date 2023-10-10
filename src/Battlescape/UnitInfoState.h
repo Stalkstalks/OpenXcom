@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_UNITINFOSTATE_H
-#define OPENXCOM_UNITINFOSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -51,11 +49,11 @@ private:
 	Text *_txtName;
 
 	Text *_txtTimeUnits, *_txtEnergy, *_txtHealth, *_txtFatalWounds, *_txtBravery, *_txtMorale, *_txtReactions, *_txtFiring, *_txtThrowing, *_txtMelee, *_txtStrength;
-	Text *_txtPsiStrength,  *_txtPsiSkill;
+	Text *_txtPsiStrength,  *_txtPsiSkill, *_txtMana;
 	Text *_numTimeUnits, *_numEnergy, *_numHealth, *_numFatalWounds, *_numBravery, *_numMorale, *_numReactions, *_numFiring, *_numThrowing, *_numMelee, *_numStrength;
-	Text *_numPsiStrength, *_numPsiSkill;
+	Text *_numPsiStrength, *_numPsiSkill, *_numMana;
 	Bar *_barTimeUnits, *_barEnergy, *_barHealth, *_barFatalWounds, *_barBravery, *_barMorale, *_barReactions, *_barFiring, *_barThrowing, *_barMelee, *_barStrength;
-	Bar *_barPsiStrength, *_barPsiSkill;
+	Bar *_barPsiStrength, *_barPsiSkill, *_barMana;
 
 	Text *_txtFrontArmor, *_txtLeftArmor, *_txtRightArmor, *_txtRearArmor, *_txtUnderArmor;
 	Text *_numFrontArmor, *_numLeftArmor, *_numRightArmor, *_numRearArmor, *_numUnderArmor;
@@ -67,9 +65,9 @@ public:
 	/// Cleans up the Unit Info state.
 	~UnitInfoState();
 	/// Updates the unit info.
-	void init();
+	void init() override;
 	/// Handler for clicking the button.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Handler for clicking the Previous button.
 	void btnPrevClick(Action *action);
 	/// Handler for clicking the Next button.
@@ -79,5 +77,3 @@ public:
 };
 
 }
-
-#endif

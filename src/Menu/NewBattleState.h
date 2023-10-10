@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,17 +17,19 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_NEWBATTLESTATE_H
-#define OPENXCOM_NEWBATTLESTATE_H
-
 #include "../Engine/State.h"
+#include <map>
 #include <vector>
 #include <string>
 
 namespace OpenXcom
 {
 
+enum class NewBattleSelectType { MISSION = 0, TERRAIN, ALIENRACE };
+
 class TextButton;
+class TextEdit;
+class TextList;
 class Window;
 class Text;
 class ComboBox;
@@ -49,19 +52,30 @@ private:
 	ComboBox *_cbxMission, *_cbxCraft, *_cbxTerrain, *_cbxDifficulty, *_cbxAlienRace;
 	Slider *_slrDarkness, *_slrAlienTech, *_slrDepth;
 	TextButton *_btnOk, *_btnCancel, *_btnEquip, *_btnRandom;
+	TextButton *_btnMission, *_btnTerrain, *_btnAlienRace;
+	TextList *_lstSelect;
+	TextEdit *_btnQuickSearch;
+	std::map<Surface*, bool> _surfaceBackup;
 	std::vector<std::string> _missionTypes, _terrainTypes, _alienRaces, _crafts;
 	Craft *_craft;
+	NewBattleSelectType _selectType;
+	bool _isRightClick;
+	std::vector<size_t> _filtered;
+
+	static const int TFTD_DEPLOYMENTS = 22;
+	void fillList(NewBattleSelectType selectType, bool isRightClick);
+	void cleanup();
 public:
 	/// Creates the New Battle state.
 	NewBattleState();
 	/// Cleans up the New Battle state.
 	~NewBattleState();
 	/// Resets state.
-	void init();
+	void init() override;
 	/// Loads New Battle settings.
-	void load();
+	void load(const std::string &filename = "battle");
 	/// Saves New Battle settings.
-	void save();
+	void save(const std::string &filename = "battle");
 	/// Initializes a blank savegame.
 	void initSave();
 	/// Handler for clicking the OK button.
@@ -78,8 +92,17 @@ public:
 	void cbxCraftChange(Action *action);
 	/// Updates the depth slider accordingly when terrain selection changes.
 	void cbxTerrainChange(Action *action);
+	/// Handler for clicking the Mission... button.
+	void btnMissionChange(Action *action);
+	/// Handler for clicking the Terrain... button.
+	void btnTerrainChange(Action *action);
+	/// Handler for clicking the Alien Race... button.
+	void btnAlienRaceChange(Action *action);
+	/// Handler for clicking the Select list.
+	void lstSelectClick(Action *action);
+	/// Handlers for Quick Search.
+	void btnQuickSearchToggle(Action *action);
+	void btnQuickSearchApply(Action *action);
 };
 
 }
-
-#endif

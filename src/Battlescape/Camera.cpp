@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +16,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#define _USE_MATH_DEFINES
-#include <cmath>
-#include <fstream>
 #include "Camera.h"
 #include "Map.h"
 #include "../Engine/Action.h"
 #include "../Engine/Options.h"
 #include "../Engine/Timer.h"
+#include "../fmath.h"
 
 namespace OpenXcom
 {
@@ -63,31 +61,18 @@ void Camera::setScrollTimer(Timer *mouse, Timer *key)
 }
 
 /**
- * Sets the value to min if it is below min and to max if it is above max.
- * @param value Pointer to the value.
- * @param minValue The minimum value.
- * @param maxValue The maximum value.
- */
-void Camera::minMaxInt(int *value, const int minValue, const int maxValue) const
-{
-	if (*value < minValue)
-	{
-		*value = minValue;
-	}
-	else if (*value > maxValue)
-	{
-		*value = maxValue;
-	}
-}
-
-/**
  * Handles camera mouse shortcuts.
  * @param action Pointer to an action.
  * @param state State that the action handlers belong to.
  */
 void Camera::mousePress(Action *action, State *)
 {
-	if (Options::battleDragScrollButton != SDL_BUTTON_MIDDLE || (SDL_GetMouseState(0,0)&SDL_BUTTON(Options::battleDragScrollButton)) == 0)
+	if (action->getDetails()->button.button == SDL_BUTTON_LEFT && Options::battleEdgeScroll == SCROLL_TRIGGER)
+	{
+		_scrollTrigger = true;
+		mouseOver(action, 0);
+	}
+	else if (Options::battleDragScrollButton != SDL_BUTTON_MIDDLE || (SDL_GetMouseState(0,0)&SDL_BUTTON(Options::battleDragScrollButton)) == 0)
 	{
 		if (action->getDetails()->button.button == SDL_BUTTON_WHEELUP)
 		{
@@ -97,11 +82,6 @@ void Camera::mousePress(Action *action, State *)
 		{
 			down();
 		}
-	}
-	else if (action->getDetails()->button.button == SDL_BUTTON_LEFT && Options::battleEdgeScroll == SCROLL_TRIGGER)
-	{
-		_scrollTrigger = true;
-		mouseOver(action, 0);
 	}
 }
 
@@ -349,7 +329,11 @@ void Camera::scrollXY(int x, int y, bool redraw)
 
 	do
 	{
-		convertScreenToMap((_screenWidth / 2), (_visibleMapHeight / 2), &_center.x, &_center.y);
+		int xx = 0;
+		int yy = 0;
+		convertScreenToMap((_screenWidth / 2), (_visibleMapHeight / 2), &xx, &yy);
+		_center.x = xx;
+		_center.y = yy;
 
 		// Handling map bounds...
 		// Ok, this is a prototype, it should be optimized.
@@ -376,7 +360,11 @@ void Camera::jumpXY(int x, int y)
 {
 	_mapOffset.x += x;
 	_mapOffset.y += y;
-	convertScreenToMap((_screenWidth / 2), (_visibleMapHeight / 2), &_center.x, &_center.y);
+	int xx = 0;
+	int yy = 0;
+	convertScreenToMap((_screenWidth / 2), (_visibleMapHeight / 2), &xx, &yy);
+	_center.x = xx;
+	_center.y = yy;
 }
 
 
@@ -412,8 +400,7 @@ void Camera::down()
  */
 void Camera::setViewLevel(int viewlevel)
 {
-	_mapOffset.z = viewlevel;
-	minMaxInt(&_mapOffset.z, 0, _mapsize_z-1);
+	_mapOffset.z = Clamp(viewlevel, 0, _mapsize_z - 1);
 	_map->draw();
 }
 
@@ -423,12 +410,12 @@ void Camera::setViewLevel(int viewlevel)
  * @param mapPos Position to center on.
  * @param redraw Redraw map or not.
  */
-void Camera::centerOnPosition(const Position &mapPos, bool redraw)
+void Camera::centerOnPosition(Position mapPos, bool redraw)
 {
 	Position screenPos;
 	_center = mapPos;
-	minMaxInt(&_center.x, -1, _mapsize_x);
-	minMaxInt(&_center.y, -1, _mapsize_y);
+	_center.x = Clamp<int>(_center.x, -1, _mapsize_x);
+	_center.y = Clamp<int>(_center.y, -1, _mapsize_y);
 	convertMapToScreen(_center, &screenPos);
 
 	_mapOffset.x = -(screenPos.x - (_screenWidth / 2));
@@ -457,20 +444,20 @@ Position Camera::getCenterPosition()
  */
 void Camera::convertScreenToMap(int screenX, int screenY, int *mapX, int *mapY) const
 {
-	// add half a tileheight to the mouseposition per layer we are above the floor
+	// add half a tile height to the mouse position per layer we are above the floor
 	screenY += (-_spriteWidth/2) + (_mapOffset.z) * ((_spriteHeight + _spriteWidth / 4) / 2);
 
-	// calculate the actual x/y pixelposition on a diamond shaped map
+	// calculate the actual x/y pixel position on a diamond shaped map
 	// taking the view offset into account
 	*mapY = - screenX + _mapOffset.x + 2 * screenY - 2 * _mapOffset.y;
 	*mapX = screenY - _mapOffset.y - *mapY / 4 - (_spriteWidth/4);
 
-	// to get the row&col itself, divide by the size of a tile
+	// to get the row & column itself, divide by the size of a tile
 	*mapX /= (_spriteWidth / 4);
 	*mapY /= _spriteWidth;
 
-	minMaxInt(mapX, -1, _mapsize_x);
-	minMaxInt(mapY, -1, _mapsize_y);
+	*mapX = Clamp(*mapX, -1, _mapsize_x);
+	*mapY = Clamp(*mapY, -1, _mapsize_y);
 }
 
 /**
@@ -478,7 +465,7 @@ void Camera::convertScreenToMap(int screenX, int screenY, int *mapX, int *mapY) 
  * @param mapPos X,Y,Z coordinates on the map.
  * @param screenPos Screen position.
  */
-void Camera::convertMapToScreen(const Position &mapPos, Position *screenPos) const
+void Camera::convertMapToScreen(Position mapPos, Position *screenPos) const
 {
 	screenPos->z = 0; // not used
 	screenPos->x = mapPos.x * (_spriteWidth / 2) - mapPos.y * (_spriteWidth / 2);
@@ -490,9 +477,9 @@ void Camera::convertMapToScreen(const Position &mapPos, Position *screenPos) con
  * @param voxelPos X,Y,Z coordinates of the voxel.
  * @param screenPos Screen position.
  */
-void Camera::convertVoxelToScreen(const Position &voxelPos, Position *screenPos) const
+void Camera::convertVoxelToScreen(Position voxelPos, Position *screenPos) const
 {
-	Position mapPosition = Position(voxelPos.x / 16, voxelPos.y / 16, voxelPos.z / 24);
+	Position mapPosition = voxelPos.toTile();
 	convertMapToScreen(mapPosition, screenPos);
 	double dx = voxelPos.x - (mapPosition.x * 16);
 	double dy = voxelPos.y - (mapPosition.y * 16);
@@ -534,7 +521,7 @@ int Camera::getMapSizeY() const
  * Gets the map offset.
  * @return The map offset.
  */
-Position Camera::getMapOffset()
+Position Camera::getMapOffset() const
 {
 	return _mapOffset;
 }
@@ -543,7 +530,7 @@ Position Camera::getMapOffset()
  * Sets the map offset.
  * @param pos The map offset.
  */
-void Camera::setMapOffset(Position pos)
+void Camera::setMapOffset(const Position& pos)
 {
 	_mapOffset = pos;
 }
@@ -575,7 +562,7 @@ bool Camera::getShowAllLayers() const
  * @param boundary True if it's for caching calculation
  * @return True if the map coordinates are on screen.
  */
-bool Camera::isOnScreen(const Position &mapPos, const bool unitWalking, const int unitSize, const bool boundary) const
+bool Camera::isOnScreen(Position mapPos, const bool unitWalking, const int unitSize, const bool boundary) const
 {
 	Position screenPos;
 	convertMapToScreen(mapPos, &screenPos);
@@ -600,7 +587,7 @@ __________
 || ____ ||
 ||_|XX|_||
 |________|
-*/
+ */
 		if (boundary) //to make sprite updates even being slightly outside of screen
 		{
 			sizex += _spriteWidth;
@@ -638,4 +625,5 @@ void Camera::stopMouseScrolling()
 {
 	_scrollMouseTimer->stop();
 }
+
 }

@@ -1,7 +1,4 @@
-
-#ifndef __FMOPL_H_
-#define __FMOPL_H_
-
+#pragma once
 
 /* --- select emulation chips --- */
 #define BUILD_YM3812 (HAS_YM3812)
@@ -155,7 +152,6 @@ typedef struct fm_opl_f {
 #define OPL_TYPE_Y8950  (OPL_TYPE_ADPCM|OPL_TYPE_KEYBOARD|OPL_TYPE_IO)
 
 FM_OPL *OPLCreate(int type, int clock, int rate);
-void OPLReInit(FM_OPL *OPL, int clock, int rate);
 void OPLDestroy(FM_OPL *OPL);
 void OPLSetTimerHandler(FM_OPL *OPL,OPL_TIMERHANDLER TimerHandler,int channelOffset);
 void OPLSetIRQHandler(FM_OPL *OPL,OPL_IRQHANDLER IRQHandler,int param);
@@ -173,5 +169,3 @@ int OPLTimerOver(FM_OPL *OPL,int c);
 void YM3812UpdateOne(FM_OPL *OPL, INT16 *buffer, int length, int stripe, float volume);
 
 void Y8950UpdateOne(FM_OPL *OPL, INT16 *buffer, int length);
-
-#endif

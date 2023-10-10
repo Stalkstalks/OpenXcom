@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONINFO_H
-#define OPENXCOM_OPTIONINFO_H
-
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <map>
@@ -61,11 +59,13 @@ public:
 	/// Loads the option from YAML.
 	void load(const YAML::Node &node) const;
 	/// Loads the option from a map.
-	void load(const std::map<std::string, std::string> &map) const;
+	void load(const std::map<std::string, std::string> &map, bool makeLowercase) const;
 	/// Saves the option to YAML.
 	void save(YAML::Node &node) const;
 	/// Resets the option to default.
 	void reset() const;
+	/// Gets the option ID.
+	std::string id() const;
 	/// Gets the option type.
 	OptionType type() const;
 	/// Gets the option description.
@@ -75,5 +75,3 @@ public:
 };
 
 }
-
-#endif

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_UFOLOSTSTATE_H
-#define OPENXCOM_UFOLOSTSTATE_H
-
 #include "../Engine/State.h"
 #include <string>
 
@@ -39,10 +37,10 @@ private:
 	TextButton *_btnOk;
 	Window *_window;
 	Text *_txtTitle;
-	std::wstring _id;
+	std::string _id;
 public:
 	/// Creates the Ufo Lost state.
-	UfoLostState(const std::wstring &id);
+	UfoLostState(const std::string &id);
 	/// Cleans up the Ufo Lost state.
 	~UfoLostState();
 	/// Handler for clicking the OK button.
@@ -50,5 +48,3 @@ public:
 };
 
 }
-
-#endif

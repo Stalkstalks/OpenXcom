@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONSBATTLESCAPESTATE_H
-#define OPENXCOM_OPTIONSBATTLESCAPESTATE_H
-
 #include "OptionsBaseState.h"
 
 namespace OpenXcom
@@ -43,7 +41,7 @@ private:
 	Text *_txtScrollSpeed, *_txtFireSpeed, *_txtXcomSpeed, *_txtAlienSpeed;
 	Slider *_slrScrollSpeed, *_slrFireSpeed, *_slrXcomSpeed, *_slrAlienSpeed;
 	Text *_txtPathPreview;
-	ToggleTextButton *_btnArrows, *_btnTuCost;
+	ToggleTextButton *_btnArrows, *_btnTuCost, *_btnEnergyCost;
 	Text *_txtOptions;
 	ToggleTextButton *_btnTooltips, *_btnDeaths;
 public:
@@ -72,5 +70,3 @@ public:
 };
 
 }
-
-#endif

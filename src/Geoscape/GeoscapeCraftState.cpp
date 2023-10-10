@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,23 +19,24 @@
 #include "GeoscapeCraftState.h"
 #include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Craft.h"
-#include "../Ruleset/RuleCraft.h"
+#include "../Mod/RuleCraft.h"
 #include "../Savegame/CraftWeapon.h"
-#include "../Ruleset/RuleCraftWeapon.h"
+#include "../Mod/RuleCraftWeapon.h"
 #include "../Savegame/Target.h"
 #include "../Savegame/Ufo.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Waypoint.h"
 #include "SelectDestinationState.h"
 #include "../Engine/Options.h"
+#include "../Engine/Unicode.h"
+#include "Globe.h"
 
 namespace OpenXcom
 {
@@ -47,7 +48,7 @@ namespace OpenXcom
  * @param globe Pointer to the Geoscape globe.
  * @param waypoint Pointer to the last UFO position (if redirecting the craft).
  */
-GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *waypoint) : _craft(craft), _globe(globe), _waypoint(waypoint)
+GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *waypoint, bool useCustomSound) : _craft(craft), _globe(globe), _waypoint(waypoint)
 {
 	_screen = false;
 
@@ -58,6 +59,15 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	const int offset_upper = -8;
 	const int offset_lower = 120;
 
+	if (useCustomSound)
+	{
+		int soundId = craft->getRules()->getSelectSound();
+		if (soundId != Mod::NO_SOUND)
+		{
+			_customSound = _game->getMod()->getSound("GEO.CAT", soundId);
+		}
+	}
+
 	// Create objects
 	_window = new Window(this, 240, 192, 4, 4, POPUP_BOTH);
 	_txtTitle = new Text(210, 17, 32, offset_upper + 20);
@@ -66,11 +76,13 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	_txtSpeed = new Text(210, 9, 32, offset_upper + 60);
 	_txtMaxSpeed = new Text(210, 9, 32, offset_upper + 68);
 	_txtAltitude = new Text(210, 9, 32, offset_upper + 76);
-	_txtSoldier = new Text(60, 9, 164, offset_upper + 68);
-	_txtHWP = new Text(80, 9, 164, offset_upper + 76);
+	_txtSoldier = new Text(80, 9, 164, offset_upper + 60);
+	_txtHWP = new Text(80, 9, 164, offset_upper + 68);
 	_txtFuel = new Text(130, 9, 32, offset_upper + 84);
 	_txtDamage = new Text(80, 9, 164, offset_upper + 84);
-	for(int i = 0; i < _weaponNum; ++i)
+	_txtShield = new Text(80, 9, 164, offset_upper + 76);
+
+	for (int i = 0; i < _weaponNum; ++i)
 	{
 		_txtWeaponName[i] = new Text(130, 9, 32, offset_upper + 92 + 8*i);
 		_txtWeaponAmmo[i] = new Text(80, 9, 164, offset_upper + 92 + 8*i);
@@ -82,34 +94,35 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	_btnCancel = new TextButton(192, 12, 32, offset_lower + 56);
 
 	// Set palette
-	setInterface("geoCraftScreens");
+	setInterface("geoCraft");
 
-	add(_window, "window", "geoCraftScreens");
-	add(_btnBase, "button", "geoCraftScreens");
-	add(_btnTarget, "button", "geoCraftScreens");
-	add(_btnPatrol, "button", "geoCraftScreens");
-	add(_btnCancel, "button", "geoCraftScreens");
-	add(_txtTitle, "text1", "geoCraftScreens");
-	add(_txtStatus, "text1", "geoCraftScreens");
-	add(_txtBase, "text3", "geoCraftScreens");
-	add(_txtSpeed, "text3", "geoCraftScreens");
-	add(_txtMaxSpeed, "text3", "geoCraftScreens");
-	add(_txtAltitude, "text3", "geoCraftScreens");
-	add(_txtFuel, "text3", "geoCraftScreens");
-	add(_txtDamage, "text3", "geoCraftScreens");
-	for(int i = 0; i < _weaponNum; ++i)
+	add(_window, "window", "geoCraft");
+	add(_btnBase, "button", "geoCraft");
+	add(_btnTarget, "button", "geoCraft");
+	add(_btnPatrol, "button", "geoCraft");
+	add(_btnCancel, "button", "geoCraft");
+	add(_txtTitle, "text1", "geoCraft");
+	add(_txtStatus, "text1", "geoCraft");
+	add(_txtBase, "text3", "geoCraft");
+	add(_txtSpeed, "text3", "geoCraft");
+	add(_txtMaxSpeed, "text3", "geoCraft");
+	add(_txtAltitude, "text3", "geoCraft");
+	add(_txtFuel, "text3", "geoCraft");
+	add(_txtDamage, "text3", "geoCraft");
+	add(_txtShield, "text3", "geoCraft");
+	for (int i = 0; i < _weaponNum; ++i)
 	{
-		add(_txtWeaponName[i], "text3", "geoCraftScreens");
-		add(_txtWeaponAmmo[i], "text3", "geoCraftScreens");
+		add(_txtWeaponName[i], "text3", "geoCraft");
+		add(_txtWeaponAmmo[i], "text3", "geoCraft");
 	}
-	add(_txtRedirect, "text3", "geoCraftScreens");
-	add(_txtSoldier, "text3", "geoCraftScreens");
-	add(_txtHWP, "text3", "geoCraftScreens");
+	add(_txtRedirect, "text3", "geoCraft");
+	add(_txtSoldier, "text3", "geoCraft");
+	add(_txtHWP, "text3", "geoCraft");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	setWindowBackground(_window, "geoCraft");
 
 	_btnBase->setText(tr("STR_RETURN_TO_BASE"));
 	_btnBase->onMouseClick((ActionHandler)&GeoscapeCraftState::btnBaseClick);
@@ -117,7 +130,7 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	_btnTarget->setText(tr("STR_SELECT_NEW_TARGET"));
 	_btnTarget->onMouseClick((ActionHandler)&GeoscapeCraftState::btnTargetClick);
 
-	_btnPatrol->setText(tr("STR_PATROL"));
+	_btnPatrol->setText(_craft->getRules()->canAutoPatrol() ? tr("STR_AUTO_PATROL") : tr("STR_PATROL"));
 	_btnPatrol->onMouseClick((ActionHandler)&GeoscapeCraftState::btnPatrolClick);
 
 	_btnCancel->setText(tr("STR_CANCEL_UC"));
@@ -128,7 +141,7 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	_txtTitle->setText(_craft->getName(_game->getLanguage()));
 
 	_txtStatus->setWordWrap(true);
-	std::wstring status;
+	std::string status;
 	if (_waypoint != 0)
 	{
 		status = tr("STR_INTERCEPTING_UFO").arg(_waypoint->getId());
@@ -185,18 +198,25 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 			speed = ufo->getSpeed();
 		}
 	}
-	_txtSpeed->setText(tr("STR_SPEED_").arg(Text::formatNumber(speed)));
+	_txtSpeed->setText(tr("STR_SPEED_").arg(Unicode::formatNumber(speed)));
 
-	_txtMaxSpeed->setText(tr("STR_MAXIMUM_SPEED_UC").arg(Text::formatNumber(_craft->getRules()->getMaxSpeed())));
+	_txtMaxSpeed->setText(tr("STR_MAXIMUM_SPEED_UC").arg(Unicode::formatNumber(_craft->getCraftStats().speedMax)));
 
 	std::string altitude = _craft->getAltitude() == "STR_GROUND" ? "STR_GROUNDED" : _craft->getAltitude();
+	if (_craft->getRules()->isWaterOnly() && !_globe->insideLand(_craft->getLongitude(), _craft->getLatitude()))
+	{
+		altitude = "STR_AIRBORNE";
+	}
 	_txtAltitude->setText(tr("STR_ALTITUDE_").arg(tr(altitude)));
 
-	_txtFuel->setText(tr("STR_FUEL").arg(Text::formatPercentage(_craft->getFuelPercentage())));
+	_txtFuel->setText(tr("STR_FUEL").arg(Unicode::formatPercentage(_craft->getFuelPercentage())));
 
-	_txtDamage->setText(tr("STR_DAMAGE_UC_").arg(Text::formatPercentage(_craft->getDamagePercentage())));
+	_txtDamage->setText(tr("STR_DAMAGE_UC_").arg(Unicode::formatPercentage(_craft->getDamagePercentage())));
 
-	for(int i = 0; i < _weaponNum; ++i)
+	_txtShield->setText(tr("STR_SHIELD").arg(Unicode::formatPercentage(_craft->getShieldPercentage())));
+	_txtShield->setVisible(_craft->getShieldCapacity() != 0);
+
+	for (int i = 0; i < _weaponNum; ++i)
 	{
 		const std::string &wName = _craft->getRules()->getWeaponSlotString(i);
 		if (wName.empty())
@@ -226,12 +246,12 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 	_txtRedirect->setAlign(ALIGN_CENTER);
 	_txtRedirect->setText(tr("STR_REDIRECT_CRAFT"));
 
-	std::wostringstream ss11;
-	ss11 << tr("STR_SOLDIERS_UC") << ">" << L'\x01' << _craft->getNumSoldiers();
+	std::ostringstream ss11;
+	ss11 << tr("STR_SOLDIERS_UC") << ">" << Unicode::TOK_COLOR_FLIP << _craft->getNumTotalSoldiers();
 	_txtSoldier->setText(ss11.str());
 
-	std::wostringstream ss12;
-	ss12 << tr("STR_HWPS") << ">" << L'\x01' << _craft->getNumVehicles();
+	std::ostringstream ss12;
+	ss12 << tr("STR_HWPS") << ">" << Unicode::TOK_COLOR_FLIP << _craft->getNumTotalVehicles();
 	_txtHWP->setText(ss12.str());
 
 	if (_waypoint == 0)
@@ -250,9 +270,9 @@ GeoscapeCraftState::GeoscapeCraftState(Craft *craft, Globe *globe, Waypoint *way
 		_btnPatrol->setVisible(false);
 	}
 
-	if (_craft->getRules()->getSoldiers() == 0)
+	if (_craft->getRules()->getMaxUnits() == 0)
 		_txtSoldier->setVisible(false);
-	if (_craft->getRules()->getVehicles() == 0)
+	if (_craft->getRules()->getMaxVehiclesAndLargeSoldiers() == 0)
 		_txtHWP->setVisible(false);
 }
 
@@ -273,6 +293,11 @@ void GeoscapeCraftState::btnBaseClick(Action *)
 	_game->popState();
 	_craft->returnToBase();
 	delete _waypoint;
+	if (_craft->getRules()->canAutoPatrol())
+	{
+		// cancel auto-patrol
+		_craft->setIsAutoPatrolling(false);
+	}
 }
 
 /**
@@ -282,7 +307,7 @@ void GeoscapeCraftState::btnBaseClick(Action *)
 void GeoscapeCraftState::btnTargetClick(Action *)
 {
 	_game->popState();
-	_game->pushState(new SelectDestinationState(_craft, _globe));
+	_game->pushState(new SelectDestinationState(std::vector{ _craft }, _globe));
 	delete _waypoint;
 }
 
@@ -295,6 +320,13 @@ void GeoscapeCraftState::btnPatrolClick(Action *)
 	_game->popState();
 	_craft->setDestination(0);
 	delete _waypoint;
+	if (_craft->getRules()->canAutoPatrol())
+	{
+		// start auto-patrol
+		_craft->setLatitudeAuto(_craft->getLatitude());
+		_craft->setLongitudeAuto(_craft->getLongitude());
+		_craft->setIsAutoPatrolling(true);
+	}
 }
 
 /**
@@ -306,7 +338,7 @@ void GeoscapeCraftState::btnCancelClick(Action *)
 	// Go to the last known UFO position
 	if (_waypoint != 0)
 	{
-		_waypoint->setId(_game->getSavedGame()->getId("STR_WAYPOINT"));
+		_waypoint->setId(_game->getSavedGame()->getId("STR_WAY_POINT"));
 		_game->getSavedGame()->getWaypoints()->push_back(_waypoint);
 		_craft->setDestination(_waypoint);
 	}

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_LISTSAVESTATE_H
-#define OPENXCOM_LISTSAVESTATE_H
-
 #include <string>
 #include "ListGamesState.h"
 
@@ -37,7 +35,7 @@ class ListSaveState : public ListGamesState
 private:
 	TextEdit *_edtSave;
 	TextButton *_btnSaveGame;
-	std::wstring _selected;
+	std::string _selected;
 	int _previousSelectedRow, _selectedRow;
 public:
 	/// Creates the Save Game state.
@@ -45,17 +43,15 @@ public:
 	/// Cleans up the Save Game state.
 	~ListSaveState();
 	/// Updates the savegame list.
-	void updateList();
+	void updateList() override;
 	/// Handler for pressing a key on the Save edit.
 	void edtSaveKeyPress(Action *action);
 	/// Handler for clicking on the Save Game button.
 	void btnSaveGameClick(Action *action);
 	/// Handler for clicking the Saves list.
-	void lstSavesPress(Action *action);
+	void lstSavesPress(Action *action) override;
 	/// Save game.
 	void saveGame();
 };
 
 }
-
-#endif

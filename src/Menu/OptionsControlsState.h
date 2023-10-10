@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONSCONTROLSSTATE_H
-#define OPENXCOM_OPTIONSCONTROLSSTATE_H
-
 #include <string>
 #include <vector>
 #include "../Engine/OptionInfo.h"
@@ -37,7 +35,7 @@ class OptionsControlsState : public OptionsBaseState
 {
 private:
 	TextList *_lstControls;
-	std::vector<OptionInfo> _controlsGeneral, _controlsGeo, _controlsBattle;
+	std::vector<OptionInfo> _controlsGeneral, _controlsGeo, _controlsBattle, _controlsOxce;
 	int _selected;
 	OptionInfo *_selKey;
 	Uint8 _colorGroup, _colorSel, _colorNormal;
@@ -51,7 +49,7 @@ public:
 	/// Cleans up the Controls state.
 	~OptionsControlsState();
 	/// Fills controls list.
-	void init();
+	void init() override;
 	/// Handler for clicking the Controls list.
 	void lstControlsClick(Action *action);
 	/// Handler for pressing a key in the Controls list.
@@ -59,5 +57,3 @@ public:
 };
 
 }
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,6 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "PathfindingNode.h"
-#include <math.h>
 
 namespace OpenXcom
 {
@@ -26,7 +25,7 @@ namespace OpenXcom
  * Sets up a PathfindingNode.
  * @param pos Position.
  */
-PathfindingNode::PathfindingNode(Position pos) : _pos(pos), _checked(0), _tuCost(0), _prevNode(0), _prevDir(0), _tuGuess(0), _openentry(0)
+PathfindingNode::PathfindingNode(Position pos) : _pos(pos), _prevNode(0), _prevDir(0), _tuGuess(0), _checked(0), _openentry(0)
 {
 
 }
@@ -43,7 +42,7 @@ PathfindingNode::~PathfindingNode()
  * Gets the node position.
  * @return Node position.
  */
-const Position &PathfindingNode::getPosition() const
+Position PathfindingNode::getPosition() const
 {
 	return _pos;
 }
@@ -64,19 +63,6 @@ void PathfindingNode::reset()
 bool PathfindingNode::isChecked() const
 {
 	return _checked;
-}
-
-/**
- * Gets the TU cost.
- * @param missile Is this a missile?
- * @return The TU cost.
- */
-int PathfindingNode::getTUCost(bool missile) const
-{
-	if (missile)
-		return 0;
-	else
-		return _tuCost;
 }
 
 /**
@@ -104,17 +90,15 @@ int PathfindingNode::getPrevDir() const
  * @param prevNode The previous node along the path.
  * @param prevDir The direction FROM the previous node.
  * @param target The target position (used to update our guess cost).
-*/
-void PathfindingNode::connect(int tuCost, PathfindingNode* prevNode, int prevDir, const Position &target)
+ */
+void PathfindingNode::connect(PathfindingCost cost, PathfindingNode* prevNode, int prevDir, Position target)
 {
-	_tuCost = tuCost;
+	_tuCost = cost;
 	_prevNode = prevNode;
 	_prevDir = prevDir;
 	if (!inOpenSet()) // Otherwise we have this already.
 	{
-		Position d = target - _pos;
-		d *= d;
-		_tuGuess = 4 * sqrt((double)d.x + d.y + d.z);
+		_tuGuess = 4 * Position::distance(target, _pos);
 	}
 }
 
@@ -123,10 +107,10 @@ void PathfindingNode::connect(int tuCost, PathfindingNode* prevNode, int prevDir
  * @param tuCost The total cost of the path so far.
  * @param prevNode The previous node along the path.
  * @param prevDir The direction FROM the previous node.
-*/
-void PathfindingNode::connect(int tuCost, PathfindingNode* prevNode, int prevDir)
+ */
+void PathfindingNode::connect(PathfindingCost cost, PathfindingNode* prevNode, int prevDir)
 {
-	_tuCost = tuCost;
+	_tuCost = cost;
 	_prevNode = prevNode;
 	_prevDir = prevDir;
 	_tuGuess = 0;

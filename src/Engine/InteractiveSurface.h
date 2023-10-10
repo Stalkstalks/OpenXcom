@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_INTERACTIVE_SURFACE_H
-#define OPENXCOM_INTERACTIVE_SURFACE_H
-
 #include <SDL.h>
 #include <map>
 #include "Surface.h"
@@ -42,14 +40,16 @@ private:
 	static const int NUM_BUTTONS = 7;
 	static const SDLKey SDLK_ANY;
 	Uint8 _buttonsPressed;
+	std::string _tooltip;
+
 protected:
 	std::map<Uint8, ActionHandler> _click, _press, _release;
 	ActionHandler _in, _over, _out;
 	std::map<SDLKey, ActionHandler> _keyPress, _keyRelease;
-	bool _isHovered, _isFocused, _listButton;
+	bool _isHovered, _isFocused, _listButton, _tftdMode;
 
 	/// Is this mouse button pressed?
-	bool isButtonPressed(Uint8 button = 0);
+	bool isButtonPressed(Uint8 button = 0) const;
 	/// Is this mouse button event handled?
 	virtual bool isButtonHandled(Uint8 button = 0);
 	/// Set a mouse button's internal state.
@@ -60,11 +60,11 @@ public:
 	/// Cleans up the interactive surface.
 	virtual ~InteractiveSurface();
 	/// Sets the surface's visibility.
-	void setVisible(bool visible);
+	void setVisible(bool visible) override;
 	/// Processes any pending events.
 	virtual void handle(Action *action, State *state);
 	/// Sets the focus of this surface.
-	virtual void setFocus(bool focus);
+	virtual void setFocus(bool focus, bool modal = false);
 	/// Gets the focus of this surface.
 	bool isFocused() const;
 	/// Unpresses the surface.
@@ -103,8 +103,14 @@ public:
 	virtual void keyboardRelease(Action *action, State *state);
 	/// Check this surface to see if it's a textlist button.
 	void setListButton();
+	/// Gets the tooltip of the surface.
+	std::string getTooltip() const;
+	/// Sets the tooltip of the surface.
+	void setTooltip(const std::string &tooltip);
+	/// Sets this button to use a colour lookup table instead of inversion for its alternate form.
+	void setTFTDMode(bool mode);
+	/// checks if this is a TFTD mode surface.
+	bool isTFTDMode() const;
 };
 
 }
-
-#endif

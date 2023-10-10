@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,42 +17,32 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_UFOPAEDIA_H
-#define OPENXCOM_UFOPAEDIA_H
-
 #include <vector>
 #include <string>
+#include <memory>
+
+#include "ArticleState.h"
 
 namespace OpenXcom
 {
 	class Game;
 	class SavedGame;
-	class Ruleset;
+	class Mod;
 	class ArticleDefinition;
 	class ArticleState;
 
 	/// definition of an article list
 	typedef std::vector<ArticleDefinition *> ArticleDefinitionList;
 
-	/// define Ufopaedia sections, which must be consistent
-	static const std::string UFOPAEDIA_XCOM_CRAFT_ARMAMENT = "STR_XCOM_CRAFT_ARMAMENT";
-	static const std::string UFOPAEDIA_HEAVY_WEAPONS_PLATFORMS = "STR_HEAVY_WEAPONS_PLATFORMS";
-	static const std::string UFOPAEDIA_WEAPONS_AND_EQUIPMENT = "STR_WEAPONS_AND_EQUIPMENT";
-	static const std::string UFOPAEDIA_ALIEN_ARTIFACTS = "STR_ALIEN_ARTIFACTS";
-	static const std::string UFOPAEDIA_BASE_FACILITIES = "STR_BASE_FACILITIES";
-	static const std::string UFOPAEDIA_ALIEN_LIFE_FORMS = "STR_ALIEN_LIFE_FORMS";
-	static const std::string UFOPAEDIA_ALIEN_RESEARCH = "STR_ALIEN_RESEARCH_UC";
-	static const std::string UFOPAEDIA_UFO_COMPONENTS = "STR_UFO_COMPONENTS";
-	static const std::string UFOPAEDIA_UFOS = "STR_UFOS";
-	static const std::string UFOPAEDIA_NOT_AVAILABLE = "STR_NOT_AVAILABLE";
-	// This last section is meant for articles, that have to be activated,
+	// This section is meant for articles, that have to be activated,
 	// but have no own entry in a list. E.g. Ammunition items.
 	// Maybe others as well, that should just not be selectable.
+	static const std::string UFOPAEDIA_NOT_AVAILABLE = "STR_NOT_AVAILABLE";
+	static const std::string UFOPAEDIA_COMMENDATIONS = "STR_COMMENDATIONS_UC";
 
 	/**
 	 * This static class encapsulates all functions related to Ufopaedia
-	 * for the game. It manages the relationship between the UfopaediaSaved
-	 * instance in SavedGame and the UfopaediaFactory in Ruleset.
+	 * for the game.
 	 * Main purpose is to open Ufopaedia from Geoscape, navigate between articles
 	 * and release new articles after successful research.
 	 */
@@ -63,7 +54,8 @@ namespace OpenXcom
 		static bool isArticleAvailable(SavedGame *save, ArticleDefinition *article);
 
 		/// open Ufopaedia on a certain entry.
-		static void openArticle(Game *game, std::string &article_id);
+		static void openArticle(Game *game, const std::string &article_id);
+		static void openArticleDetail(Game *game, const std::string &article_id);
 
 		/// open Ufopaedia article from a given article definition.
 		static void openArticle(Game *game, ArticleDefinition *article);
@@ -72,28 +64,31 @@ namespace OpenXcom
 		static void open(Game *game);
 
 		/// article navigation to next article.
-		static void next(Game *game);
+		static void next(Game *game, std::shared_ptr<ArticleCommonState> state);
+		static void nextDetail(Game *game, std::shared_ptr<ArticleCommonState> state, bool debug, bool ids, bool defaults);
 
 		/// article navigation to previous article.
-		static void prev(Game *game);
+		static void prev(Game *game, std::shared_ptr<ArticleCommonState> state);
+		static void prevDetail(Game *game, std::shared_ptr<ArticleCommonState> state, bool debug, bool ids, bool defaults);
 
 		/// load a vector with article ids that are currently visible of a given section.
-		static void list(SavedGame *save, Ruleset *rule, const std::string &section, ArticleDefinitionList &data);
+		static void list(SavedGame *save, Mod *rule, const std::string &section, ArticleDefinitionList &data);
+
+		/// check if the article is hidden.
+		static bool isArticleHidden(SavedGame *save, ArticleDefinition *article, Mod *mod);
+
+		/// check if the article corresponds to an awarded commendation.
+		static bool isAwardedCommendation(SavedGame *save, ArticleDefinition *article);
 
 	protected:
 
-		/// current selected article index (for prev/next navigation).
-		static size_t _current_index;
-
 		/// get index of the given article id in the visible list.
-		static size_t getArticleIndex(SavedGame *save, Ruleset *rule, std::string &article_id);
+		static size_t getArticleIndex(const ArticleDefinitionList& article, const std::string &article_id);
 
 		/// get list of researched articles
-		static ArticleDefinitionList getAvailableArticles(SavedGame *save, Ruleset *rule);
+		static std::shared_ptr<ArticleCommonState> createCommonArticleState(SavedGame *save, Mod *rule);
 
 		/// create a new state object from article definition.
-		static ArticleState *createArticleState(ArticleDefinition *article);
+		static ArticleState *createArticleState(std::shared_ptr<ArticleCommonState> state);
 	};
 }
-
-#endif

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_UFO_H
-#define OPENXCOM_UFO_H
 
 #include <string>
 #include <yaml-cpp/yaml.h>
-#include "CraftId.h"
+#include "Craft.h"
 #include "MovingTarget.h"
-#include "../Ruleset/RuleUfo.h"
+#include "../Mod/RuleUfo.h"
 
 namespace OpenXcom
 {
@@ -31,7 +30,15 @@ namespace OpenXcom
 class AlienMission;
 class UfoTrajectory;
 class SavedGame;
-class Ruleset;
+class Mod;
+class Waypoint;
+
+enum UfoDetection : int
+{
+	DETECTION_NONE = 0x00,
+	DETECTION_RADAR = 0x01,
+	DETECTION_HYPERWAVE = 0x03,
+};
 
 /**
  * Represents an alien UFO on the map.
@@ -42,10 +49,19 @@ class Ruleset;
 class Ufo : public MovingTarget
 {
 public:
+	static const char *ALTITUDE_STRING[];
 	enum UfoStatus { FLYING, LANDED, CRASHED, DESTROYED };
+
+	/// Name of class used in script.
+	static constexpr const char *ScriptName = "Ufo";
+	/// Register all useful function used by script.
+	static void ScriptRegister(ScriptParserBase* parser);
+
 private:
 	const RuleUfo *_rules;
-	int _id, _crashId, _landId, _damage;
+	int _uniqueId;
+	int _missionWaveNumber;
+	int _crashId, _landId, _damage;
 	std::string _direction, _altitude;
 	enum UfoStatus _status;
 	size_t _secondsRemaining;
@@ -58,34 +74,61 @@ private:
 	int _shootingAt, _hitFrame, _fireCountdown, _escapeCountdown;
 	RuleUfoStats _stats;
 	/// Calculates a new speed vector to the destination.
-	void calculateSpeed();
+	void calculateSpeed() override;
+	int _shield, _shieldRechargeHandle;
+	int _tractorBeamSlowdown;
+	bool _isHunterKiller, _isEscort;
+	int _huntMode, _huntBehavior;
+	bool _isHunting, _isEscorting;
+	int _softlockShotCounter;
+	Waypoint *_origWaypoint;
+	ScriptValues<Ufo> _scriptValues;
+
+	using MovingTarget::load;
+	using MovingTarget::save;
+
+	void backupOriginalDestination();
 public:
 	/// Creates a UFO of the specified type.
-	Ufo(const RuleUfo *rules);
+	Ufo(const RuleUfo *rules, int uniqueId, int hunterKillerPercentage = 0, int huntMode = 0, int huntBehavior = 0);
 	/// Cleans up the UFO.
 	~Ufo();
 	/// Loads the UFO from YAML.
-	void load(const YAML::Node& node, const Ruleset &ruleset, SavedGame &game);
+	void load(const YAML::Node& node, const ScriptGlobal *shared, const Mod &ruleset, SavedGame &game);
+	/// Finishes loading the UFO from YAML (called after XCOM craft are loaded).
+	void finishLoading(const YAML::Node& node, SavedGame &save);
 	/// Saves the UFO to YAML.
-	YAML::Node save(bool newBattle) const;
+	YAML::Node save(const ScriptGlobal *shared, bool newBattle) const;
 	/// Saves the UFO's ID to YAML.
-	YAML::Node saveId() const;
+	YAML::Node saveId() const override;
+	/// Gets the UFO's type.
+	std::string getType() const override;
 	/// Gets the UFO's ruleset.
 	const RuleUfo *getRules() const;
 	/// Sets the UFO's ruleset.
 	void changeRules(const RuleUfo *rules);
-	/// Gets the UFO's ID.
-	int getId() const;
-	/// Sets the UFO's ID.
-	void setId(int id);
-	/// Gets the UFO's name.
-	std::wstring getName(Language *lang) const;
-	/// Gets the UFO's marker.
-	int getMarker() const;
+	/// Gets the (unique) UFO's ID.
+	int getUniqueId() const;
+	/// Gets the mission wave number that created this UFO.
+	int getMissionWaveNumber() const { return _missionWaveNumber; }
+	/// Sets the mission wave number that created this UFO.
+	void setMissionWaveNumber(int missionWaveNumber) { _missionWaveNumber = missionWaveNumber; }
+	/// Gets the UFO's default name.
+	std::string getDefaultName(Language *lang) const override;
+	/// Gets the UFO's marker name.
+	std::string getMarkerName() const override;
+	/// Gets the UFO's marker ID.
+	int getMarkerId() const override;
+	/// Gets the UFO's marker sprite.
+	int getMarker() const override;
+
 	/// Gets the UFO's amount of damage.
 	int getDamage() const;
 	/// Sets the UFO's amount of damage.
-	void setDamage(int damage);
+	void setDamage(int damage, const Mod *mod);
+	/// Gets the UFO's percentage of damage.
+	int getDamagePercentage() const;
+
 	/// Gets the UFO's detection status.
 	bool getDetected() const;
 	/// Sets the UFO's detection status.
@@ -98,6 +141,8 @@ public:
 	std::string getDirection() const;
 	/// Gets the UFO's altitude.
 	std::string getAltitude() const;
+	/// Gets the UFO's altitude.
+	int getAltitudeInt() const;
 	/// Sets the UFO's altitude.
 	void setAltitude(const std::string &altitude);
 	/// Gets the UFO status
@@ -138,8 +183,17 @@ public:
 	const UfoTrajectory &getTrajectory() const { return *_trajectory; }
 	/// Gets the UFO's mission object.
 	AlienMission *getMission() const { return _mission; }
+	/// Gets the Xcom craft targeted by this UFO.
+	Craft *getTargetedXcomCraft() const;
+	/// Resets the original destination if targeting the given craft.
+	void resetOriginalDestination(Craft *target);
+	void resetOriginalDestination(bool debugHelper);
+	/// Sets the Xcom craft targeted by this UFO.
+	void setTargetedXcomCraft(Craft *craft);
+	/// Sets the UFO escorted by this UFO.
+	void setEscortedUfo(Ufo *ufo);
 	/// Sets the UFO's destination.
-	void setDestination(Target *dest);
+	void setDestination(Target *dest) override;
 	/// Get which interceptor this ufo is engaging.
 	int getShootingAt() const;
 	/// Set which interceptor this ufo is engaging.
@@ -155,17 +209,51 @@ public:
 	/// Sets the UFO's hit frame.
 	void setHitFrame(int frame);
 	/// Gets the UFO's hit frame.
-	int getHitFrame();
+	int getHitFrame() const;
 	/// Gets the UFO's stats.
 	const RuleUfoStats& getCraftStats() const;
 	void setFireCountdown(int time);
-	int getFireCountdown();
+	int getFireCountdown() const;
 	void setEscapeCountdown(int time);
-	int getEscapeCountdown();
+	int getEscapeCountdown() const;
 	void setInterceptionProcessed(bool processed);
-	bool getInterceptionProcessed();
+	bool getInterceptionProcessed() const;
+
+	/// Sets the UFO's shield
+	void setShield(int shield);
+	/// Gets the UFO's shield value
+	int getShield() const;
+	/// Sets which _interceptionNumber in a dogfight handles the UFO shield recharge
+	void setShieldRechargeHandle(int shieldRechargeHandle);
+	/// Gets which _interceptionNumber in a dogfight handles the UFO shield recharge
+	int getShieldRechargeHandle() const;
+	/// Gets the percent shield remaining
+	int getShieldPercentage() const;
+
+	/// Sets the number of tractor beams locked on to a UFO
+	void setTractorBeamSlowdown(int tractorBeamSlowdown);
+	/// Gets the number of tractor beams locked on to a UFO
+	int getTractorBeamSlowdown() const;
+	/// Is this UFO a hunter-killer?
+	bool isHunterKiller() const;
+	void setHunterKiller(bool isHunterKiller);
+	/// Is this UFO an escort?
+	bool isEscort() const;
+	void setEscort(bool isEscort);
+	/// Gets the UFO's hunting preferences.
+	int getHuntMode() const;
+	/// Gets the UFO's hunting behavior.
+	int getHuntBehavior() const;
+	/// Is this UFO actively hunting right now?
+	bool isHunting() const;
+	/// Is this UFO escorting other UFO right now?
+	bool isEscorting() const;
+	/// Gets the value of the softlock shot counter;
+	int getSoftlockShotCounter() const { return _softlockShotCounter; }
+	/// Increases the value of the softlock shot counter;
+	void increaseSoftlockShotCounter() { _softlockShotCounter++; }
+	/// Checks if a target is inside the UFO's radar range.
+	bool insideRadarRange(Target *target) const;
 };
 
 }
-
-#endif

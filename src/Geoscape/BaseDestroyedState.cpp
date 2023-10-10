@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,44 +18,49 @@
  */
 #include "BaseDestroyedState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Surface.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
+#include "../Interface/TextList.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Region.h"
 #include "../Savegame/AlienMission.h"
 #include "../Savegame/Ufo.h"
-#include "../Ruleset/RuleRegion.h"
+#include "../Mod/RuleBaseFacility.h"
+#include "../Mod/RuleRegion.h"
 #include "../Engine/Options.h"
+#include "../Basescape/SellState.h"
+#include "../Menu/ErrorMessageState.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
 
-BaseDestroyedState::BaseDestroyedState(Base *base) : _base(base)
+BaseDestroyedState::BaseDestroyedState(Base *base, bool missiles, bool partialDestruction) : _base(base), _missiles(missiles), _partialDestruction(partialDestruction)
 {
 	_screen = false;
 
 	// Create objects
 	_window = new Window(this, 256, 160, 32, 20);
 	_btnOk = new TextButton(100, 20, 110, 142);
-	_txtMessage = new Text(224, 48, 48, 76);
+	_txtMessage = new Text(224, 48, 48, _partialDestruction ? 42 : 76);
+	_lstDestroyedFacilities = new TextList(208, 40, 48, 92);
 
 	// Set palette
-	setInterface("UFOInfo");
+	setInterface("baseDestroyed");
 
-	add(_window, "window", "UFOInfo");
-	add(_btnOk, "button", "UFOInfo");
-	add(_txtMessage, "text", "UFOInfo");
+	add(_window, "window", "baseDestroyed");
+	add(_btnOk, "button", "baseDestroyed");
+	add(_txtMessage, "text", "baseDestroyed");
+	add(_lstDestroyedFacilities, "text", "baseDestroyed");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK15.SCR"));
+	setWindowBackground(_window, "baseDestroyed");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BaseDestroyedState::btnOkClick);
@@ -67,40 +72,57 @@ BaseDestroyedState::BaseDestroyedState(Base *base) : _base(base)
 	_txtMessage->setWordWrap(true);
 
 	_txtMessage->setText(tr("STR_THE_ALIENS_HAVE_DESTROYED_THE_UNDEFENDED_BASE").arg(_base->getName()));
-
-	std::vector<Region*>::iterator k = _game->getSavedGame()->getRegions()->begin();
-	for (; k != _game->getSavedGame()->getRegions()->end(); ++k)
+	if (_missiles)
 	{
-		if ((*k)->getRules()->insideRegion((base)->getLongitude(), (base)->getLatitude()))
+		if (_partialDestruction)
 		{
-			break;
-		}
-	}
-
-	AlienMission* am = _game->getSavedGame()->findAlienMission((*k)->getRules()->getType(), OBJECTIVE_RETALIATION);
-	for (std::vector<Ufo*>::iterator i = _game->getSavedGame()->getUfos()->begin(); i != _game->getSavedGame()->getUfos()->end();)
-	{
-		if ((*i)->getMission() == am)
-		{
-			delete *i;
-			i = _game->getSavedGame()->getUfos()->erase(i);
+			_txtMessage->setText(tr("STR_ALIEN_MISSILES_HAVE_DAMAGED_OUR_BASE").arg(_base->getName()));
 		}
 		else
 		{
-			++i;
+			_txtMessage->setText(tr("STR_ALIEN_MISSILES_HAVE_DESTROYED_OUR_BASE").arg(_base->getName()));
 		}
 	}
 
-	for (std::vector<AlienMission*>::iterator i = _game->getSavedGame()->getAlienMissions().begin();
-		i != _game->getSavedGame()->getAlienMissions().end(); ++i)
+	_lstDestroyedFacilities->setColumns(2, 162, 14);
+	_lstDestroyedFacilities->setBackground(_window);
+	_lstDestroyedFacilities->setSelectable(true);
+	_lstDestroyedFacilities->setMargin(8);
+	_lstDestroyedFacilities->setVisible(false);
+
+	if (_missiles && _partialDestruction)
 	{
-		if ((AlienMission*)(*i) == am)
+		for (const auto& each : *_base->getDestroyedFacilitiesCache())
 		{
-			delete (*i);
-			_game->getSavedGame()->getAlienMissions().erase(i);
-			break;
+			std::ostringstream ss;
+			ss << each.second;
+			_lstDestroyedFacilities->addRow(2, tr(each.first->getType()).c_str(), ss.str().c_str());
 		}
+		_lstDestroyedFacilities->setVisible(true);
 	}
+
+	if (_partialDestruction)
+	{
+		// don't remove the alien mission yet, there might be more attacks coming
+		return;
+	}
+
+	AlienMission* am = _base->getRetaliationMission();
+	if (!am)
+	{
+		// backwards-compatibility
+		RuleRegion* regionRule = _game->getSavedGame()->getRegions()->front()->getRules(); // wrong, but that's how it is in OXC
+		for (const auto* region : *_game->getSavedGame()->getRegions())
+		{
+			if (region->getRules()->insideRegion(_base->getLongitude(), _base->getLatitude()))
+			{
+				regionRule = region->getRules();
+				break;
+			}
+		}
+		am = _game->getSavedGame()->findAlienMission(regionRule->getType(), OBJECTIVE_RETALIATION);
+	}
+	_game->getSavedGame()->deleteRetaliationMission(am, _base);
 }
 
 /**
@@ -117,12 +139,27 @@ BaseDestroyedState::~BaseDestroyedState()
 void BaseDestroyedState::btnOkClick(Action *)
 {
 	_game->popState();
-	for (std::vector<Base*>::iterator i = _game->getSavedGame()->getBases()->begin(); i != _game->getSavedGame()->getBases()->end(); ++i)
+
+	if (_partialDestruction)
 	{
-		if ((*i) == _base)
+		if (_game->getSavedGame()->getMonthsPassed() > -1 && Options::storageLimitsEnforced && _base != 0 && _base->storesOverfull())
 		{
-			delete (*i);
-			_game->getSavedGame()->getBases()->erase(i);
+			_game->pushState(new SellState(_base, 0, OPT_BATTLESCAPE));
+			_game->pushState(new ErrorMessageState(tr("STR_STORAGE_EXCEEDED").arg(_base->getName()), _palette, _game->getMod()->getInterface("debriefing")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("debriefing")->getElement("errorPalette")->color));
+		}
+
+		// the base was damaged, but survived
+		return;
+	}
+
+	for (auto xbaseIt = _game->getSavedGame()->getBases()->begin(); xbaseIt != _game->getSavedGame()->getBases()->end(); ++xbaseIt)
+	{
+		Base* xbase = (*xbaseIt);
+		if (xbase == _base)
+		{
+			_game->getSavedGame()->stopHuntingXcomCrafts(xbase); // destroyed together with the base
+			delete xbase;
+			_game->getSavedGame()->getBases()->erase(xbaseIt);
 			break;
 		}
 	}

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BASESCAPESTATE_H
-#define OPENXCOM_BASESCAPESTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -41,7 +39,7 @@ class BasescapeState : public State
 private:
 	BaseView *_view;
 	MiniBaseView *_mini;
-	Text *_txtFacility, *_txtLocation, *_txtFunds;
+	Text *_txtFacility, *_txtLocation, *_txtFunds, *_leftArrow, *_rightArrow;
 	TextEdit *_edtBase;
 	TextButton *_btnNewBase, *_btnBaseInfo, *_btnSoldiers, *_btnCrafts, *_btnFacilities, *_btnResearch, *_btnManufacture, *_btnTransfer, *_btnPurchase, *_btnSell, *_btnGeoscape;
 	Base *_base;
@@ -52,7 +50,7 @@ public:
 	/// Cleans up the Basescape state.
 	~BasescapeState();
 	/// Updates the base stats.
-	void init();
+	void init() override;
 	/// Sets a new base to display.
 	void setBase(Base *base);
 	/// Handler for clicking the Build New Base button.
@@ -81,18 +79,24 @@ public:
 	void viewLeftClick(Action *action);
 	/// Handler for right clicking the base view.
 	void viewRightClick(Action *action);
+	/// Handler for middle clicking the base view.
+	void viewMiddleClick(Action *action);
 	/// Handler for hovering the base view.
 	void viewMouseOver(Action *action);
 	/// Handler for hovering out of the base view.
 	void viewMouseOut(Action *action);
-	/// Handler for clicking the mini base view.
-	void miniClick(Action *action);
+	/// Handler for clicking the mini base view (left button).
+	void miniLeftClick(Action *action);
+	/// Handler for clicking the mini base view (right button).
+	void miniRightClick(Action *action);
+	/// Handler for clicking the mini base view (middle button).
+	void miniMiddleClick(Action *action);	
 	/// Handler for changing the text on the Name edit.
 	void edtBaseChange(Action *action);
 	/// Handler for pressing a base selection hotkey.
 	void handleKeyPress(Action *action);
+	/// Update arrows visibility
+	void updateArrows();
 };
 
 }
-
-#endif

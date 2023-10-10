@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,18 +18,14 @@
  */
 #include "SelectStartFacilityState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
-#include "../Interface/Window.h"
-#include "../Interface/Text.h"
 #include "../Interface/TextList.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/RuleBaseFacility.h"
-#include "../Savegame/SavedGame.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/BaseFacility.h"
+#include "../Savegame/SavedGame.h"
 #include "../Engine/Options.h"
 #include "PlaceStartFacilityState.h"
 #include "PlaceLiftState.h"
@@ -46,15 +42,13 @@ namespace OpenXcom
  */
 SelectStartFacilityState::SelectStartFacilityState(Base *base, State *state, Globe *globe) : BuildFacilitiesState(base, state), _globe(globe)
 {
-	_facilities = _game->getRuleset()->getCustomBaseFacilities();
+	_facilities = _game->getMod()->getCustomBaseFacilities(_game->getSavedGame()->getDifficulty());
 
 	_btnOk->setText(tr("STR_RESET"));
 	_btnOk->onMouseClick((ActionHandler)&SelectStartFacilityState::btnOkClick);
 	_btnOk->onKeyboardPress(0, Options::keyCancel);
 
 	_lstFacilities->onMouseClick((ActionHandler)&SelectStartFacilityState::lstFacilitiesClick);
-
-	populateBuildList();
 }
 
 /**
@@ -71,9 +65,9 @@ SelectStartFacilityState::~SelectStartFacilityState()
 void SelectStartFacilityState::populateBuildList()
 {
 	_lstFacilities->clearList();
-	for (std::vector<RuleBaseFacility*>::iterator i = _facilities.begin(); i != _facilities.end(); ++i)
+	for (const auto* rule : _facilities)
 	{
-		_lstFacilities->addRow(1, tr((*i)->getType()).c_str());
+		_lstFacilities->addRow(1, tr(rule->getType()).c_str());
 	}
 }
 
@@ -83,9 +77,9 @@ void SelectStartFacilityState::populateBuildList()
  */
 void SelectStartFacilityState::btnOkClick(Action *)
 {
-	for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+	for (auto* fac : *_base->getFacilities())
 	{
-		delete *i;
+		delete fac;
 	}
 	_base->getFacilities()->clear();
 	_game->popState();

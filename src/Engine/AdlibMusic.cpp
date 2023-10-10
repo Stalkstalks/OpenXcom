@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,12 +17,12 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "AdlibMusic.h"
-#include <fstream>
 #include <algorithm>
-#include "Exception.h"
 #include "Options.h"
 #include "Logger.h"
 #include "Game.h"
+#include "SDL2Helpers.h"
+#include "FileMap.h"
 #include "Adlib/fmopl.h"
 #include "Adlib/adlplayer.h"
 
@@ -50,7 +50,7 @@ AdlibMusic::AdlibMusic(float volume) : Music(), _data(0), _size(0), _volume(volu
 	{
 		opl[1] = OPLCreate(OPL_TYPE_YM3812, 3579545, rate);
 	}
-	// magic value - length of 1 tick per samplerate
+	// magic value - length of 1 tick per sample rate
 	if (delayRates.empty())
 	{
 		delayRates[8000] = 114 * 4;
@@ -79,7 +79,10 @@ AdlibMusic::~AdlibMusic()
 		OPLDestroy(opl[1]);
 		opl[1] = 0;
 	}
-	delete[] _data;
+	if (_data)
+	{
+		SDL_free(_data);
+	}
 }
 
 /**
@@ -88,37 +91,23 @@ AdlibMusic::~AdlibMusic()
  */
 void AdlibMusic::load(const std::string &filename)
 {
-	std::ifstream file(filename.c_str(), std::ios::binary);
-	if (!file)
-	{
-		throw Exception(filename + " not found");
-	}
-
-	file.seekg(0, std::ifstream::end);
-	_size = file.tellg();
-	file.seekg(0);
-
-	_data = new char[_size];
-	file.read(_data, _size);
+	load(FileMap::getRWops(filename));
 }
 
 /**
- * Loads a music file from a specified memory chunk.
- * @param data Pointer to the music file in memory
- * @param size Size of the music file in bytes.
+ * Loads a music file from a specified rwops.
+ * @param rwops rwops of the music data.
  */
-void AdlibMusic::load(const void *data, int size)
+void AdlibMusic::load(SDL_RWops *rwops)
 {
-	_data = (char*)data;
-	if (*(unsigned char*)_data<=56) size+=*(unsigned char*)_data;
-	_size = (size_t)(size);
+	_data = (char *)SDL_LoadFile_RW(rwops, &_size, SDL_TRUE);
 }
 
 /**
  * Plays the contained music track.
  * @param loop Amount of times to loop the track. -1 = infinite
  */
-void AdlibMusic::play(int loop) const
+void AdlibMusic::play(int) const
 {
 #ifndef __NO_MUSIC
 	if (!Options::mute)
@@ -140,7 +129,8 @@ void AdlibMusic::play(int loop) const
 void AdlibMusic::player(void *udata, Uint8 *stream, int len)
 {
 #ifndef __NO_MUSIC
-	if (Options::musicVolume == 0)
+	// Check SDL volume for Background Mute functionality
+	if (Options::musicVolume == 0 || Mix_VolumeMusic(-1) == 0)
 		return;
 	if (Options::musicAlwaysLoop && !func_is_music_playing())
 	{
@@ -166,7 +156,7 @@ void AdlibMusic::player(void *udata, Uint8 *stream, int len)
 			return;
 		func_play_tick();
 
-		delay = delayRates[rate]; 
+		delay = delayRates[rate];
 	}
 #endif
 }
@@ -181,4 +171,5 @@ bool AdlibMusic::isPlaying()
 #endif
 	return false;
 }
+
 }

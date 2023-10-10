@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,11 +17,9 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "CraftPatrolState.h"
-#include <string>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -51,18 +49,18 @@ CraftPatrolState::CraftPatrolState(Craft *craft, Globe *globe) : _craft(craft), 
 	_txtPatrolling = new Text(224, 17, 16, 120);
 
 	// Set palette
-	setInterface("geoCraftScreens");
+	setInterface("craftPatrol");
 
-	add(_window, "window", "geoCraftScreens");
-	add(_btnOk, "button", "geoCraftScreens");
-	add(_btnRedirect, "button", "geoCraftScreens");
-	add(_txtDestination, "text1", "geoCraftScreens");
-	add(_txtPatrolling, "text1", "geoCraftScreens");
+	add(_window, "window", "craftPatrol");
+	add(_btnOk, "button", "craftPatrol");
+	add(_btnRedirect, "button", "craftPatrol");
+	add(_txtDestination, "text1", "craftPatrol");
+	add(_txtPatrolling, "text1", "craftPatrol");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	setWindowBackground(_window, "craftPatrol");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CraftPatrolState::btnOkClick);
@@ -108,7 +106,7 @@ void CraftPatrolState::btnOkClick(Action *)
 void CraftPatrolState::btnRedirectClick(Action *)
 {
 	_game->popState();
-	_game->pushState(new GeoscapeCraftState(_craft, _globe, 0));
+	_game->pushState(new GeoscapeCraftState(_craft, _globe, 0, false));
 }
 
 }

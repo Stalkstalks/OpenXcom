@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,20 +16,25 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include "CrossPlatform.h"
-#include <set>
+#include <exception>
 #include <algorithm>
-#include <iostream>
 #include <sstream>
+#include <fstream>
 #include <string>
-#include <locale>
+#include <list>
 #include <stdint.h>
+#include <time.h>
+#include <signal.h>
 #include <sys/stat.h>
-#include "../dirent.h"
+#include <assert.h>
 #include "Logger.h"
 #include "Exception.h"
 #include "Options.h"
-#include "Language.h"
+#include "Unicode.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -38,16 +43,31 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
-#include <direct.h>
-#ifndef SHGFP_TYPE_CURRENT
-#define SHGFP_TYPE_CURRENT 0
+#include <shellapi.h>
+#include <wininet.h>
+#include <urlmon.h>
+#ifndef __NO_DBGHELP
+#include <dbghelp.h>
 #endif
+#ifdef __MINGW32__
+#include <cxxabi.h>
+#endif
+#define EXCEPTION_CODE_CXX 0xe06d7363
 #ifndef __GNUC__
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "urlmon.lib")
+#ifndef __NO_DBGHELP
+#pragma comment(lib, "dbghelp.lib")
 #endif
-#else
+#endif
+#else		/* #ifdef _WIN32 */
+#include <iostream>
+#include <fstream>
+#include <locale>
+#include <SDL_image.h>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -55,21 +75,107 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <pwd.h>
-#endif
+#include <execinfo.h>
+#include <cxxabi.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include "Unicode.h"
+#endif		/* #ifdef _WIN32 */
 #include <SDL.h>
 #include <SDL_syswm.h>
-#include <SDL_image.h>
+#ifdef __HAIKU__
+#include <FindDirectory.h>
+#include <StorageDefs.h>
+#endif
+#include "FileMap.h"
+#include "SDL2Helpers.h"
+#include "../version.h"
 
 namespace OpenXcom
 {
 namespace CrossPlatform
 {
+	std::string errorDlg;
+
+/**
+ * Determines the available Linux error dialogs.
+ */
+void getErrorDialog()
+{
+#ifndef _WIN32
+	if (system(NULL))
+	{
+		if (getenv("KDE_SESSION_UID") && system("which kdialog 2>&1 > /dev/null") == 0)
+			errorDlg = "kdialog --error ";
+		else if (system("which zenity 2>&1 > /dev/null") == 0)
+			errorDlg = "zenity --no-wrap --error --text=";
+		else if (system("which kdialog 2>&1 > /dev/null") == 0)
+			errorDlg = "kdialog --error ";
+		else if (system("which gdialog 2>&1 > /dev/null") == 0)
+			errorDlg = "gdialog --msgbox ";
+		else if (system("which xdialog 2>&1 > /dev/null") == 0)
+			errorDlg = "xdialog --msgbox ";
+	}
+#endif
+}
+
 
 #ifdef _WIN32
-	const char PATH_SEPARATOR = '\\';
-#else
-	const char PATH_SEPARATOR = '/';
+/**
+ * Takes a Windows multibyte filesystem path and converts it to a UTF-8 string.
+ * Also converts the path separator.
+ * @param pathW Filesystem path.
+ * @return UTF-8 string.
+ */
+static std::string pathFromWindows(const wchar_t *pathW) {
+	int sizeW = lstrlenW(pathW);
+	int sizeU8 = WideCharToMultiByte(CP_UTF8, 0, pathW, sizeW, NULL, 0, NULL, NULL);
+	std::string pathU8(sizeU8, 0);
+	WideCharToMultiByte(CP_UTF8, 0, pathW, sizeW, &pathU8[0], sizeU8, NULL, NULL);
+	std::replace(pathU8.begin(), pathU8.end(), '\\', '/');
+	return pathU8;
+}
+
+/**
+ * Takes a UTF-8 string and converts it to a Windows
+ * multibyte filesystem path.
+ * Also converts the path separator.
+ * @param path UTF-8 string.
+ * @param reslash Convert forward slashes to back ones.
+ * @return Filesystem path.
+ */
+static std::wstring pathToWindows(const std::string& path, bool reslash = true) {
+	std::string src = path;
+	if (reslash) {
+		std::replace(src.begin(), src.end(), '/', '\\');
+	}
+	int sizeW = MultiByteToWideChar(CP_UTF8, 0, &src[0], (int)src.size(), NULL, 0);
+	std::wstring pathW(sizeW, 0);
+	MultiByteToWideChar(CP_UTF8, 0, &src[0], (int)src.size(), &pathW[0], sizeW);
+	return pathW;
+}
 #endif
+
+static std::vector<std::string> args;
+
+/**
+ * Converts command-line args to UTF-8 on windows
+ */
+void processArgs (int argc, char *argv[])
+{
+	args.clear();
+#ifdef _WIN32
+	auto cmdlineW = GetCommandLineW();
+	int numArgs;
+	auto argvW = CommandLineToArgvW(cmdlineW, &numArgs);
+	for (int i=0; i< numArgs; ++i) { args.push_back(pathFromWindows(argvW[i])); }
+#else
+	for (int i=0; i< argc; ++i) { args.push_back(argv[i]); }
+#endif
+}
+
+/// Returns the command-line arguments
+const std::vector<std::string>& getArgs() { return args; }
 
 /**
  * Displays a message box with an error message.
@@ -78,9 +184,22 @@ namespace CrossPlatform
 void showError(const std::string &error)
 {
 #ifdef _WIN32
-	MessageBoxA(NULL, error.c_str(), "OpenXcom Error", MB_ICONERROR | MB_OK);
+	auto titleW = pathToWindows("OpenXcom Error", false);
+	auto errorW = pathToWindows(error, false);
+	MessageBoxW(NULL, errorW.c_str(), titleW.c_str(), MB_ICONERROR | MB_OK);
 #else
-	std::cerr << error << std::endl;
+	if (errorDlg.empty())
+	{
+		std::cerr << error << std::endl;
+	}
+	else
+	{
+		std::string nError = '"' + error + '"';
+		Unicode::replace(nError, "\n", "\\n");
+		std::string cmd = errorDlg + nError;
+		if (system(cmd.c_str()) != 0)
+			std::cerr << error << std::endl;
+	}
 #endif
 	Log(LOG_FATAL) << error;
 }
@@ -93,13 +212,11 @@ void showError(const std::string &error)
 static char const *getHome()
 {
 	char const *home = getenv("HOME");
-#ifndef _WIN32
 	if (!home)
 	{
 		struct passwd *const pwd = getpwuid(getuid());
 		home = pwd->pw_dir;
 	}
-#endif
 	return home;
 }
 #endif
@@ -116,33 +233,45 @@ std::vector<std::string> findDataFolders()
 	list.push_back("PROGDIR:");
 	return list;
 #endif
-	
-#ifdef _WIN32
-	char path[MAX_PATH];
 
+#ifdef _WIN32
+	std::unordered_set<std::string> seen; // avoid dups in case cwd = dirname(exe)
+	wchar_t pathW[MAX_PATH+1];
+	const std::wstring oxconst = pathToWindows("OpenXcom/");
 	// Get Documents folder
-	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, path)))
+	if (SHGetSpecialFolderPathW(NULL, pathW, CSIDL_PERSONAL, FALSE))
 	{
-		PathAppendA(path, "OpenXcom\\");
-		list.push_back(path);
+		PathAppendW(pathW, oxconst.c_str());
+		auto path = pathFromWindows(pathW);
+		Log(LOG_DEBUG) << "findDataFolders(): SHGetSpecialFolderPathW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 
 	// Get binary directory
-	if (GetModuleFileNameA(NULL, path, MAX_PATH) != 0)
+	if (GetModuleFileNameW(NULL, pathW, MAX_PATH) != 0)
 	{
-		PathRemoveFileSpecA(path);
-		list.push_back(path);
+		PathRemoveFileSpecW(pathW);
+		auto path = pathFromWindows(pathW);
+		path.push_back('/');
+		Log(LOG_DEBUG) << "findDataFolders(): GetModuleFileNameW/PathRemoveFileSpecW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 
 	// Get working directory
-	if (GetCurrentDirectoryA(MAX_PATH, path) != 0)
+	if (GetCurrentDirectoryW(MAX_PATH, pathW) != 0)
 	{
-		list.push_back(path);
+		auto path = pathFromWindows(pathW);
+		path.push_back('/');
+		Log(LOG_DEBUG) << "findDataFolders(): GetCurrentDirectoryW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 #else
 	char const *home = getHome();
 #ifdef __HAIKU__
-	list.push_back("/boot/apps/OpenXcom/");
+	char data_path[B_PATH_NAME_LENGTH];
+	find_directory(B_SYSTEM_SETTINGS_DIRECTORY, 0, true, data_path, sizeof(data_path)-strlen("/OpenXcom/"));
+	strcat(data_path,"/OpenXcom/");
+	list.push_back(data_path);
 #endif
 	char path[MAXPATHLEN];
 
@@ -162,9 +291,11 @@ std::vector<std::string> findDataFolders()
  	list.push_back(path);
 
 	// Get global data folders
-	if (char *xdg_data_dirs = getenv("XDG_DATA_DIRS"))
+	if (char const *const xdg_data_dirs = getenv("XDG_DATA_DIRS"))
 	{
-		char *dir = strtok(xdg_data_dirs, ":");
+		char xdg_data_dirs_copy[strlen(xdg_data_dirs)+1];
+		strcpy(xdg_data_dirs_copy, xdg_data_dirs);
+		char *dir = strtok(xdg_data_dirs_copy, ":");
 		while (dir != 0)
 		{
 			snprintf(path, MAXPATHLEN, "%s/openxcom/", dir);
@@ -173,19 +304,33 @@ std::vector<std::string> findDataFolders()
 		}
 	}
 #ifdef __APPLE__
-	list.push_back("Users/Shared/OpenXcom/");
+	list.push_back("/Users/Shared/OpenXcom/");
 #else
 	list.push_back("/usr/local/share/openxcom/");
-#ifndef __FreeBSD__
 	list.push_back("/usr/share/openxcom/");
-#endif
 #ifdef DATADIR
 	snprintf(path, MAXPATHLEN, "%s/", DATADIR);
 	list.push_back(path);
 #endif
 
 #endif
-	
+
+#ifdef __linux
+	{
+		char buffer[PATH_MAX];
+		const ssize_t count = readlink("/proc/self/exe", buffer, PATH_MAX);
+		// Get absolute executable path
+		if (count != 0) {
+			const std::string exe_path = std::string(buffer, count);
+			// Get folder path
+			const size_t dir_pos = exe_path.find_last_of("/");
+			if (dir_pos != std::string::npos) {
+				std::string dir = exe_path.substr(0, dir_pos);
+				list.push_back( dir.append("/") );
+			}
+		}
+	}
+#endif
 	// Get working directory
 	list.push_back("./");
 #endif
@@ -201,44 +346,55 @@ std::vector<std::string> findDataFolders()
 std::vector<std::string> findUserFolders()
 {
 	std::vector<std::string> list;
-	
+
 #ifdef __MORPHOS__
 	list.push_back("PROGDIR:");
 	return list;
 #endif
 
-	
 #ifdef _WIN32
-	char path[MAX_PATH];
+	std::unordered_set<std::string> seen;
+	wchar_t pathW[MAX_PATH+1];
+	const std::wstring oxconst = pathToWindows("OpenXcom/");
+	const std::wstring usconst = pathToWindows("user/");
 
 	// Get Documents folder
-	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, path)))
+	if (SHGetSpecialFolderPathW(NULL, pathW, CSIDL_PERSONAL, FALSE))
 	{
-		PathAppendA(path, "OpenXcom\\");
-		list.push_back(path);
+		PathAppendW(pathW, oxconst.c_str());
+		auto path = pathFromWindows(pathW);
+		Log(LOG_DEBUG) << "findUserFolders(): SHGetSpecialFolderPathW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 
 	// Get binary directory
-	if (GetModuleFileNameA(NULL, path, MAX_PATH) != 0)
+	if (GetModuleFileNameW(NULL, pathW, MAX_PATH) != 0)
 	{
-		PathRemoveFileSpecA(path);
-		PathAppendA(path, "user\\");
-		list.push_back(path);
+		PathRemoveFileSpecW(pathW);
+		PathAppendW(pathW, usconst.c_str());
+		auto path = pathFromWindows(pathW);
+		Log(LOG_DEBUG) << "findUserFolders(): GetModuleFileNameW/PathRemoveFileSpecW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 
 	// Get working directory
-	if (GetCurrentDirectoryA(MAX_PATH, path) != 0)
+	if (GetCurrentDirectoryW(MAX_PATH, pathW) != 0)
 	{
-		PathAppendA(path, "user\\");
-		list.push_back(path);
+		PathAppendW(pathW, usconst.c_str());
+		auto path = pathFromWindows(pathW);
+		Log(LOG_DEBUG) << "findUserFolders(): GetCurrentDirectoryW: " << path;
+		if (seen.end() == seen.find(path)) { seen.insert(path); list.push_back(path); }
 	}
 #else
 #ifdef __HAIKU__
-	list.push_back("/boot/apps/OpenXcom/");
+	char user_path[B_PATH_NAME_LENGTH];
+	find_directory(B_USER_SETTINGS_DIRECTORY, 0, true, user_path, sizeof(user_path)-strlen("/OpenXcom/"));
+	strcat(user_path,"/OpenXcom/");
+	list.push_back(user_path);
 #endif
 	char const *home = getHome();
 	char path[MAXPATHLEN];
-	
+
 	// Get user folders
 	if (char const *const xdg_data_home = getenv("XDG_DATA_HOME"))
  	{
@@ -278,7 +434,10 @@ std::string findConfigFolder()
 #if defined(_WIN32) || defined(__APPLE__)
 	return "";
 #elif defined (__HAIKU__)
-	return "/boot/home/config/settings/openxcom/";
+	char settings_path[B_PATH_NAME_LENGTH];
+	find_directory(B_USER_SETTINGS_DIRECTORY, 0, true, settings_path, sizeof(settings_path)-strlen("/OpenXcom/"));
+	strcat(settings_path,"/OpenXcom/");
+	return settings_path;
 #else
 	char const *home = getHome();
 	char path[MAXPATHLEN];
@@ -300,9 +459,6 @@ std::string searchDataFile(const std::string &filename)
 {
 	// Correct folder separator
 	std::string name = filename;
-#ifdef _WIN32
-	std::replace(name.begin(), name.end(), '/', PATH_SEPARATOR);
-#endif
 
 	// Check current data path
 	std::string path = Options::getDataFolder() + name;
@@ -312,12 +468,12 @@ std::string searchDataFile(const std::string &filename)
 	}
 
 	// Check every other path
-	for (std::vector<std::string>::const_iterator i = Options::getDataList().begin(); i != Options::getDataList().end(); ++i)
+	for (auto& dataPath : Options::getDataList())
 	{
-		path = *i + name;
+		path = dataPath + name;
 		if (fileExists(path))
 		{
-			Options::setDataFolder(*i);
+			Options::setDataFolder(dataPath);
 			return path;
 		}
 	}
@@ -330,9 +486,6 @@ std::string searchDataFolder(const std::string &foldername)
 {
 	// Correct folder separator
 	std::string name = foldername;
-#ifdef _WIN32
-	std::replace(name.begin(), name.end(), '/', PATH_SEPARATOR);
-#endif
 
 	// Check current data path
 	std::string path = Options::getDataFolder() + name;
@@ -342,12 +495,12 @@ std::string searchDataFolder(const std::string &foldername)
 	}
 
 	// Check every other path
-	for (std::vector<std::string>::const_iterator i = Options::getDataList().begin(); i != Options::getDataList().end(); ++i)
+	for (auto& dataPath : Options::getDataList())
 	{
-		path = *i + name;
+		path = dataPath + name;
 		if (folderExists(path))
 		{
-			Options::setDataFolder(*i);
+			Options::setDataFolder(dataPath);
 			return path;
 		}
 	}
@@ -365,7 +518,8 @@ std::string searchDataFolder(const std::string &foldername)
 bool createFolder(const std::string &path)
 {
 #ifdef _WIN32
-	int result = CreateDirectoryA(path.c_str(), 0);
+	auto pathW = pathToWindows(path);
+	int result = CreateDirectoryW(pathW.c_str(), 0);
 	if (result == 0)
 		return false;
 	else
@@ -386,27 +540,59 @@ bool createFolder(const std::string &path)
  * @param path Folder path.
  * @return Terminated path.
  */
-std::string endPath(const std::string &path)
+std::string convertPath(const std::string &path)
 {
-	if (!path.empty() && path.at(path.size()-1) != PATH_SEPARATOR)
-		return path + PATH_SEPARATOR;
+	if (!path.empty() && path.at(path.size()-1) != '/')
+		return path + '/';
 	return path;
 }
+#ifdef _WIN32
+static time_t FILETIME2mtime(FILETIME& ft) {
+	const long long int TICKS_PER_SECOND = 10000000;
+	const long long int EPOCH_DIFFERENCE = 11644473600LL;
+	long long int input = 0, temp = 0;
 
+	input = ((long long int)ft.dwHighDateTime)<<32;
+	input += ft.dwLowDateTime;
+	temp = input / TICKS_PER_SECOND;
+	temp = temp - EPOCH_DIFFERENCE;
+	return (time_t) temp;
+}
+#endif
 /**
  * Gets the name of all the files
  * contained in a certain folder.
  * @param path Full path to folder.
  * @param ext Extension of files ("" if it doesn't matter).
- * @return Ordered list of all the files.
+ * @return Ordered list of all the files in the form of tuple(filename, is_folder, mtime).
  */
-std::vector<std::string> getFolderContents(const std::string &path, const std::string &ext)
+std::vector<std::tuple<std::string, bool, time_t>> getFolderContents(const std::string &path, const std::string &ext)
 {
-	std::vector<std::string> files;
-	std::string extl = ext;
-	std::transform(extl.begin(), extl.end(), extl.begin(), ::tolower);
-
+	std::vector<std::tuple<std::string, bool, time_t>> files;
+#ifdef _WIN32
+	auto search_path = path + "/*";
+	if (!ext.empty()) { search_path += "." + ext; }
+	Log(LOG_VERBOSE) << "getFolderContents("<<path<<", "<<ext<<") -> " << search_path;
+	auto pathW = pathToWindows(search_path);
+	WIN32_FIND_DATAW ffd;
+	auto handle = FindFirstFileW(pathW.c_str(), &ffd);
+	if (handle == INVALID_HANDLE_VALUE) {
+		Log(LOG_VERBOSE) << "getFolderContents("<<path<<", "<<ext<<"): fail outright.";
+		return files;
+	}
+	do  {
+		auto filename = pathFromWindows(ffd.cFileName);
+		if ((filename == ".") || (filename == "..")) { continue; }
+		time_t mtime = FILETIME2mtime(ffd.ftLastWriteTime);
+		bool is_folder = ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+		files.push_back(std::make_tuple(filename, is_folder, mtime));
+		Log(LOG_VERBOSE) << "getFolderContents("<<path<<", "<<ext<<"): got '"<<filename<<"'";
+	} while (FindNextFileW(handle, &ffd) != 0);
+	FindClose(handle);
+	Log(LOG_VERBOSE) << "getFolderContents("<<path<<", "<<ext<<"): total "<<files.size();
+#else
 	DIR *dp = opendir(path.c_str());
+
 	if (dp == 0)
 	{
 	#ifdef __MORPHOS__
@@ -416,37 +602,28 @@ std::vector<std::string> getFolderContents(const std::string &path, const std::s
 		throw Exception(errorMessage);
 	#endif
 	}
-
 	struct dirent *dirp;
-	while ((dirp = readdir(dp)) != 0)
-	{
-		std::string file = dirp->d_name;
-
-		if (file == "." || file == "..")
+	while ((dirp = readdir(dp)) != 0) {
+		std::string filename = dirp->d_name;
+		if (filename[0] == '.') //allowed by C++11 for empty string as it equal '\0'
 		{
+			//skip ".", "..", ".git", ".svn", ".bashrc", ".ssh" etc.
 			continue;
 		}
-		if (!extl.empty())
-		{
-			if (file.length() >= extl.length() + 1)
-			{
-				std::string end = file.substr(file.length() - extl.length() - 1);
-				std::transform(end.begin(), end.end(), end.begin(), ::tolower);
-				if (end != "." + extl)
-				{
-					continue;
-				}
-			}
-			else
-			{
-				continue;
-			}
-		}
-
-		files.push_back(file);
+		if (!compareExt(filename, ext))	{ continue; }
+		std::string fullpath = path + "/" + filename;
+		bool is_directory = folderExists(fullpath);
+		time_t mtime = getDateModified(fullpath);
+		files.push_back(std::make_tuple(filename, is_directory, mtime));
 	}
 	closedir(dp);
-	std::sort(files.begin(), files.end());
+#endif
+	std::sort(files.begin(), files.end(),
+		[](const std::tuple<std::string,bool,time_t>& a,
+           const std::tuple<std::string,bool,time_t>& b) -> bool
+       {
+         return std::get<0>(a) > std::get<0>(b);
+       });
 	return files;
 }
 
@@ -458,7 +635,10 @@ std::vector<std::string> getFolderContents(const std::string &path, const std::s
 bool folderExists(const std::string &path)
 {
 #ifdef _WIN32
-	return (PathIsDirectoryA(path.c_str()) != FALSE);
+	auto pathW = pathToWindows(path);
+	bool rv = (PathIsDirectoryW(pathW.c_str()) != FALSE);
+	Log(LOG_VERBOSE) << "folderExists("<<path<<")? " << (rv ? "yeah" : "nope");
+	return rv;
 #elif __MORPHOS__
 	BPTR l = Lock( path.c_str(), SHARED_LOCK );
 	if ( l != NULL )
@@ -481,7 +661,10 @@ bool folderExists(const std::string &path)
 bool fileExists(const std::string &path)
 {
 #ifdef _WIN32
-	return (PathFileExistsA(path.c_str()) != FALSE);
+	auto pathW = pathToWindows(path);
+	bool rv = (PathFileExistsW(pathW.c_str()) != FALSE);
+	Log(LOG_VERBOSE) << "fileExists("<<path<<")? " << (rv?"yeah":"nope");
+	return rv;
 #elif __MORPHOS__
 	BPTR l = Lock( path.c_str(), SHARED_LOCK );
 	if ( l != NULL )
@@ -490,7 +673,7 @@ bool fileExists(const std::string &path)
 		return 1;
 	}
 	return 0;
-#else 
+#else
 	struct stat info;
 	return (stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode));
 #endif
@@ -504,21 +687,21 @@ bool fileExists(const std::string &path)
 bool deleteFile(const std::string &path)
 {
 #ifdef _WIN32
-	return (DeleteFileA(path.c_str()) != 0);
+	auto pathW = pathToWindows(path);
+	return (DeleteFileW(pathW.c_str()) != 0);
 #else
 	return (remove(path.c_str()) == 0);
 #endif
 }
 
+/**
+ * Returns only the filename from a specified path.
+ * @param path Full path.
+ * @return Filename component.
+ */
 std::string baseFilename(const std::string &path)
 {
-	size_t sep = path.find_last_of(
-#ifdef _WIN32
-		"/\\"
-#else
-		"/"
-#endif
-		);
+	size_t sep = path.find_last_of('/');
 	std::string filename;
 	if (sep == std::string::npos)
 	{
@@ -538,7 +721,7 @@ std::string baseFilename(const std::string &path)
 /**
  * Replaces invalid filesystem characters with _.
  * @param filename Original filename.
- * @return Filename without invalid characters
+ * @return Filename without invalid characters.
  */
 std::string sanitizeFilename(const std::string &filename)
 {
@@ -548,9 +731,13 @@ std::string sanitizeFilename(const std::string &filename)
 		if ((*i) == '<' ||
 			(*i) == '>' ||
 			(*i) == ':' ||
-			(*i) == '"' || 
+			(*i) == '*' ||
+			(*i) == '|' ||
+			(*i) == '"' ||
+			(*i) == '\'' ||
 			(*i) == '/' ||
-			(*i) == '?' ||
+			(*i) == '?'||
+			(*i) == '\0'||
 			(*i) == '\\')
 		{
 			*i = '_';
@@ -559,6 +746,12 @@ std::string sanitizeFilename(const std::string &filename)
 	return newFilename;
 }
 
+/**
+ * Removes the extension from a filename. Only the
+ * last dot is considered.
+ * @param filename Original filename.
+ * @return Filename without the extension.
+ */
 std::string noExt(const std::string &filename)
 {
 	size_t dot = filename.find_last_of('.');
@@ -567,6 +760,45 @@ std::string noExt(const std::string &filename)
 		return filename;
 	}
 	return filename.substr(0, dot);
+}
+
+/**
+ * Returns the extension from a filename. Only the
+ * last dot is considered.
+ * @param filename Original filename.
+ * @return Extension component, includes dot.
+ */
+std::string getExt(const std::string &filename)
+{
+	size_t dot = filename.find_last_of('.');
+	if (dot == std::string::npos)
+	{
+		return "";
+	}
+	return filename.substr(dot);
+}
+
+/**
+ * Compares the extension in a filename (case-insensitive).
+ * @param filename Filename to compare.
+ * @param extension Extension to compare to.
+ * @return If the extensions match.
+ */
+bool compareExt(const std::string &filename, const std::string &extension)
+{
+	if (extension.empty())
+		return true;
+	int j = filename.length() - extension.length();
+	if (j <= 0)
+		return false;
+	if (filename[j - 1] != '.')
+		return false;
+	for (size_t i = 0; i < extension.length(); ++i)
+	{
+		if (::tolower(filename[j + i]) != ::tolower(extension[i]))
+			return false;
+	}
+	return true;
 }
 
 /**
@@ -584,14 +816,16 @@ std::string getLocale()
 	std::ostringstream locale;
 	locale << language << "-" << country;
 	return locale.str();
-	/*
-	wchar_t locale[LOCALE_NAME_MAX_LENGTH];
-	LCIDToLocaleName(GetUserDefaultUILanguage(), locale, LOCALE_NAME_MAX_LENGTH, 0);
-
-	return Language::wstrToUtf8(locale);
-	*/
 #else
-	std::locale l("");
+	std::locale l;
+	try
+	{
+		l = std::locale("");
+	}
+	catch (const std::runtime_error &)
+	{
+		return "x-";
+	}
 	std::string name = l.name();
 	size_t dash = name.find_first_of('_'), dot = name.find_first_of('.');
 	if (dot != std::string::npos)
@@ -632,7 +866,6 @@ bool isQuitShortcut(const SDL_Event &ev)
 	return false;
 #endif
 }
-
 /**
  * Gets the last modified date of a file.
  * @param path Full path to file.
@@ -640,21 +873,20 @@ bool isQuitShortcut(const SDL_Event &ev)
  */
 time_t getDateModified(const std::string &path)
 {
-/*#ifdef _WIN32
-	WIN32_FILE_ATTRIBUTE_DATA info;
-	if (GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &info))
-	{
-		FILETIME ft = info.ftLastWriteTime;
-		LARGE_INTEGER li;
-		li.HighPart = ft.dwHighDateTime;
-		li.LowPart = ft.dwLowDateTime;
-		return li.QuadPart;
-	}
-	else
-	{
+#ifdef _WIN32
+	time_t rv = 0;
+	auto pathW = pathToWindows(path);
+	auto fh = CreateFileW(pathW.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	if (fh == INVALID_HANDLE_VALUE) {
 		return 0;
 	}
-#endif*/
+	FILETIME ftCreate, ftAccess, ftWrite;
+	if (GetFileTime(fh, &ftCreate, &ftAccess, &ftWrite)) {
+		rv = FILETIME2mtime(ftWrite);
+	}
+	CloseHandle(fh);
+	return rv;
+#else
 	struct stat info;
 	if (stat(path.c_str(), &info) == 0)
 	{
@@ -664,6 +896,7 @@ time_t getDateModified(const std::string &path)
 	{
 		return 0;
 	}
+#endif
 }
 
 /**
@@ -672,9 +905,9 @@ time_t getDateModified(const std::string &path)
  * @param time Value in timestamp format.
  * @return String pair with date and time.
  */
-std::pair<std::wstring, std::wstring> timeToString(time_t time)
+std::pair<std::string, std::string> timeToString(time_t time)
 {
-	wchar_t localDate[25], localTime[25];
+	char localDate[25], localTime[25];
 
 /*#ifdef _WIN32
 	LARGE_INTEGER li;
@@ -691,28 +924,10 @@ std::pair<std::wstring, std::wstring> timeToString(time_t time)
 #endif*/
 
 	struct tm *timeinfo = localtime(&(time));
-	wcsftime(localDate, 25, L"%Y-%m-%d", timeinfo);
-	wcsftime(localTime, 25, L"%H:%M", timeinfo);
+	strftime(localDate, 25, "%Y-%m-%d", timeinfo);
+	strftime(localTime, 25, "%H:%M", timeinfo);
 
 	return std::make_pair(localDate, localTime);
-}
-
-/**
- * Compares two Unicode strings using natural human ordering.
- * @param a String A.
- * @param b String B.
- * @return String A comes before String B.
- */
-bool naturalCompare(const std::wstring &a, const std::wstring &b)
-{
-#if defined(_WIN32) && (!defined(__MINGW32__) || defined(__MINGW64_VERSION_MAJOR))
-	return (StrCmpLogicalW(a.c_str(), b.c_str()) < 0);
-#else
-	// sorry unix users you get ASCII sort
-	std::wstring::const_iterator i, j;
-	for (i = a.begin(), j = b.begin(); i != a.end() && j != b.end() && tolower(*i) == tolower(*j); i++, j++);
-	return (i != a.end() && j != b.end() && tolower(*i) < tolower(*j));
-#endif
 }
 
 /**
@@ -725,10 +940,164 @@ bool naturalCompare(const std::wstring &a, const std::wstring &b)
 bool moveFile(const std::string &src, const std::string &dest)
 {
 #ifdef _WIN32
-	return (MoveFileExA(src.c_str(), dest.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
+	auto srcW = pathToWindows(src);
+	auto dstW = pathToWindows(dest);
+	return (MoveFileExW(srcW.c_str(), dstW.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
 #else
-	return (rename(src.c_str(), dest.c_str()) == 0);
+	// TODO In fact all remaining uses of this are renaming files inside a single directory
+	// so we may as well uncomment the rename() and drop the rest.
+	//return (rename(src.c_str(), dest.c_str()) == 0);
+	std::ifstream srcStream;
+	std::ofstream destStream;
+	srcStream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+	destStream.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+	try
+	{
+		srcStream.open(src.c_str(), std::ios::binary);
+		destStream.open(dest.c_str(), std::ios::binary);
+		destStream << srcStream.rdbuf();
+		srcStream.close();
+		destStream.close();
+	}
+	catch (const std::fstream::failure &)
+	{
+		return false;
+	}
+	return deleteFile(src);
 #endif
+}
+
+/**
+ * Copies a file from one path to another,
+ * replacing any existing file.
+ * @param src Source path.
+ * @param dest Destination path.
+ * @return True if the operation succeeded, False otherwise.
+ */
+bool copyFile(const std::string& src, const std::string& dest)
+{
+#ifdef _WIN32
+	auto srcW = pathToWindows(src);
+	auto dstW = pathToWindows(dest);
+	return (CopyFileW(srcW.c_str(), dstW.c_str(), false) != 0);
+#endif
+	return false;
+}
+
+/**
+ * Writes a file.
+ * @param filename - where to writeFile
+ * @param data - what to writeFile
+ * @return if we did write it.
+ */
+bool writeFile(const std::string& filename, const std::string& data) {
+	// Even SDL1 file IO accepts UTF-8 file names on windows.
+	SDL_RWops *rwops = SDL_RWFromFile(filename.c_str(), "w");
+	if (!rwops) {
+		Log(LOG_ERROR) << "Failed to write " << filename << ": " << SDL_GetError();
+		return false;
+	}
+	if (1 != SDL_RWwrite(rwops, data.c_str(), data.size(), 1)) {
+		Log(LOG_ERROR) << "Failed to write " << filename << ": " << SDL_GetError();
+		SDL_RWclose(rwops);
+		return false;
+	}
+	SDL_RWclose(rwops);
+	return true;
+}
+
+/**
+ * Writes a file.
+ * @param filename - where to writeFile
+ * @param data - what to writeFile
+ * @return if we did write it.
+ */
+bool writeFile(const std::string& filename, const std::vector<unsigned char>& data) {
+	// Even SDL1 file IO accepts UTF-8 file names on windows.
+	SDL_RWops *rwops = SDL_RWFromFile(filename.c_str(), "wb");
+	if (!rwops) {
+		Log(LOG_ERROR) << "Failed to write " << filename << ": " << SDL_GetError();
+		return false;
+	}
+	if (1 != SDL_RWwrite(rwops, data.data(), data.size(), 1)) {
+		Log(LOG_ERROR) << "Failed to write " << filename << ": " << SDL_GetError();
+		SDL_RWclose(rwops);
+		return false;
+	}
+	SDL_RWclose(rwops);
+	return true;
+}
+
+/**
+ * Gets an istream to a file
+ * @param filename - what to readFile
+ * @return the istream
+ */
+std::unique_ptr<std::istream> readFile(const std::string& filename) {
+	SDL_RWops *rwops = SDL_RWFromFile(filename.c_str(), "r");
+	if (!rwops) {
+		std::string err = "Failed to read " + filename + ": " + SDL_GetError();
+		Log(LOG_ERROR) << err;
+		throw Exception(err);
+	}
+	size_t size;
+	char *data = (char *)SDL_LoadFile_RW(rwops, &size, SDL_TRUE);
+	if (data == NULL) {
+		std::string err = "Failed to read " + filename + ": " + SDL_GetError();
+		Log(LOG_ERROR) << err;
+		throw Exception(err);
+	}
+	std::string datastr(data, size);
+	SDL_free(data);
+	return std::unique_ptr<std::istream>(new std::istringstream(datastr));
+}
+
+/**
+ * Gets an istream to a file's bytes at least up to and including first "\n---" sequence.
+ * To be used only for savegames.
+ * @param filename - what to read
+ * @return the istream
+ */
+std::unique_ptr<std::istream> getYamlSaveHeader(const std::string& filename) {
+	SDL_RWops *rwops = SDL_RWFromFile(filename.c_str(), "r");
+	if (!rwops) {
+		std::string err = "Failed to read " + filename + ": " + SDL_GetError();
+		Log(LOG_ERROR) << err;
+		throw Exception(err);
+	}
+	const size_t chunksize = 4096;
+	size_t size = 0;
+	size_t offs = 0;
+	char *data = (char *)SDL_malloc(chunksize + 1);
+	if (data == NULL) {
+		std::string err(SDL_GetError());
+		Log(LOG_ERROR) << err;
+		throw Exception(err);
+	}
+	while(true) {
+		auto actually_read = SDL_RWread(rwops, data + offs, 1, chunksize);
+		if (actually_read == 0 || actually_read == -1) {
+			break;
+		}
+		size += actually_read;
+		data[size] = 0;
+		size_t search_from = offs > 4 ? offs - 4 : 0;
+		if (NULL != strstr(data+search_from, "\n---")) {
+			break;
+		}
+		char *newdata = (char *)SDL_realloc(data, size+chunksize+1);
+		if (newdata == NULL) {
+			std::string err(SDL_GetError());
+			Log(LOG_ERROR) << err;
+			throw Exception(err);
+		}
+		data = newdata;
+		offs = size;
+	}
+	std::string datastr(data, size);
+	SDL_free(data);
+	SDL_RWclose(rwops);
+	return std::unique_ptr<std::istream>(new std::istringstream(datastr));
 }
 
 /**
@@ -793,9 +1162,16 @@ std::string getDosPath()
 #endif
 }
 
-void setWindowIcon(int winResource, const std::string &unixPath)
-{
+/**
+ * Sets the window titlebar icon.
+ * For Windows, use the embedded resource icon.
+ * For other systems, use a PNG icon.
+ * @param winResource ID for Windows icon.
+ * @param unixPath Path to PNG icon for Unix.
+ */
 #ifdef _WIN32
+void setWindowIcon(int winResource, const std::string &)
+{
 	HINSTANCE handle = GetModuleHandle(NULL);
 	HICON icon = LoadIcon(handle, MAKEINTRESOURCE(winResource));
 
@@ -806,18 +1182,649 @@ void setWindowIcon(int winResource, const std::string &unixPath)
 		HWND hwnd = wminfo.window;
 		SetClassLongPtr(hwnd, GCLP_HICON, (LONG_PTR)icon);
 	}
+}
 #else
-	// SDL only takes UTF-8 filenames
-	// so here's an ugly hack to match this ugly reasoning
-	std::string utf8 = Language::wstrToUtf8(Language::fsToWstr(unixPath));
-	SDL_Surface *icon = IMG_Load(utf8.c_str());
+void setWindowIcon(int, const std::string &unixPath)
+{
+	SDL_Surface *icon = IMG_Load_RW(FileMap::getRWops(unixPath), SDL_TRUE);
 	if (icon != 0)
 	{
 		SDL_WM_SetIcon(icon, NULL);
 		SDL_FreeSurface(icon);
 	}
+}
+#endif
+
+/**
+ * Logs the stack back trace leading up to this function call.
+ * @param ctx Pointer to stack context (PCONTEXT on Windows), NULL to use current context.
+ */
+void stackTrace(void *ctx)
+{
+#ifdef _WIN32
+# ifndef __NO_DBGHELP
+	const int MAX_SYMBOL_LENGTH = 1024;
+	CONTEXT context;
+	if (ctx != 0)
+	{
+		context = *((PCONTEXT)ctx);
+	}
+	else
+	{
+#  ifdef _M_IX86
+		memset(&context, 0, sizeof(CONTEXT));
+		context.ContextFlags = CONTEXT_CONTROL;
+#   ifdef __MINGW32__
+		asm("Label:\n\t"
+			"movl %%ebp,%0;\n\t"
+			"movl %%esp,%1;\n\t"
+			"movl $Label,%%eax;\n\t"
+			"movl %%eax,%2;\n\t"
+			: "=r" (context.Ebp), "=r" (context.Esp), "=r" (context.Eip)
+			: //no input
+			: "eax");
+#   else
+		_asm {
+		Label:
+			mov[context.Ebp], ebp;
+			mov[context.Esp], esp;
+			mov eax, [Label];
+			mov[context.Eip], eax;
+		}
+#   endif
+#  else /* no  _M_IX86 */
+		RtlCaptureContext(&context);
+#  endif
+	}
+	HANDLE thread = GetCurrentThread();
+	HANDLE process = GetCurrentProcess();
+	STACKFRAME64 frame;
+	memset(&frame, 0, sizeof(STACKFRAME64));
+	DWORD image;
+#  ifdef _M_IX86
+	image = IMAGE_FILE_MACHINE_I386;
+	frame.AddrPC.Offset = context.Eip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.Ebp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.Esp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#  elif _M_X64
+	image = IMAGE_FILE_MACHINE_AMD64;
+	frame.AddrPC.Offset = context.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.Rbp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#  elif _M_IA64
+	image = IMAGE_FILE_MACHINE_IA64;
+	frame.AddrPC.Offset = context.StIIP;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.IntSp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrBStore.Offset = context.RsBSP;
+	frame.AddrBStore.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.IntSp;
+	frame.AddrStack.Mode = AddrModeFlat;
+#  else
+	Log(LOG_FATAL) << "Unfortunately, no stack trace information is available";
+	return;
+#  endif
+	SYMBOL_INFO *symbol = (SYMBOL_INFO *)malloc(sizeof(SYMBOL_INFO) + (MAX_SYMBOL_LENGTH - 1) * sizeof(TCHAR));
+	symbol->MaxNameLen = MAX_SYMBOL_LENGTH;
+	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	IMAGEHLP_LINE64 *line = (IMAGEHLP_LINE64 *)malloc(sizeof(IMAGEHLP_LINE64));
+	line->SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+	DWORD displacement;
+	SymInitialize(process, NULL, TRUE);
+	while (StackWalk64(image, process, thread, &frame, &context, NULL, NULL, NULL, NULL))
+	{
+		if (SymFromAddr(process, frame.AddrPC.Offset, NULL, symbol))
+		{
+			std::string symname = symbol->Name;
+#  ifdef __MINGW32__
+			symname = "_" + symname;
+			int status = 0;
+			size_t outSz = 0;
+			char* demangled = abi::__cxa_demangle(symname.c_str(), 0, &outSz, &status);
+			if (status == 0)
+			{
+				symname = demangled;
+				if (outSz > 0)
+					free(demangled);
+			}
+			else
+			{
+				symname = symbol->Name;
+			}
+#  endif
+			if (SymGetLineFromAddr64(process, frame.AddrPC.Offset, &displacement, line))
+			{
+				std::string filename = line->FileName;
+				size_t n = filename.find_last_of('\\');
+				if (n != std::string::npos)
+				{
+					filename = filename.substr(n + 1);
+				}
+				Log(LOG_FATAL) << "0x" << std::hex << symbol->Address << std::dec << " " << symname << " (" << filename << ":" << line->LineNumber << ")";
+			}
+			else
+			{
+				Log(LOG_FATAL) << "0x" << std::hex << symbol->Address << std::dec << " " << symname;
+			}
+		}
+		else
+		{
+			Log(LOG_FATAL) << "??";
+		}
+	}
+	DWORD err = GetLastError();
+	if (err)
+	{
+		Log(LOG_FATAL) << "Unfortunately, no stack trace information is available";
+	}
+	SymCleanup(process);
+# else /* __NO_DBGHELP */
+	Log(LOG_FATAL) << "Unfortunately, no stack trace information is available";
+# endif
+#elif __CYGWIN__
+	Log(LOG_FATAL) << "Unfortunately, no stack trace information is available";
+#else    /* not _WIN32 or __CYGWIN__ */
+	void *frames[32];
+	char buf[1024];
+	int  frame_count = backtrace(frames, 32);
+	char *demangled = NULL;
+	const char *mangled = NULL;
+	int status;
+	size_t sym_offset;
+
+	for (int i = 0; i < frame_count; i++) {
+		Dl_info dl_info;
+		if (dladdr(frames[i], &dl_info )) {
+			demangled = NULL;
+			mangled = dl_info.dli_sname;
+			if ( mangled != NULL) {
+				sym_offset = (char *)frames[i] - (char *)dl_info.dli_saddr;
+				demangled = abi::__cxa_demangle( dl_info.dli_sname, NULL, 0, &status);
+				snprintf(buf, sizeof(buf), "%s(%s+0x%zx) [%p]",
+						dl_info.dli_fname,
+						status == 0 ? demangled : mangled,
+						sym_offset, frames[i] );
+			} else { // symbol not found
+				sym_offset = (char *)frames[i] - (char *)dl_info.dli_fbase;
+				snprintf(buf, sizeof(buf), "%s(+0x%zx) [%p]", dl_info.dli_fname, sym_offset, frames[i]);
+			}
+			free(demangled);
+			Log(LOG_FATAL) << buf;
+		} else { // object not found
+			snprintf(buf, sizeof(buf), "? ? [%p]", frames[i]);
+			Log(LOG_FATAL) << buf;
+		}
+	}
+#endif
+	ctx = (void*)ctx;
+}
+
+/**
+ * Generates a timestamp of the current time.
+ * @return String in D-M-Y_H-M-S format.
+ */
+std::string now()
+{
+	const int MAX_LEN = 25, MAX_RESULT = 80;
+	char result[MAX_RESULT] = { 0 };
+#ifdef _WIN32
+	char date[MAX_LEN], time[MAX_LEN];
+	if (GetDateFormatA(LOCALE_INVARIANT, 0, 0, "dd'-'MM'-'yyyy", date, MAX_LEN) == 0)
+		return "00-00-0000";
+	if (GetTimeFormatA(LOCALE_INVARIANT, TIME_FORCE24HOURFORMAT, 0, "HH'-'mm'-'ss", time, MAX_LEN) == 0)
+		return "00-00-00";
+	sprintf(result, "%s_%s", date, time);
+#else
+	char buffer[MAX_LEN];
+	time_t rawtime;
+	struct tm *timeinfo;
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+	strftime(buffer, MAX_LEN, "%d-%m-%Y_%H-%M-%S", timeinfo);
+	sprintf(result, "%s", buffer);
+#endif
+	return result;
+}
+
+/**
+ * Logs the details of this crash and shows an error.
+ * @param ex Pointer to exception data (PEXCEPTION_POINTERS on Windows, signal int on Unix)
+ * @param err Exception message, if any.
+ */
+void crashDump(void *ex, const std::string &err)
+{
+	std::ostringstream error;
+#ifdef _MSC_VER
+	PEXCEPTION_POINTERS exception = (PEXCEPTION_POINTERS)ex;
+	std::exception *cppException = 0;
+	switch (exception->ExceptionRecord->ExceptionCode)
+	{
+	case EXCEPTION_CODE_CXX:
+		cppException = (std::exception *)exception->ExceptionRecord->ExceptionInformation[1];
+		error << cppException->what();
+		break;
+	case EXCEPTION_ACCESS_VIOLATION:
+		error << "Memory access violation.";
+		break;
+	default:
+		error << "code 0x" << std::hex << exception->ExceptionRecord->ExceptionCode;
+		break;
+	}
+	Log(LOG_FATAL) << "A fatal error has occurred: " << error.str();
+	if (ex)
+	{
+		stackTrace(exception->ContextRecord);
+	}
+	std::string dumpName = Options::getUserFolder();
+	dumpName += now() + ".dmp";
+	HANDLE dumpFile = CreateFileA(dumpName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	MINIDUMP_EXCEPTION_INFORMATION exceptionInformation;
+	exceptionInformation.ThreadId = GetCurrentThreadId();
+	exceptionInformation.ExceptionPointers = exception;
+	exceptionInformation.ClientPointers = FALSE;
+	if (MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dumpFile, MiniDumpNormal, exception ? &exceptionInformation : NULL, NULL, NULL))
+	{
+		Log(LOG_FATAL) << "Crash dump generated at " << dumpName;
+	}
+	else
+	{
+		Log(LOG_FATAL) << "No crash dump generated: " << GetLastError();
+	}
+#else
+	if (ex == 0)
+	{
+		error << err;
+	}
+	else
+	{
+		int signal = *((int*)ex);
+		switch (signal)
+		{
+		case SIGSEGV:
+			error << "Segmentation fault.";
+			break;
+		default:
+			error << "signal " << signal;
+			break;
+		}
+	}
+	Log(LOG_FATAL) << "A fatal error has occurred: " << error.str();
+	stackTrace(0);
+#endif
+	std::ostringstream msg;
+	msg << "OpenXcom has crashed: " << error.str() << std::endl;
+	msg << "Log file: " << getLogFileName() << std::endl;
+	msg << "If this error was unexpected, please report it on the OpenXcom forum (OXCE board)." << std::endl;
+	msg << "The following can help us solve the problem:" << std::endl;
+	msg << "1. a saved game from just before the crash (helps 98%)" << std::endl;
+	msg << "2. a detailed description how to reproduce the crash (helps 80%)" << std::endl;
+	msg << "3. a log file (helps 10%)" << std::endl;
+	msg << "4. a screenshot of this error message (helps 5%)";
+	showError(msg.str());
+}
+
+/**
+ * Opens a file or web path in the system default browser.
+ */
+bool openExplorer(const std::string &url)
+{
+#ifdef _WIN32
+	HINSTANCE ret = ShellExecuteW(NULL, L"open", Unicode::convMbToWc(url, CP_UTF8).c_str(), NULL, NULL, SW_SHOWNORMAL);
+	// The return value is not a true HINSTANCE. If the function succeeds, it returns a value greater than 32.
+	return (static_cast<int>(reinterpret_cast<uintptr_t>(ret)) > 32);
+#elif __MOBILE__
+	return false;
+#elif __APPLE__
+	std::string cmd = "open \"" + url + "\"";
+	return (system(cmd.c_str()) == 0);
+#else
+	std::string cmd = "xdg-open \"" + url + "\"";
+	return (system(cmd.c_str()) == 0);
 #endif
 }
+
+
+/**
+ * Appends a file, logs nothing to avoid recursion.
+ * @param filename - where to writeFile
+ * @param data - what to writeFile
+ * @return if we did write it.
+ */
+static bool logToFile(const std::string& filename, const std::string& data) {
+	// Even SDL1 file IO accepts UTF-8 file names on windows.
+	SDL_RWops *rwops = SDL_RWFromFile(filename.c_str(), "a+");
+	if (rwops) {
+		auto rv = SDL_RWwrite(rwops, data.c_str(), data.size(), 1);
+		SDL_RWclose(rwops);
+		return rv == 1;
+	}
+	return false;
+}
+
+static const size_t LOG_BUFFER_LIMIT = 1<<10;
+static std::list<std::pair<int, std::string>> logBuffer;
+static std::string logFileName;
+const std::string& getLogFileName() { return logFileName; }
+
+/**
+ * Setting the log file name and setting the effective reportingLevel
+ * to not LOG_UNCENSORED turns off buffering of the log messages,
+ * and turns on writing them to the actual log (and flushes the buffer).
+ */
+void setLogFileName(const std::string& name) {
+	deleteFile(name);
+	size_t sz = logBuffer.size();
+	Log(LOG_DEBUG) << "setLogFileName("<<name<<") was '"<<logFileName<<"'; "<<sz<<" in buffer";
+	logFileName = name;
+}
+void log(int level, const std::ostringstream& baremsgstream) {
+	std::ostringstream msgstream;
+	msgstream << "[" << CrossPlatform::now() << "]" << "\t"
+			  << "[" << Logger::toString(level) << "]" << "\t"
+			  << baremsgstream.str() << std::endl;
+	auto msg = msgstream.str();
+
+	int effectiveLevel = Logger::reportingLevel();
+	if (effectiveLevel >= LOG_DEBUG) {
+		fwrite(msg.c_str(), msg.size(), 1, stderr);
+		fflush(stderr);
+	}
+	if (logBuffer.size() > LOG_BUFFER_LIMIT) { // drop earliest message so as to not eat all memory
+		logBuffer.pop_front();
+	}
+	if (logFileName.empty() || effectiveLevel == LOG_UNCENSORED) { // no log file; accumulate.
+		logBuffer.push_back(std::make_pair(level, msg));
+		return;
+	}
+	// attempt to flush the buffer
+	bool failed = false;
+	while (!logBuffer.empty()) {
+		if (effectiveLevel >= logBuffer.front().first) {
+			if (!logToFile(logFileName, logBuffer.front().second)) {
+				std::string err = "Failed to append to '" + logFileName + "': " + SDL_GetError();
+				logBuffer.push_back(std::make_pair(LOG_ERROR, err));
+				failed = true;
+				break;
+			}
+		}
+		logBuffer.pop_front();
+	}
+	// retain the current message if write fails.
+	if (failed || !logToFile(logFileName, msg)) {
+		logBuffer.push_back(std::make_pair(level, msg));
+	}
+}
+
+#if defined(EMBED_ASSETS)
+# if defined(_WIN32)
+# include "../resource.h"
+static void *CommonZipAssetPtr = 0;
+static size_t CommonZipAssetSize = 0;
+static void *StandardZipAssetPtr = 0;
+static size_t StandardZipAssetSize = 0;
+static void *getWindowsResource(int res_id, size_t *size) {
+    HMODULE handle = GetModuleHandle(NULL);
+    HRSRC rc = FindResource(handle, MAKEINTRESOURCE(res_id), MAKEINTRESOURCE(10));
+	if (!rc) { return NULL; }
+    HGLOBAL rcData = LoadResource(handle, rc);
+	if (!rcData) { return NULL; }
+    *size = SizeofResource(handle, rc);
+    return LockResource(rcData);
+}
+# elif defined(__MOBILE__)
+/* This space is intentionally left blank */
+# else
+extern "C" {
+	extern uint8_t common_zip[];
+	extern int common_zip_size;
+	extern uint8_t standard_zip[];
+	extern int standard_zip_size;
+}
+# endif
+#endif
+SDL_RWops *getEmbeddedAsset(const std::string& assetName) {
+	std::string log_ctx = "getEmbeddedAsset('" + assetName + "'): ";
+	if (assetName.size() == 0 || assetName[0] == '/') {
+		Log(LOG_WARNING) << log_ctx << "ignoring bogus asset name";
+		return NULL;
+	}
+#if defined(EMBED_ASSETS)
+	SDL_RWops *rv = NULL;
+# if defined(_WIN32)
+	if (assetName == "common.zip") {
+		if (!CommonZipAssetPtr) {
+			CommonZipAssetPtr = getWindowsResource(IDZ_COMMON_ZIP, &CommonZipAssetSize);
+		}
+		if (CommonZipAssetPtr) {
+			rv = SDL_RWFromConstMem(CommonZipAssetPtr, CommonZipAssetSize);
+		}
+	} else if (assetName == "standard.zip") {
+		if (!StandardZipAssetPtr) {
+			StandardZipAssetPtr = getWindowsResource(IDZ_STANDARD_ZIP, &StandardZipAssetSize);
+		}
+		if (StandardZipAssetPtr) {
+			rv = SDL_RWFromConstMem(StandardZipAssetPtr, StandardZipAssetSize);
+		}
+	}
+# elif defined(__MOBILE__)
+	rv = SDL_RWFromFile(assetName, "rb");
+# else
+	if (assetName == "common.zip") {
+		rv = SDL_RWFromConstMem(common_zip, common_zip_size);
+	} else if (assetName == "standard.zip") {
+		rv = SDL_RWFromConstMem(standard_zip, standard_zip_size);
+	}
+# endif
+	if (rv == NULL) {
+		Log(LOG_ERROR) << log_ctx << "embedded asset not found: "<< SDL_GetError();
+	}
+	return rv;
+#else
+	/* Asset embedding disabled. */
+	Log(LOG_DEBUG) << log_ctx << "assets were not embedded.";
+	return NULL;
+#endif
+}
+
+/**
+ * Tests the internet connection.
+ * @param url URL to test.
+ * @return True if the operation succeeded, False otherwise.
+ */
+bool testInternetConnection(const std::string& url)
+{
+#ifdef _WIN32
+	auto urlW = pathToWindows(url, false);
+	bool bConnect = InternetCheckConnectionW(urlW.c_str(), FLAG_ICC_FORCE_CONNECTION, 0);
+	return bConnect;
+#else
+	return false;
+#endif
+}
+
+/**
+ * Downloads a file from a given URL to the filesystem.
+ * @param url Source URL.
+ * @param filename Destination file name.
+ * @return True if the operation succeeded, False otherwise.
+ */
+bool downloadFile(const std::string& url, const std::string& filename)
+{
+#ifdef _WIN32
+	auto urlW = pathToWindows(url, false);
+	auto filenameW = pathToWindows(filename, true);
+	DeleteUrlCacheEntryW(urlW.c_str());
+	HRESULT hr = URLDownloadToFileW(NULL, urlW.c_str(), filenameW.c_str(), 0, NULL);
+	return SUCCEEDED(hr);
+#else
+	return false;
+#endif
+}
+
+/**
+ * Parse string with version number.
+ */
+std::array<int, 4> parseVersion(const std::string& newVersion)
+{
+	std::array<int, 4> newOxceVersion = {};
+
+	std::string each;
+	char split_char = '.';
+	std::istringstream ss(newVersion);
+	std::size_t j = 0;
+	while (std::getline(ss, each, split_char)) {
+		if (j == newOxceVersion.size())
+		{
+			break;
+		}
+
+		try {
+			int i = std::stoi(each);
+			newOxceVersion[j] = i;
+		}
+		catch (...) {
+
+		}
+		++j;
+	}
+	return newOxceVersion;
+}
+
+/**
+ * Is the given version number higher than the current version number?
+ * @param newVersion Version to compare.
+ * @return True if given version is higher than current version.
+ */
+bool isHigherThanCurrentVersion(const std::string& newVersion)
+{
+	return isHigherThanCurrentVersion(parseVersion(newVersion), { OPENXCOM_VERSION_NUMBER });
+}
+
+/**
+ * Is the given version number higher than the given version number?
+ * @param newVersion Version to compare.
+ * @param ver Given available version.
+ * @return True if given version is higher than given version.
+ */
+bool isHigherThanCurrentVersion(const std::array<int, 4>& newOxceVersion, const int (&ver)[4])
+{
+	bool isHigher = false;
+
+	for (size_t k = 0; k < std::size(ver); ++k)
+	{
+		if (newOxceVersion[k] > ver[k])
+		{
+			isHigher = true;
+			break;
+		}
+		else if (newOxceVersion[k] < ver[k])
+		{
+			break;
+		}
+	}
+
+	return isHigher;
+}
+
+/**
+ * Gets the path to the executable file.
+ * @return Path to the EXE file.
+ */
+std::string getExeFolder()
+{
+#ifdef _WIN32
+	wchar_t dest[MAX_PATH + 1];
+	if (GetModuleFileNameW(NULL, dest, MAX_PATH) != 0)
+	{
+		PathRemoveFileSpecW(dest);
+		auto ret = pathFromWindows(dest) + "/";
+		return ret;
+	}
+#endif
+	return std::string();
+}
+
+/**
+ * Gets the file name of the executable file.
+ * @param includingPath Including full path or just the file name?
+ * @return Name of the EXE file.
+ */
+std::string getExeFilename(bool includingPath)
+{
+#ifdef _WIN32
+	wchar_t dest[MAX_PATH + 1];
+	if (GetModuleFileNameW(NULL, dest, MAX_PATH) != 0)
+	{
+		if (includingPath)
+		{
+			auto ret = pathFromWindows(dest);
+			return ret;
+		}
+		else
+		{
+			auto filename = PathFindFileNameW(dest);
+			auto ret = pathFromWindows(filename);
+			return ret;
+		}
+	}
+#endif
+	return std::string();
+}
+
+/**
+ * Starts the update process.
+ */
+void startUpdateProcess()
+{
+#ifdef _WIN32
+	auto operationW = pathToWindows("open", false);
+	auto fileW = pathToWindows("oxce-upd.bat", false);
+	ShellExecuteW(NULL, operationW.c_str(), fileW.c_str(), NULL, NULL, SW_SHOWNORMAL);
+#endif
+}
+
+
+
+#ifdef OXCE_AUTO_TEST
+
+static auto dummy = ([]
+{
+	auto create = [](int i, int j, int k, int l)
+	{
+		return std::array<int, 4>{{i, j, k, l}};
+	};
+
+	assert(parseVersion("0.0.0.0") == create(0, 0, 0, 0));
+	assert(parseVersion("1.0.0.0") == create(1, 0, 0, 0));
+	assert(parseVersion("1.2.0.0") == create(1, 2, 0, 0));
+	assert(parseVersion("1.2.3.4") == create(1, 2, 3, 4));
+	assert(parseVersion("1.2.3.4.5") == create(1, 2, 3, 4));
+	assert(parseVersion("1.2.3") == create(1, 2, 3, 0));
+	assert(parseVersion("1.2") == create(1, 2, 0, 0));
+	assert(parseVersion("1.A.2") == create(1, 0, 2, 0));
+	assert(parseVersion(".2") == create(0, 2, 0, 0));
+
+
+	assert(isHigherThanCurrentVersion(create(1, 2, 0, 0), {1, 1, 0, 0}));
+	assert(isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 2, 0, 4}));
+	assert(isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 2, 1, 2}));
+	assert(!isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 2, 1, 3}));
+	assert(!isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 2, 1, 4}));
+	assert(!isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 2, 2, 2}));
+	assert(!isHigherThanCurrentVersion(create(1, 2, 1, 3), {1, 3, 1, 2}));
+
+	return 0;
+})();
+#endif
+
+
 
 }
 }

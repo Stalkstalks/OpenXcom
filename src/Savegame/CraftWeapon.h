@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CRAFTWEAPON_H
-#define OPENXCOM_CRAFTWEAPON_H
-
-#include <string>
 #include <yaml-cpp/yaml.h>
 
 namespace OpenXcom
@@ -27,7 +24,7 @@ namespace OpenXcom
 
 class RuleCraftWeapon;
 class CraftWeaponProjectile;
-class Ruleset;
+class Mod;
 
 /**
  * Represents a craft weapon equipped by a craft.
@@ -40,6 +37,7 @@ private:
 	RuleCraftWeapon *_rules;
 	int _ammo;
 	bool _rearming;
+	bool _disabled;
 public:
 	/// Creates a craft weapon of the specified type.
 	CraftWeapon(RuleCraftWeapon *rules, int ammo);
@@ -59,15 +57,17 @@ public:
 	bool isRearming() const;
 	/// Sets the craft weapon's rearming status
 	void setRearming(bool rearming);
+	/// Is the weapon disabled?
+	bool isDisabled() const;
+	/// Sets whether the weapon is disabled or not.
+	void setDisabled(bool disabled);
 	/// Rearms the craft weapon.
 	int rearm(const int available, const int clipSize);
 	/// Fires the craft weapon. Used during dogfights.
 	CraftWeaponProjectile* fire() const;
 	/// get how many clips are loaded into this weapon.
-	int getClipsLoaded(Ruleset* ruleset);
+	int getClipsLoaded() const;
 
 };
 
 }
-
-#endif

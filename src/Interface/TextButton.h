@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TEXTBUTTON_H
-#define OPENXCOM_TEXTBUTTON_H
-
 #include "../Engine/InteractiveSurface.h"
 
 namespace OpenXcom
@@ -45,8 +43,10 @@ private:
 	TextButton **_group;
 	bool _contrast, _geoscapeButton;
 	ComboBox *_comboBox;
+	// for use by RuleInterface
+	void setSecondaryColor(Uint8 color)  override { setTextColor(color); }
 protected:
-	bool isButtonHandled(Uint8 button = 0);
+	bool isButtonHandled(Uint8 button = 0) override;
 public:
 	static Sound *soundPress;
 	/// Creates a new text button with the specified size and position.
@@ -54,7 +54,7 @@ public:
 	/// Cleans up the text button.
 	~TextButton();
 	/// Sets the text button's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the text button's color.
 	Uint8 getColor() const;
 	/// Sets the text button's text color.
@@ -66,31 +66,28 @@ public:
 	/// Gets the text button's current font.
 	Font *getFont() const;
 	/// Initializes the text edit's resources.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the text button's high contrast color setting.
-	void setHighContrast(bool contrast);
+	void setHighContrast(bool contrast) override;
 	/// Sets the text button's text.
-	void setText(const std::wstring &text);
+	void setText(const std::string &text);
 	/// Gets the text button's text.
-	std::wstring getText() const;
+	std::string getText() const;
 	/// Sets the text button's group.
 	void setGroup(TextButton **group);
 	/// Sets the text button's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Draws the text button.
-	void draw();
+	void draw() override;
 	/// Special handling for mouse presses.
-	void mousePress(Action *action, State *state);
+	void mousePress(Action *action, State *state) override;
 	/// Special handling for mouse releases.
-	void mouseRelease(Action *action, State *state);
+	void mouseRelease(Action *action, State *state) override;
 	/// Attaches this button to a combobox.
 	void setComboBox(ComboBox *comboBox);
-	void setWidth(int width);
-	void setHeight(int height);
-	void setSecondaryColor(Uint8 color);
+	void setWidth(int width) override;
+	void setHeight(int height) override;
 	void setGeoscapeButton(bool geo);
 };
 
 }
-
-#endif

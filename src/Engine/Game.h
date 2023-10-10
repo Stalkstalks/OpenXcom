@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_GAME_H
-#define OPENXCOM_GAME_H
-
 #include <list>
 #include <string>
-#include <vector>
 #include <SDL.h>
 
 namespace OpenXcom
@@ -31,10 +28,12 @@ class State;
 class Screen;
 class Cursor;
 class Language;
-class ResourcePack;
 class SavedGame;
-class Ruleset;
+class Mod;
+class ModInfo;
 class FpsCounter;
+class Action;
+class GeoscapeState;
 
 /**
  * The core of the game engine, manages the game's entire contents and structure.
@@ -50,14 +49,14 @@ private:
 	Cursor *_cursor;
 	Language *_lang;
 	std::list<State*> _states, _deleted;
-	ResourcePack *_res;
 	SavedGame *_save;
-	Ruleset *_rules;
-	bool _quit, _init;
+	Mod *_mod;
+	bool _quit, _init, _update;
 	FpsCounter *_fpsCounter;
 	bool _mouseActive;
 	unsigned int _timeOfLastFrame;
 	int _timeUntilNextFrame;
+	bool _ctrl, _alt, _shift, _rmb, _mmb;
 	static const double VOLUME_GRADIENT;
 
 public:
@@ -74,11 +73,11 @@ public:
 	/// Adjusts a linear volume level to an exponential one.
 	static double volumeExponent(int volume);
 	/// Gets the game's display screen.
-	Screen *getScreen() const;
+	Screen *getScreen() const { return _screen; }
 	/// Gets the game's cursor.
-	Cursor *getCursor() const;
+	Cursor *getCursor() const { return _cursor; }
 	/// Gets the FpsCounter.
-	FpsCounter *getFpsCounter() const;
+	FpsCounter *getFpsCounter() const { return _fpsCounter; }
 	/// Resets the state stack to a new state.
 	void setState(State *state);
 	/// Pushes a new state into the state stack.
@@ -86,33 +85,82 @@ public:
 	/// Pops the last state from the state stack.
 	void popState();
 	/// Gets the currently loaded language.
-	Language *getLanguage() const;
-	/// Loads a new language for the game.
-	void loadLanguage(const std::string &filename);
-	/// Gets the currently loaded resource pack.
-	ResourcePack *getResourcePack() const;
-	/// Sets a new resource pack for the game.
-	void setResourcePack(ResourcePack *res);
+	Language *getLanguage() const { return _lang; }
 	/// Gets the currently loaded saved game.
-	SavedGame *getSavedGame() const;
+	SavedGame *getSavedGame() const { return _save; }
 	/// Sets a new saved game for the game.
 	void setSavedGame(SavedGame *save);
-	/// Gets the currently loaded ruleset.
-	Ruleset *getRuleset() const;
-	/// Loads the rulesets specified in the game options.
-	void loadRulesets();
+	/// Gets the currently loaded mod.
+	Mod *getMod() const { return _mod; }
+	/// Loads the mods specified in the game options.
+	void loadMods();
 	/// Sets whether the mouse cursor is activated.
 	void setMouseActive(bool active);
 	/// Returns whether current state is the param state
 	bool isState(State *state) const;
+	/// Returns whether a UfopaediaStartState is in the background.
+	bool containsUfopaediaStartState() const;
+	/// Returns whether a NotesState is in the background.
+	bool containsNotesState() const;
 	/// Returns whether the game is shutting down.
 	bool isQuitting() const;
-	/// Sets up the default language.
-	void defaultLanguage();
+	/// Loads the default and current language.
+	void loadLanguages();
 	/// Sets up the audio.
 	void initAudio();
+	/// Sets the update flag.
+	void setUpdateFlag(bool update) { _update = update; }
+	/// Returns the update flag.
+	bool getUpdateFlag() const { return _update; }
+
+	/// Is CTRL pressed?
+	bool isCtrlPressed(bool considerTouchButtons = false) const;
+	/// Is ALT pressed?
+	bool isAltPressed(bool considerTouchButtons = false) const;
+	/// Is SHIFT pressed?
+	bool isShiftPressed(bool considerTouchButtons = false) const;
+
+	/// Is LMB pressed?
+	bool isLeftClick(Action* action, bool considerTouchButtons = false) const;
+	/// Is RMB pressed?
+	bool isRightClick(Action* action, bool considerTouchButtons = false) const;
+	/// Is MMB pressed?
+	bool isMiddleClick(Action* action, bool considerTouchButtons = false) const;
+
+	/// Resets the touch button flags.
+	void resetTouchButtonFlags();
+
+	/// Sets the _ctrl flag.
+	void setCtrlPressedFlag(bool newValue) { _ctrl = newValue; }
+	void toggleCtrlPressedFlag() { _ctrl = !_ctrl; }
+	/// Sets the _alt flag.
+	void setAltPressedFlag(bool newValue) { _alt = newValue; }
+	void toggleAltPressedFlag() { _alt = !_alt; }
+	/// Sets the _shift flag.
+	void setShiftPressedFlag(bool newValue) { _shift = newValue; }
+	void toggleShiftPressedFlag() { _shift = !_shift; }
+
+	/// Gets the _ctrl flag.
+	bool getCtrlPressedFlag() const { return _ctrl; }
+	/// Gets the _alt flag.
+	bool getAltPressedFlag() const { return _alt; }
+	/// Gets the _shift flag.
+	bool getShiftPressedFlag() const { return _shift; }
+
+	/// Sets the _rmb flag.
+	void setRMBFlag(bool newValue) { _rmb = newValue; }
+	void toggleRMBFlag() { _rmb = !_rmb; }
+	/// Sets the _mmb flag.
+	void setMMBFlag(bool newValue) { _mmb = newValue; }
+	void toggleMMBFlag() { _mmb = !_mmb; }
+
+	/// Gets the _rmb flag.
+	bool getRMBFlag() const { return _rmb; }
+	/// Gets the _mmb flag.
+	bool getMMBFlag() const { return _mmb; }
+
+	/// Gets the geoScapeState
+	GeoscapeState *getGeoscapeState() const;
 };
 
 }
-
-#endif

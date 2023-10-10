@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,25 +17,26 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "State.h"
+#include <climits>
 #include "InteractiveSurface.h"
 #include "Game.h"
 #include "Screen.h"
 #include "Surface.h"
-#include "Font.h"
 #include "Language.h"
 #include "LocalizedText.h"
 #include "Palette.h"
-#include "../Resource/ResourcePack.h"
+#include "../Engine/Sound.h"
+#include "../Mod/Mod.h"
 #include "../Interface/Window.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/TextEdit.h"
 #include "../Interface/TextList.h"
 #include "../Interface/BattlescapeButton.h"
-#include "../Interface/ArrowButton.h"
-#include "../Interface/Slider.h"
 #include "../Interface/ComboBox.h"
 #include "../Interface/Cursor.h"
 #include "../Interface/FpsCounter.h"
+#include "../Savegame/SavedBattleGame.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
@@ -48,7 +49,7 @@ Game* State::_game = 0;
  * By default states are full-screen.
  * @param game Pointer to the core game.
  */
-State::State() : _screen(true), _modal(0), _ruleInterface(0), _ruleInterfaceParent(0)
+State::State() : _screen(true), _soundPlayed(false), _modal(0), _ruleInterface(0), _ruleInterfaceParent(0), _customSound(nullptr)
 {
 	// initialize palette to all black
 	memset(_palette, 0, sizeof(_palette));
@@ -60,9 +61,9 @@ State::State() : _screen(true), _modal(0), _ruleInterface(0), _ruleInterfacePare
  */
 State::~State()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i < _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		delete *i;
+		delete surface;
 	}
 }
 
@@ -70,17 +71,17 @@ State::~State()
  * Set interface data from the ruleset, also sets the palette for the state.
  * @param category Name of the interface set.
  * @param alterPal Should we swap out the backpal colors?
- * @param battlescape Should we use battlescape palette? (this only applies to options screens)
+ * @param battleGame Should we use battlescape palette? (this only applies to options screens)
  */
-void State::setInterface(const std::string& category, bool alterPal, bool battlescape)
+void State::setInterface(const std::string& category, bool alterPal, SavedBattleGame *battleGame)
 {
 	int backPal = -1;
 	std::string pal = "PAL_GEOSCAPE";
 
-	_ruleInterface = _game->getRuleset()->getInterface(category);
+	_ruleInterface = _game->getMod()->getInterface(category);
 	if (_ruleInterface)
 	{
-		_ruleInterfaceParent = _game->getRuleset()->getInterface(_ruleInterface->getParent());
+		_ruleInterfaceParent = _game->getMod()->getInterface(_ruleInterface->getParent());
 		pal = _ruleInterface->getPalette();
 		Element *element = _ruleInterface->getElement("palette");
 		if (_ruleInterfaceParent)
@@ -102,21 +103,32 @@ void State::setInterface(const std::string& category, bool alterPal, bool battle
 				backPal = color;
 			}
 		}
-		if (!_ruleInterface->getMusic().empty())
-		{
-			_game->getResourcePack()->playMusic(_ruleInterface->getMusic());
-		}
 	}
-	if (battlescape)
+	if (battleGame)
 	{
-		pal = "PAL_BATTLESCAPE";
-		backPal = -1;
+		battleGame->setPaletteByDepth(this);
 	}
 	else if (pal.empty())
 	{
 		pal = "PAL_GEOSCAPE";
+		setStandardPalette(pal, backPal);
 	}
-	setPalette(pal, backPal);
+	else
+	{
+		setStandardPalette(pal, backPal);
+	}
+}
+
+/**
+ * Set window background from the ruleset.
+ * @param window Window handle.
+ * @param s ID of the interface ruleset entry.
+ */
+void State::setWindowBackground(Window *window, const std::string &s)
+{
+	auto bgImageName = _game->getMod()->getInterface(s)->getBackgroundImage();
+	auto bgImage = _game->getMod()->getSurface(bgImageName);
+	window->setBackground(bgImage);
 }
 
 /**
@@ -135,8 +147,8 @@ void State::add(Surface *surface)
 	surface->setPalette(_palette);
 
 	// Set default text resources
-	if (_game->getLanguage() && _game->getResourcePack())
-		surface->initText(_game->getResourcePack()->getFont("FONT_BIG"), _game->getResourcePack()->getFont("FONT_SMALL"), _game->getLanguage());
+	if (_game->getLanguage() && _game->getMod())
+		surface->initText(_game->getMod()->getFont("FONT_BIG"), _game->getMod()->getFont("FONT_SMALL"), _game->getLanguage());
 
 	_surfaces.push_back(surface);
 }
@@ -159,9 +171,9 @@ void State::add(Surface *surface, const std::string &id, const std::string &cate
 	// this only works if we're dealing with a battlescape button
 	BattlescapeButton *bsbtn = dynamic_cast<BattlescapeButton*>(surface);
 
-	if (_game->getRuleset()->getInterface(category))
+	if (_game->getMod()->getInterface(category))
 	{
-		Element *element = _game->getRuleset()->getInterface(category)->getElement(id);
+		Element *element = _game->getMod()->getInterface(category)->getElement(id);
 		if (element)
 		{
 			if (parent && element->w != INT_MAX && element->h != INT_MAX)
@@ -176,7 +188,11 @@ void State::add(Surface *surface, const std::string &id, const std::string &cate
 				surface->setY(parent->getY() + element->y);
 			}
 
-			surface->setTFTDMode(element->TFTDMode);
+			auto inter = dynamic_cast<InteractiveSurface*>(surface);
+			if (inter)
+			{
+				inter->setTFTDMode(element->TFTDMode);
+			}
 
 			if (element->color != INT_MAX)
 			{
@@ -201,11 +217,12 @@ void State::add(Surface *surface, const std::string &id, const std::string &cate
 	}
 
 	// Set default text resources
-	if (_game->getLanguage() && _game->getResourcePack())
-		surface->initText(_game->getResourcePack()->getFont("FONT_BIG"), _game->getResourcePack()->getFont("FONT_SMALL"), _game->getLanguage());
+	if (_game->getLanguage() && _game->getMod())
+		surface->initText(_game->getMod()->getFont("FONT_BIG"), _game->getMod()->getFont("FONT_SMALL"), _game->getLanguage());
 
 	_surfaces.push_back(surface);
 }
+
 /**
  * Returns whether this is a full-screen state.
  * This is used to optimize the state machine since full-screen
@@ -246,9 +263,40 @@ void State::init()
 	_game->getFpsCounter()->setPalette(_palette);
 	_game->getFpsCounter()->setColor(_cursorColor);
 	_game->getFpsCounter()->draw();
-	if (_game->getResourcePack() != 0)
+
+	// Highest priority: custom sound set explicitly in the code
+	// Medium priority: sound defined by the interface ruleset
+	// Lowest priority: default window popup sound
+	bool muteWindowPopupSound = false;
+	if (!_soundPlayed)
 	{
-		_game->getResourcePack()->setPalette(_palette);
+		_soundPlayed = true;
+		if (!_customSound && _ruleInterface && _ruleInterface->getSound() != Mod::NO_SOUND)
+		{
+			_customSound = _game->getMod()->getSound("GEO.CAT", _ruleInterface->getSound());
+		}
+		if (_customSound)
+		{
+			muteWindowPopupSound = true;
+			_customSound->play();
+		}
+	}
+
+	for (auto* surface : _surfaces)
+	{
+		Window* window = dynamic_cast<Window*>(surface);
+		if (window)
+		{
+			if (muteWindowPopupSound)
+			{
+				window->mute();
+			}
+			window->invalidate();
+		}
+	}
+	if (_ruleInterface != 0 && !_ruleInterface->getMusic().empty())
+	{
+		_game->getMod()->playMusic(_ruleInterface->getMusic());
 	}
 }
 
@@ -258,8 +306,10 @@ void State::init()
  */
 void State::think()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
-		(*i)->think();
+	for (auto* surface : _surfaces)
+	{
+		surface->think();
+	}
 }
 
 /**
@@ -290,8 +340,10 @@ void State::handle(Action *action)
  */
 void State::blit()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
-		(*i)->blit(_game->getScreen()->getSurface());
+	for (auto* surface : _surfaces)
+	{
+		surface->blit(_game->getScreen()->getSurface());
+	}
 }
 
 /**
@@ -299,8 +351,10 @@ void State::blit()
  */
 void State::hideAll()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
-			(*i)->setHidden(true);
+	for (auto* surface : _surfaces)
+	{
+		surface->setHidden(true);
+	}
 }
 
 /**
@@ -308,8 +362,10 @@ void State::hideAll()
  */
 void State::showAll()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
-		(*i)->setHidden(false);
+	for (auto* surface : _surfaces)
+	{
+		surface->setHidden(false);
+	}
 }
 
 /**
@@ -318,9 +374,9 @@ void State::showAll()
  */
 void State::resetAll()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		InteractiveSurface *s = dynamic_cast<InteractiveSurface*>(*i);
+		InteractiveSurface *s = dynamic_cast<InteractiveSurface*>(surface);
 		if (s != 0)
 		{
 			s->unpress(this);
@@ -333,11 +389,30 @@ void State::resetAll()
  * Get the localized text for dictionary key @a id.
  * This function forwards the call to Language::getString(const std::string &).
  * @param id The dictionary key to search for.
- * @return A reference to the localized text.
+ * @return The localized text.
  */
-const LocalizedText &State::tr(const std::string &id) const
+LocalizedText State::tr(const std::string &id) const
 {
 	return _game->getLanguage()->getString(id);
+}
+
+/**
+* Get the localized text from dictionary.
+* This function forwards the call to Language::getString(const std::string &).
+* @param id The (prefix of) dictionary key to search for.
+* @param alt Used to construct the (suffix of) dictionary key to search for.
+* @return The localized text.
+*/
+LocalizedText State::trAlt(const std::string &id, int alt) const
+{
+	std::ostringstream ss;
+	ss << id;
+	// alt = 0 is the original, alt > 0 are the alternatives
+	if (alt > 0)
+	{
+		ss << "_" << alt;
+	}
+	return _game->getLanguage()->getString(ss.str());
 }
 
 /**
@@ -345,7 +420,7 @@ const LocalizedText &State::tr(const std::string &id) const
  * This function forwards the call to Language::getString(const std::string &, unsigned).
  * @param id The dictionary key to search for.
  * @param n The number to use for the proper version.
- * @return A copy of the localized text.
+ * @return The localized text.
  */
 LocalizedText State::tr(const std::string &id, unsigned n) const
 {
@@ -353,14 +428,26 @@ LocalizedText State::tr(const std::string &id, unsigned n) const
 }
 
 /**
+ * Get the localized text for dictionary key @a id.
+ * This function forwards the call to Language::getString(const std::string &, SoldierGender).
+ * @param id The dictionary key to search for.
+ * @param gender Current soldier gender.
+ * @return The localized text.
+ */
+LocalizedText State::tr(const std::string &id, SoldierGender gender) const
+{
+	return _game->getLanguage()->getString(id, gender);
+}
+
+/**
  * centers all the surfaces on the screen.
  */
 void State::centerAllSurfaces()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		(*i)->setX((*i)->getX() + _game->getScreen()->getDX());
-		(*i)->setY((*i)->getY() + _game->getScreen()->getDY());
+		surface->setX(surface->getX() + _game->getScreen()->getDX());
+		surface->setY(surface->getY() + _game->getScreen()->getDY());
 	}
 }
 
@@ -369,76 +456,41 @@ void State::centerAllSurfaces()
  */
 void State::lowerAllSurfaces()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		(*i)->setY((*i)->getY() + _game->getScreen()->getDY() / 2);
+		surface->setY(surface->getY() + _game->getScreen()->getDY() / 2);
 	}
 }
 
 /**
  * switch all the colours to something a little more battlescape appropriate.
  */
-void State::applyBattlescapeTheme()
+void State::applyBattlescapeTheme(const std::string& category)
 {
-	Element * element = _game->getRuleset()->getInterface("mainMenu")->getElement("battlescapeTheme");
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	Element * element = _game->getMod()->getInterface("mainMenu")->getElement("battlescapeTheme");
+	std::string altBg = _game->getMod()->getInterface(category)->getAltBackgroundImage();
+	if (altBg.empty())
 	{
-		Window* window = dynamic_cast<Window*>(*i);
+		altBg = "TAC00.SCR";
+	}
+	for (auto* surface : _surfaces)
+	{
+		surface->setColor(element->color);
+		surface->setHighContrast(true);
+		Window* window = dynamic_cast<Window*>(surface);
 		if (window)
 		{
-			window->setColor(element->color);
-			window->setHighContrast(true);
-			window->setBackground(_game->getResourcePack()->getSurface("TAC00.SCR"));
-			continue;
+			window->setBackground(_game->getMod()->getSurface(altBg));
 		}
-		Text* text = dynamic_cast<Text*>(*i);
-		if (text)
-		{
-			text->setColor(element->color);
-			text->setHighContrast(true);
-			continue;
-		}
-		TextButton* button = dynamic_cast<TextButton*>(*i);
-		if (button)
-		{
-			button->setColor(element->color);
-			button->setHighContrast(true);
-			continue;
-		}
-		TextEdit* edit = dynamic_cast<TextEdit*>(*i);
-		if (edit)
-		{
-			edit->setColor(element->color);
-			edit->setHighContrast(true);
-			continue;
-		}
-		TextList* list = dynamic_cast<TextList*>(*i);
+		TextList* list = dynamic_cast<TextList*>(surface);
 		if (list)
 		{
-			list->setColor(element->color);
 			list->setArrowColor(element->border);
-			list->setHighContrast(true);
-			continue;
 		}
-		ArrowButton *arrow = dynamic_cast<ArrowButton*>(*i);
-		if (arrow)
-		{
-			arrow->setColor(element->border);
-			continue;
-		}
-		Slider *slider = dynamic_cast<Slider*>(*i);
-		if (slider)
-		{
-			slider->setColor(element->color);
-			slider->setHighContrast(true);
-			continue;
-		}
-		ComboBox *combo = dynamic_cast<ComboBox*>(*i);
+		ComboBox *combo = dynamic_cast<ComboBox*>(surface);
 		if (combo)
 		{
-			combo->setColor(element->color);
 			combo->setArrowColor(element->border);
-			combo->setHighContrast(true);
 		}
 	}
 }
@@ -448,15 +500,15 @@ void State::applyBattlescapeTheme()
  */
 void State::redrawText()
 {
-	for (std::vector<Surface*>::iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		Text* text = dynamic_cast<Text*>(*i);
-		TextButton* button = dynamic_cast<TextButton*>(*i);
-		TextEdit* edit = dynamic_cast<TextEdit*>(*i);
-		TextList* list = dynamic_cast<TextList*>(*i);
+		Text* text = dynamic_cast<Text*>(surface);
+		TextButton* button = dynamic_cast<TextButton*>(surface);
+		TextEdit* edit = dynamic_cast<TextEdit*>(surface);
+		TextList* list = dynamic_cast<TextList*>(surface);
 		if (text || button || edit || list)
 		{
-			(*i)->draw();
+			surface->draw();
 		}
 	}
 }
@@ -478,24 +530,25 @@ void State::setModal(InteractiveSurface *surface)
  * @param colors Pointer to the set of colors.
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
- * @param immediately Apply changes immediately, otherwise wait in case of multiple setPalettes.
  */
-void State::setPalette(SDL_Color *colors, int firstcolor, int ncolors, bool immediately)
+void State::setStatePalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	if (colors)
 	{
 		memcpy(_palette + firstcolor, colors, ncolors * sizeof(SDL_Color));
 	}
-	if (immediately)
+}
+
+/**
+ * Set palette for helper surfaces like cursor or fps counter.
+ */
+void State::setModPalette()
+{
 	{
 		_game->getCursor()->setPalette(_palette);
 		_game->getCursor()->draw();
 		_game->getFpsCounter()->setPalette(_palette);
 		_game->getFpsCounter()->draw();
-		if (_game->getResourcePack() != 0)
-		{
-			_game->getResourcePack()->setPalette(_palette);
-		}
 	}
 }
 
@@ -504,39 +557,51 @@ void State::setPalette(SDL_Color *colors, int firstcolor, int ncolors, bool imme
  * @param palette String ID of the palette to load.
  * @param backpals BACKPALS.DAT offset to use.
  */
-void State::setPalette(const std::string &palette, int backpals)
+void State::setStandardPalette(const std::string &palette, int backpals)
 {
-	setPalette(_game->getResourcePack()->getPalette(palette)->getColors(), 0, 256, false);
+	setStatePalette(_game->getMod()->getPalette(palette)->getColors(), 0, 256);
 	if (palette == "PAL_GEOSCAPE")
 	{
-		_cursorColor = ResourcePack::GEOSCAPE_CURSOR;
+		_cursorColor = Mod::GEOSCAPE_CURSOR;
 	}
 	else if (palette == "PAL_BASESCAPE")
 	{
-		_cursorColor = ResourcePack::BASESCAPE_CURSOR;
+		_cursorColor = Mod::BASESCAPE_CURSOR;
 	}
 	else if (palette == "PAL_UFOPAEDIA")
 	{
-		_cursorColor = ResourcePack::UFOPAEDIA_CURSOR;
+		_cursorColor = Mod::UFOPAEDIA_CURSOR;
 	}
 	else if (palette == "PAL_GRAPHS")
 	{
-		_cursorColor = ResourcePack::GRAPHS_CURSOR;
+		_cursorColor = Mod::GRAPHS_CURSOR;
 	}
 	else
 	{
-		_cursorColor = ResourcePack::BATTLESCAPE_CURSOR;
+		_cursorColor = Mod::BATTLESCAPE_CURSOR;
 	}
 	if (backpals != -1)
-		setPalette(_game->getResourcePack()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(backpals)), Palette::backPos, 16, false);
-	setPalette(NULL); // delay actual update to the end
+		setStatePalette(_game->getMod()->getPalette("BACKPALS.DAT")->getColors(Palette::blockOffset(backpals)), Palette::backPos, 16);
+	setModPalette(); // delay actual update to the end
+}
+
+/**
+* Loads palettes from the given resources into the state.
+* @param colors Pointer to the set of colors.
+* @param cursorColor Cursor color to use.
+*/
+void State::setCustomPalette(SDL_Color *colors, int cursorColor)
+{
+	setStatePalette(colors, 0, 256);
+	_cursorColor = cursorColor;
+	setModPalette(); // delay actual update to the end
 }
 
 /**
  * Returns the state's 8bpp palette.
  * @return Pointer to the palette's colors.
  */
-SDL_Color *const State::getPalette()
+SDL_Color *State::getPalette()
 {
 	return _palette;
 }
@@ -559,16 +624,16 @@ void State::resize(int &dX, int &dY)
  */
 void State::recenter(int dX, int dY)
 {
-	for (std::vector<Surface*>::const_iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		(*i)->setX((*i)->getX() + dX / 2);
-		(*i)->setY((*i)->getY() + dY / 2);
+		surface->setX(surface->getX() + dX / 2);
+		surface->setY(surface->getY() + dY / 2);
 	}
 }
 
 void State::setGamePtr(Game* game)
 {
-    _game = game;
+	_game = game;
 }
 
 }

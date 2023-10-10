@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,7 +18,6 @@
  */
 #include "InteractiveSurface.h"
 #include "Action.h"
-#include "Options.h"
 
 namespace OpenXcom
 {
@@ -32,7 +31,7 @@ const SDLKey InteractiveSurface::SDLK_ANY = (SDLKey)-1; // using an unused keyco
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-InteractiveSurface::InteractiveSurface(int width, int height, int x, int y) : Surface(width, height, x, y), _buttonsPressed(0), _in(0), _over(0), _out(0), _isHovered(false), _isFocused(true), _listButton(false)
+InteractiveSurface::InteractiveSurface(int width, int height, int x, int y) : Surface(width, height, x, y), _buttonsPressed(0), _in(0), _over(0), _out(0), _isHovered(false), _isFocused(true), _listButton(false), _tftdMode(false)
 {
 }
 
@@ -57,7 +56,7 @@ bool InteractiveSurface::isButtonHandled(Uint8 button)
 	return handled;
 }
 
-bool InteractiveSurface::isButtonPressed(Uint8 button)
+bool InteractiveSurface::isButtonPressed(Uint8 button) const
 {
 	if (button == 0)
 	{
@@ -73,11 +72,11 @@ void InteractiveSurface::setButtonPressed(Uint8 button, bool pressed)
 {
 	if (pressed)
 	{
-		_buttonsPressed = _buttonsPressed | SDL_BUTTON(button);
+		_buttonsPressed |= SDL_BUTTON(button);
 	}
 	else
 	{
-		_buttonsPressed = _buttonsPressed & (!SDL_BUTTON(button));
+		_buttonsPressed &= (~SDL_BUTTON(button));
 	}
 }
 
@@ -205,7 +204,7 @@ void InteractiveSurface::handle(Action *action, State *state)
  * keyboard events if focused.
  * @param focus Is it focused?
  */
-void InteractiveSurface::setFocus(bool focus)
+void InteractiveSurface::setFocus(bool focus, bool modal)
 {
 	_isFocused = focus;
 }
@@ -247,8 +246,8 @@ void InteractiveSurface::unpress(State *state)
  */
 void InteractiveSurface::mousePress(Action *action, State *state)
 {
-	std::map<Uint8, ActionHandler>::iterator allHandler = _press.find(0);
-	std::map<Uint8, ActionHandler>::iterator oneHandler = _press.find(action->getDetails()->button.button);
+	auto allHandler = _press.find(0);
+	auto oneHandler = _press.find(action->getDetails()->button.button);
 	if (allHandler != _press.end())
 	{
 		ActionHandler handler = allHandler->second;
@@ -270,8 +269,8 @@ void InteractiveSurface::mousePress(Action *action, State *state)
  */
 void InteractiveSurface::mouseRelease(Action *action, State *state)
 {
-	std::map<Uint8, ActionHandler>::iterator allHandler = _release.find(0);
-	std::map<Uint8, ActionHandler>::iterator oneHandler = _release.find(action->getDetails()->button.button);
+	auto allHandler = _release.find(0);
+	auto oneHandler = _release.find(action->getDetails()->button.button);
 	if (allHandler != _release.end())
 	{
 		ActionHandler handler = allHandler->second;
@@ -293,8 +292,8 @@ void InteractiveSurface::mouseRelease(Action *action, State *state)
  */
 void InteractiveSurface::mouseClick(Action *action, State *state)
 {
-	std::map<Uint8, ActionHandler>::iterator allHandler = _click.find(0);
-	std::map<Uint8, ActionHandler>::iterator oneHandler = _click.find(action->getDetails()->button.button);
+	auto allHandler = _click.find(0);
+	auto oneHandler = _click.find(action->getDetails()->button.button);
 	if (allHandler != _click.end())
 	{
 		ActionHandler handler = allHandler->second;
@@ -361,8 +360,8 @@ void InteractiveSurface::mouseOut(Action *action, State *state)
  */
 void InteractiveSurface::keyboardPress(Action *action, State *state)
 {
-	std::map<SDLKey, ActionHandler>::iterator allHandler = _keyPress.find(SDLK_ANY);
-	std::map<SDLKey, ActionHandler>::iterator oneHandler = _keyPress.find(action->getDetails()->key.keysym.sym);
+	auto allHandler = _keyPress.find(SDLK_ANY);
+	auto oneHandler = _keyPress.find(action->getDetails()->key.keysym.sym);
 	if (allHandler != _keyPress.end())
 	{
 		ActionHandler handler = allHandler->second;
@@ -386,8 +385,8 @@ void InteractiveSurface::keyboardPress(Action *action, State *state)
  */
 void InteractiveSurface::keyboardRelease(Action *action, State *state)
 {
-	std::map<SDLKey, ActionHandler>::iterator allHandler = _keyRelease.find(SDLK_ANY);
-	std::map<SDLKey, ActionHandler>::iterator oneHandler = _keyRelease.find(action->getDetails()->key.keysym.sym);
+	auto allHandler = _keyRelease.find(SDLK_ANY);
+	auto oneHandler = _keyRelease.find(action->getDetails()->key.keysym.sym);
 	if (allHandler != _keyRelease.end())
 	{
 		ActionHandler handler = allHandler->second;
@@ -483,10 +482,15 @@ void InteractiveSurface::onMouseOut(ActionHandler handler)
 /**
  * Sets a function to be called every time a key is pressed when the surface is focused.
  * @param handler Action handler.
- * @param key Keyboard button to check for (note: ignores key modifiers). Set to 0 for any key.
+ * @param key Keyboard button to check for (note: ignores key modifiers). Set to SDLK_ANY for any key.
  */
 void InteractiveSurface::onKeyboardPress(ActionHandler handler, SDLKey key)
 {
+	if (key == SDLK_UNKNOWN)
+	{
+		// Ignore unknown keys
+		return;
+	}
 	if (handler != 0)
 	{
 		_keyPress[key] = handler;
@@ -500,10 +504,15 @@ void InteractiveSurface::onKeyboardPress(ActionHandler handler, SDLKey key)
 /**
  * Sets a function to be called every time a key is released when the surface is focused.
  * @param handler Action handler.
- * @param key Keyboard button to check for (note: ignores key modifiers). Set to 0 for any key.
+ * @param key Keyboard button to check for (note: ignores key modifiers). Set to SDLK_ANY for any key.
  */
 void InteractiveSurface::onKeyboardRelease(ActionHandler handler, SDLKey key)
 {
+	if (key == SDLK_UNKNOWN)
+	{
+		// Ignore unknown keys
+		return;
+	}
 	if (handler != 0)
 	{
 		_keyRelease[key] = handler;
@@ -520,6 +529,44 @@ void InteractiveSurface::onKeyboardRelease(ActionHandler handler, SDLKey key)
 void InteractiveSurface::setListButton()
 {
 	_listButton = true;
+}
+
+/**
+ * Returns the help description of this surface,
+ * for example for showing in tooltips.
+ * @return String ID.
+ */
+std::string InteractiveSurface::getTooltip() const
+{
+	return _tooltip;
+}
+
+/**
+ * Changes the help description of this surface,
+ * for example for showing in tooltips.
+ * @param tooltip String ID.
+ */
+void InteractiveSurface::setTooltip(const std::string &tooltip)
+{
+	_tooltip = tooltip;
+}
+
+/**
+ * TFTD mode: much like click inversion, but does a colour swap rather than a palette shift.
+ * @param mode set TFTD mode to this.
+ */
+void InteractiveSurface::setTFTDMode(bool mode)
+{
+	_tftdMode = mode;
+}
+
+/**
+ * checks TFTD mode.
+ * @return TFTD mode.
+ */
+bool InteractiveSurface::isTFTDMode() const
+{
+	return _tftdMode;
 }
 
 }

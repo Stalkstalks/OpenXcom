@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -22,7 +22,8 @@
 #include "Craft.h"
 #include "ItemContainer.h"
 #include "../Engine/Language.h"
-#include "../Ruleset/Ruleset.h"
+#include "../Mod/Mod.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -51,28 +52,39 @@ Transfer::~Transfer()
  * Loads the transfer from a YAML file.
  * @param node YAML node.
  * @param base Destination base.
- * @param rule Game ruleset.
+ * @param rule Game mod.
  * @param save Pointer to savegame.
  * @return Was the transfer content valid?
  */
-bool Transfer::load(const YAML::Node& node, Base *base, const Ruleset *rule, SavedGame *save)
+bool Transfer::load(const YAML::Node& node, Base *base, const Mod *mod, SavedGame *save)
 {
 	_hours = node["hours"].as<int>(_hours);
 	if (const YAML::Node &soldier = node["soldier"])
 	{
-		_soldier = new Soldier(rule->getSoldier("XCOM"), rule->getArmor("STR_NONE_UC"));
-		_soldier->load(soldier, rule, save);
+		std::string type = soldier["type"].as<std::string>(mod->getSoldiersList().front());
+		if (mod->getSoldier(type) != 0)
+		{
+			_soldier = new Soldier(mod->getSoldier(type), nullptr, 0 /*nationality*/);
+			_soldier->load(soldier, mod, save, mod->getScriptGlobal());
+		}
+		else
+		{
+			Log(LOG_ERROR) << "Failed to load soldier " << type;
+			delete this;
+			return false;
+		}
 	}
 	if (const YAML::Node &craft = node["craft"])
 	{
 		std::string type = craft["type"].as<std::string>();
-		if (rule->getCraft(type) != 0)
+		if (mod->getCraft(type) != 0)
 		{
-			_craft = new Craft(rule->getCraft(type), base);
-			_craft->load(craft, rule, 0);
+			_craft = new Craft(mod->getCraft(type), base);
+			_craft->load(craft, mod->getScriptGlobal(), mod, 0);
 		}
 		else
 		{
+			Log(LOG_ERROR) << "Failed to load craft " << type;
 			delete this;
 			return false;
 		}
@@ -81,8 +93,9 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Ruleset *rule, Sav
 	if (const YAML::Node &item = node["itemId"])
 	{
 		_itemId = item.as<std::string>(_itemId);
-		if (rule->getItem(_itemId) == 0)
+		if (mod->getItem(_itemId) == 0)
 		{
+			Log(LOG_ERROR) << "Failed to load item " << _itemId;
 			delete this;
 			return false;
 		}
@@ -98,17 +111,17 @@ bool Transfer::load(const YAML::Node& node, Base *base, const Ruleset *rule, Sav
  * Saves the transfer to a YAML file.
  * @return YAML node.
  */
-YAML::Node Transfer::save() const
+YAML::Node Transfer::save(const Base *b, const Mod *mod) const
 {
 	YAML::Node node;
 	node["hours"] = _hours;
 	if (_soldier != 0)
 	{
-		node["soldier"] = _soldier->save();
+		node["soldier"] = _soldier->save(mod->getScriptGlobal());
 	}
 	else if (_craft != 0)
 	{
-		node["craft"] = _craft->save();
+		node["craft"] = _craft->save(mod->getScriptGlobal());
 	}
 	else if (_itemQty != 0)
 	{
@@ -200,7 +213,7 @@ void Transfer::setEngineers(int engineers)
  * @param lang Language to get strings from.
  * @return Name string.
  */
-std::wstring Transfer::getName(Language *lang) const
+std::string Transfer::getName(Language *lang) const
 {
 	if (_soldier != 0)
 	{
@@ -285,7 +298,7 @@ TransferType Transfer::getType() const
 void Transfer::advance(Base *base)
 {
 	_hours--;
-	if (_hours == 0)
+	if (_hours <= 0)
 	{
 		if (_soldier != 0)
 		{
@@ -299,7 +312,7 @@ void Transfer::advance(Base *base)
 		}
 		else if (_itemQty != 0)
 		{
-			base->getItems()->addItem(_itemId, _itemQty);
+			base->getStorageItems()->addItem(_itemId, _itemQty);
 		}
 		else if (_scientists != 0)
 		{
@@ -321,4 +334,5 @@ Soldier *Transfer::getSoldier()
 {
 	return _soldier;
 }
+
 }

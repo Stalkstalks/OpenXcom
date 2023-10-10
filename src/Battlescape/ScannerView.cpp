@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,13 +19,12 @@
 #include "ScannerView.h"
 #include "../Engine/Game.h"
 #include "../Engine/SurfaceSet.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
 #include "../Engine/Action.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/Tile.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
-#include "../Interface/Text.h"
 
 namespace OpenXcom
 {
@@ -49,7 +48,7 @@ ScannerView::ScannerView (int w, int h, int x, int y, Game * game, BattleUnit *u
  */
 void ScannerView::draw()
 {
-	SurfaceSet *set = _game->getResourcePack()->getSurfaceSet("DETBLOB.DAT");
+	SurfaceSet *set = _game->getMod()->getSurfaceSet("DETBLOB.DAT");
 	Surface *surface = 0;
 
 	clear();
@@ -67,9 +66,10 @@ void ScannerView::draw()
 					int frame = (t->getUnit()->getMotionPoints() / 5);
 					if (frame >= 0)
 					{
+						t->getUnit()->setScannedTurn(_game->getSavedGame()->getSavedBattle()->getTurn());
 						if (frame > 5) frame = 5;
 						surface = set->getFrame(frame + _frame);
-						surface->blitNShade(this, Surface::getX()+((9+x)*8)-4, Surface::getY()+((9+y)*8)-4, 0);
+						surface->blitNShade(this, ((9+x)*8)-4, ((9+y)*8)-4, 0);
 					}
 				}
 			}
@@ -79,7 +79,7 @@ void ScannerView::draw()
 	// the arrow of the direction the unit is pointed
 	surface = set->getFrame(7 + _unit->getDirection());
 
-	surface->blitNShade(this, Surface::getX()+(9*8)-4, Surface::getY()+(9*8)-4, 0);
+	surface->blitNShade(this, (9*8)-4, (9*8)-4, 0);
 	this->unlock();
 
 
@@ -96,7 +96,7 @@ void ScannerView::mouseClick (Action *, State *)
 
 /**
  * Updates the scanner animation.
-*/
+ */
 void ScannerView::animate()
 {
 	_frame++;

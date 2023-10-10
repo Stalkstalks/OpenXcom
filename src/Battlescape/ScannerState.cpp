@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,21 +18,15 @@
  */
 #include "ScannerState.h"
 #include "ScannerView.h"
+#include "BattlescapeGame.h"
 #include "../Engine/InteractiveSurface.h"
 #include "../Engine/Game.h"
-#include "../Engine/Language.h"
 #include "../Engine/Action.h"
-#include "../Engine/Palette.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Screen.h"
 #include "../Engine/Options.h"
-#include "../Interface/Text.h"
-#include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Resource/ResourcePack.h"
-#include <iostream>
-#include <sstream>
+#include "../Mod/Mod.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 
@@ -70,8 +64,8 @@ ScannerState::ScannerState (BattleAction *action) : _action(action)
 
 	centerAllSurfaces();
 
-	_game->getResourcePack()->getSurface("DETBORD.PCK")->blit(_bg);
-	_game->getResourcePack()->getSurface("DETBORD2.PCK")->blit(_scan);
+	_game->getMod()->getSurface("DETBORD.PCK")->blitNShade(_bg, 0, 0);
+	_game->getMod()->getSurface("DETBORD2.PCK")->blitNShade(_scan, 0, 0);
 	_bg->onMouseClick((ActionHandler)&ScannerState::exitClick);
 	_bg->onKeyboardPress((ActionHandler)&ScannerState::exitClick, Options::keyCancel);
 
@@ -94,7 +88,7 @@ ScannerState::~ScannerState()
 void ScannerState::handle(Action *action)
 {
 	State::handle(action);
-	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && _game->isRightClick(action))
 	{
 		exitClick(action);
 	}
@@ -110,7 +104,7 @@ void ScannerState::update()
 
 /**
  * Animation handler. Updates the minimap view animation.
-*/
+ */
 void ScannerState::animate()
 {
 	_scannerView->animate();
@@ -118,7 +112,7 @@ void ScannerState::animate()
 
 /**
  * Handles timers.
-*/
+ */
 void ScannerState::think()
 {
 	State::think();
@@ -133,7 +127,7 @@ void ScannerState::exitClick(Action *)
 {
 	if (Options::maximizeInfoScreens)
 	{
-		Screen::updateScale(Options::battlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
+		Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
 		_game->getScreen()->resetDisplay(false);
 	}
 	_game->popState();

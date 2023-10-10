@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MONTHLYREPORTSTATE_H
-#define OPENXCOM_MONTHLYREPORTSTATE_H
-
 #include "../Engine/State.h"
+#include <vector>
 #include <string>
 
 namespace OpenXcom
@@ -29,6 +28,8 @@ class TextButton;
 class Window;
 class Text;
 class Globe;
+class Base;
+class Soldier;
 
 /**
  * Report screen shown monthly to display
@@ -40,14 +41,15 @@ private:
 	TextButton *_btnOk, *_btnBigOk;
 	Window *_window;
 	Text *_txtTitle, *_txtMonth, *_txtRating;
-	Text *_txtIncome, *_txtMaintenance, *_txtBalance;
+	Text *_txtIncome, *_txtMaintenance, *_txtBalance, *_txtBonus;
 	Text *_txtDesc, *_txtFailure;
-	bool _gameOver;
+	int _gameOver;
 	int _ratingTotal, _fundingDiff, _lastMonthsRating;
-	std::vector<std::string> _happyList, _sadList, _pactList;
+	std::vector<std::string> _happyList, _sadList, _pactList, _cancelPactList;
 	Globe *_globe;
+	std::vector<Soldier*> _soldiersMedalled;
 	/// Builds a country list string.
-	std::wstring countryList(const std::vector<std::string> &countries, const std::string &singular, const std::string &plural);
+	std::string countryList(const std::vector<std::string> &countries, const std::string &singular, const std::string &plural);
 public:
 	/// Creates the Monthly Report state.
 	MonthlyReportState(Globe *globe);
@@ -60,5 +62,3 @@ public:
 };
 
 }
-
-#endif

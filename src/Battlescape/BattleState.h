@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BATTLESTATE_H
-#define OPENXCOM_BATTLESTATE_H
-
-#include <string>
 #include "BattlescapeGame.h"
 
 namespace OpenXcom
 {
-
-class BattlescapeGame;
 
 /**
  * This class sets the battlescape in a certain sub-state.
@@ -45,6 +40,8 @@ public:
 	virtual ~BattleState();
 	/// Initializes the state.
 	virtual void init();
+	/// Called when the state gets popped out.
+	virtual void deinit();
 	/// Handles a cancel request.
 	virtual void cancel();
 	/// Runs state functionality every cycle.
@@ -54,5 +51,3 @@ public:
 };
 
 }
-
-#endif

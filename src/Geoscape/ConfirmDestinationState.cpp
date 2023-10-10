@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +16,19 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "CraftErrorState.h"
+#include "CraftNotEnoughPilotsState.h"
 #include "ConfirmDestinationState.h"
-#include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Surface.h"
+#include "../Menu/ErrorMessageState.h"
+#include "../Mod/Mod.h"
+#include "../Mod/AlienRace.h"
+#include "../Mod/RuleInterface.h"
+#include "../Mod/RuleStartingCondition.h"
+#include "../Mod/RuleSoldier.h"
+#include "../Mod/AlienDeployment.h"
+#include "../Mod/ArticleDefinition.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
@@ -31,7 +37,12 @@
 #include "../Savegame/Target.h"
 #include "../Savegame/Waypoint.h"
 #include "../Savegame/Base.h"
+#include "../Savegame/Ufo.h"
+#include "../Savegame/MissionSite.h"
+#include "../Savegame/AlienBase.h"
+#include "../Savegame/Soldier.h"
 #include "../Engine/Options.h"
+#include "../Engine/Sound.h"
 
 namespace OpenXcom
 {
@@ -39,19 +50,31 @@ namespace OpenXcom
 /**
  * Initializes all the elements in the Confirm Destination window.
  * @param game Pointer to the core game.
- * @param craft Pointer to the craft to retarget.
+ * @param crafts Vector for the crafts part of a wing to retarget.
  * @param target Pointer to the selected target (NULL if it's just a point on the globe).
  */
-ConfirmDestinationState::ConfirmDestinationState(Craft *craft, Target *target) : _craft(craft), _target(target)
+ConfirmDestinationState::ConfirmDestinationState(std::vector<Craft*> crafts, Target *target) : _crafts(std::move(crafts)), _target(target)
 {
 	Waypoint *w = dynamic_cast<Waypoint*>(_target);
 	_screen = false;
 
+	Base *base = dynamic_cast<Base*>(_target);
+	bool transferAvailable = false; // no transfer allowed for wings
+
+	if (_crafts.size() == 1)
+	{
+		transferAvailable = (Options::canTransferCraftsWhileAirborne && base != 0 && base != _crafts.front()->getBase());
+	}
+
+	int btnOkX = transferAvailable ? 29 : 68;
+	int btnCancelX = transferAvailable ? 177 : 138;
+
 	// Create objects
-	_window = new Window(this, 224, 72, 16, 64);
-	_btnOk = new TextButton(50, 12, 68, 104);
-	_btnCancel = new TextButton(50, 12, 138, 104);
-	_txtTarget = new Text(212, 32, 22, 72);
+	_window = new Window(this, 244, 72, 6, 64);
+	_btnOk = new TextButton(50, 12, btnOkX, 104);
+	_btnTransfer = new TextButton(82, 12, 87, 104);
+	_btnCancel = new TextButton(50, 12, btnCancelX, 104);
+	_txtTarget = new Text(232, 32, 12, 72);
 
 	// Set palette
 	setInterface("confirmDestination", w != 0 && w->getId() == 0);
@@ -59,16 +82,21 @@ ConfirmDestinationState::ConfirmDestinationState(Craft *craft, Target *target) :
 	add(_window, "window", "confirmDestination");
 	add(_btnOk, "button", "confirmDestination");
 	add(_btnCancel, "button", "confirmDestination");
+	add(_btnTransfer, "button", "confirmDestination");
 	add(_txtTarget, "text", "confirmDestination");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK12.SCR"));
+	setWindowBackground(_window, "confirmDestination");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ConfirmDestinationState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&ConfirmDestinationState::btnOkClick, Options::keyOk);
+
+	_btnTransfer->setText(tr("STR_TRANSFER_UC"));
+	_btnTransfer->onMouseClick((ActionHandler)&ConfirmDestinationState::btnTransferClick);
+	_btnTransfer->setVisible(transferAvailable);
 
 	_btnCancel->setText(tr("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&ConfirmDestinationState::btnCancelClick);
@@ -97,36 +125,287 @@ ConfirmDestinationState::~ConfirmDestinationState()
 }
 
 /**
+* Checks the starting condition.
+*/
+std::string ConfirmDestinationState::checkStartingCondition()
+{
+	Ufo* u = dynamic_cast<Ufo*>(_target);
+	MissionSite* m = dynamic_cast<MissionSite*>(_target);
+	AlienBase* b = dynamic_cast<AlienBase*>(_target);
+
+	AlienDeployment *ruleDeploy = 0;
+	if (u != 0)
+	{
+		ruleDeploy = _game->getMod()->getDeployment(u->getRules()->getType()); // no need to check for fake underwater UFOs here
+	}
+	else if (m != 0)
+	{
+		ruleDeploy = _game->getMod()->getDeployment(m->getDeployment()->getType());
+	}
+	else if (b != 0)
+	{
+		AlienRace *race = _game->getMod()->getAlienRace(b->getAlienRace());
+		ruleDeploy = _game->getMod()->getDeployment(race->getBaseCustomMission());
+		if (!ruleDeploy) ruleDeploy = _game->getMod()->getDeployment(b->getDeployment()->getType());
+	}
+	else
+	{
+		// for example just a waypoint
+		return "";
+	}
+
+	if (ruleDeploy == 0)
+	{
+		// e.g. UFOs without alien deployment :(
+		return "";
+	}
+
+	RuleStartingCondition *rule = _game->getMod()->getStartingCondition(ruleDeploy->getStartingCondition());
+	if (rule == 0)
+	{
+		// rule doesn't exist (mod upgrades?)
+		return "";
+	}
+	if (rule->requiresCommanderOnboard() && !_crafts.front()->isCommanderOnboard())
+	{
+		if (!u || u->getStatus() == Ufo::LANDED || u->getStatus() == Ufo::CRASHED)
+		{
+			return tr("STR_STARTING_CONDITION_COMMANDER");
+		}
+	}
+
+	// Only check first selected craft
+	// The other crafts will follow the first selected craft so they will not land at the mission site
+	// This check is only performed once per wing
+	// Checking if _crafts.size() != 1 will disallow the escorting scenario
+
+	// check required item(s)
+	auto requiredItems = rule->getRequiredItems();
+	if (!_crafts.front()->areRequiredItemsOnboard(requiredItems))
+	{
+		std::ostringstream ss2;
+		int i2 = 0;
+		for (auto& pair : requiredItems)
+		{
+			if (i2 > 0)
+				ss2 << ", ";
+			ss2 << tr(pair.first) << ": " << pair.second;
+			i2++;
+		}
+		std::string argument2 = ss2.str();
+		return tr("STR_STARTING_CONDITION_ITEM").arg(argument2);
+	}
+
+	// check permitted soldiers
+	if (!_crafts.front()->areOnlyPermittedSoldierTypesOnboard(rule))
+	{
+		auto list = rule->getForbiddenSoldierTypes();
+		std::string messageCode = "STR_STARTING_CONDITION_SOLDIER_TYPE_FORBIDDEN";
+		if (list.empty())
+		{
+			list = rule->getAllowedSoldierTypes();
+			messageCode = "STR_STARTING_CONDITION_SOLDIER_TYPE_ALLOWED";
+		}
+
+		std::ostringstream ss;
+		int i = 0;
+		for (auto& soldierType : list)
+		{
+			RuleSoldier* soldierTypeRule = _game->getMod()->getSoldier(soldierType, false);
+			if (soldierTypeRule && _game->getSavedGame()->isResearched(soldierTypeRule->getRequirements()))
+			{
+				if (i > 0)
+					ss << ", ";
+				ss << tr(soldierType);
+				i++;
+			}
+		}
+		std::string argument = ss.str();
+		if (argument.empty())
+		{
+			// no suitable soldier type yet?
+			argument = tr("STR_UNKNOWN");
+		}
+		return tr(messageCode).arg(argument);
+	}
+
+	if (rule->isCraftPermitted(_crafts.front()->getRules()->getType()))
+	{
+		// craft is permitted
+		return "";
+	}
+
+	// craft is not permitted (= either forbidden or not allowed)
+	auto list = rule->getForbiddenCraft();
+	std::string messageCode = "STR_STARTING_CONDITION_CRAFT_FORBIDDEN";
+	if (list.empty())
+	{
+		list = rule->getAllowedCraft();
+		messageCode = "STR_STARTING_CONDITION_CRAFT_ALLOWED";
+	}
+
+	std::ostringstream ss;
+	int i = 0;
+	for (auto& articleName : list)
+	{
+		ArticleDefinition *article = _game->getMod()->getUfopaediaArticle(articleName, false);
+		if (article && _game->getSavedGame()->isResearched(article->_requires))
+		{
+			if (i > 0)
+				ss << ", ";
+			ss << tr(articleName);
+			i++;
+		}
+	}
+	std::string argument = ss.str();
+	if (argument.empty())
+	{
+		// no suitable craft yet
+		argument = tr("STR_UNKNOWN");
+	}
+	return tr(messageCode).arg(argument);
+}
+
+/**
  * Confirms the selected target for the craft.
  * @param action Pointer to an action.
  */
 void ConfirmDestinationState::btnOkClick(Action *)
 {
+	std::string message = checkStartingCondition();
+	if (!message.empty())
+	{
+		_game->popState();
+		_game->popState();
+		_game->pushState(new CraftErrorState(0, message));
+		return;
+	}
+
+	for (auto* craft : _crafts)
+	{
+		if (!craft->arePilotsOnboard())
+		{
+			_game->popState();
+			_game->popState();
+			_game->pushState(new CraftNotEnoughPilotsState(craft));
+			return;
+		}
+	}
+
 	Waypoint *w = dynamic_cast<Waypoint*>(_target);
 	if (w != 0 && w->getId() == 0)
 	{
-		w->setId(_game->getSavedGame()->getId("STR_WAYPOINT"));
+		w->setId(_game->getSavedGame()->getId("STR_WAY_POINT"));
 		_game->getSavedGame()->getWaypoints()->push_back(w);
 	}
-	_craft->setDestination(_target);
-	_craft->setStatus("STR_OUT");
-	if (_craft->getInterceptionOrder() == 0)
+
+	// first selected _craft (first shift-clicked craft) is wing leader; the other crafts follow the wing leader
+	if (_crafts.front() == _target)
 	{
-		int maxInterceptionOrder = 0;
-		for (std::vector<Base*>::iterator baseIt = _game->getSavedGame()->getBases()->begin(); baseIt != _game->getSavedGame()->getBases()->end(); ++baseIt)
+		//setting itself as target works fine but it should be saying "patrolling" instead
+		_crafts.front()->setDestination(0);
+	}
+	else
+	{
+		_crafts.front()->setDestination(_target);
+		if (_crafts.front()->isTakingOff())
 		{
-			for (std::vector<Craft*>::iterator craftIt = (*baseIt)->getCrafts()->begin(); craftIt != (*baseIt)->getCrafts()->end(); ++craftIt)
+			if (!_crafts.front()->getRules()->getTakeoffSoundRaw().empty())
 			{
-				if ((*craftIt)->getInterceptionOrder() > maxInterceptionOrder)
-				{
-					maxInterceptionOrder = (*craftIt)->getInterceptionOrder();
-				}
+				_game->getMod()->getSound("GEO.CAT", _crafts.front()->getRules()->getTakeoffSound())->play();
 			}
 		}
-		_craft->setInterceptionOrder(++maxInterceptionOrder);
 	}
+
+	for (auto* craft : _crafts)
+	{
+		if (craft != _crafts.front())
+		{
+			craft->setDestination(_crafts.front());
+		}
+
+		if (craft->getRules()->canAutoPatrol())
+		{
+			// cancel auto-patrol
+			craft->setIsAutoPatrolling(false);
+		}
+
+		craft->setStatus("STR_OUT");
+	}
+
 	_game->popState();
 	_game->popState();
+}
+
+/**
+ * Handles clicking the transfer button
+ * Performs a transfer of a craft to a targeted base if possible, otherwise pops an error message
+ * @param action Pointer to an action.
+ */
+void ConfirmDestinationState::btnTransferClick(Action *)
+{
+	std::string errorMessage;
+	
+	Base *targetBase = dynamic_cast<Base*>(_target);
+	if ((targetBase->getAvailableHangars(_crafts.front()->getRules()->getHangarType()) - targetBase->getUsedHangars(_crafts.front()->getRules()->getHangarType())) <= 0) // don't know how you'd get less than 0 available hangars, but want to handle that just in case	
+	{
+		errorMessage = tr("STR_NO_FREE_HANGARS_FOR_TRANSFER");
+	}
+	else if (_crafts.front()->getNumTotalSoldiers() > targetBase->getAvailableQuarters() - targetBase->getUsedQuarters())
+	{
+		errorMessage = tr("STR_NO_FREE_ACCOMODATION_CREW");
+	}
+	else if (Options::storageLimitsEnforced && targetBase->storesOverfull(_crafts.front()->getTotalItemStorageSize(_game->getMod())))
+	{
+		errorMessage = tr("STR_NOT_ENOUGH_STORE_SPACE_FOR_CRAFT");
+	}
+	else if (_crafts.front()->getFuel() < _crafts.front()->getFuelLimit(targetBase))
+	{
+		errorMessage = tr("STR_NOT_ENOUGH_FUEL_TO_REACH_TARGET");
+	}
+
+	// clicking transfer will start the craft moving or make us need to pick a new destination
+	// either way, we need to get rid of this confirming the destination state
+	_game->popState();
+	if (errorMessage.empty())
+	{
+		// Transfer soldiers inside craft
+		Base *currentBase = _crafts.front()->getBase();
+		for (auto soldierIt = currentBase->getSoldiers()->begin(); soldierIt != currentBase->getSoldiers()->end();)
+		{
+			Soldier* soldier = (*soldierIt);
+			if (soldier->getCraft() == _crafts.front())
+			{
+				soldier->setPsiTraining(false);
+				soldier->setTraining(false);
+				targetBase->getSoldiers()->push_back(soldier);
+				soldierIt = currentBase->getSoldiers()->erase(soldierIt);
+			}
+			else
+			{
+				++soldierIt;
+			}
+		}
+
+		// Transfer craft
+		currentBase->removeCraft(_crafts.front(), false);
+		targetBase->getCrafts()->push_back(_crafts.front());
+		_crafts.front()->setBase(targetBase, false);
+		_crafts.front()->returnToBase();
+		_crafts.front()->setStatus("STR_OUT");
+		if (_crafts.front()->getFuel() <= _crafts.front()->getFuelLimit(targetBase))
+		{
+			_crafts.front()->setLowFuel(true);
+		}
+
+		// pop the selecting the destination state
+		_game->popState();
+	}
+	else
+	{
+		RuleInterface *menuInterface = _game->getMod()->getInterface("errorMessages");
+		_game->pushState(new ErrorMessageState(errorMessage, _palette, menuInterface->getElement("geoscapeColor")->color, "BACK13.SCR", menuInterface->getElement("geoscapePalette")->color));
+	}
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,34 +19,47 @@
 
 #include <sstream>
 #include "../fmath.h"
-#include "Ufopaedia.h"
 #include "ArticleStateArmor.h"
-#include "../Ruleset/ArticleDefinition.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/Armor.h"
+#include "../Mod/ArticleDefinition.h"
+#include "../Mod/Mod.h"
+#include "../Mod/Armor.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
 #include "../Engine/Surface.h"
-#include "../Engine/Language.h"
-#include "../Engine/CrossPlatform.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/FileMap.h"
-#include "../Resource/ResourcePack.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/TextList.h"
+#include "../Mod/RuleInterface.h"
+#include "../Savegame/Soldier.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateArmor::ArticleStateArmor(ArticleDefinitionArmor *defs) : ArticleState(defs->id), _row(0)
+	ArticleStateArmor::ArticleStateArmor(ArticleDefinitionArmor *defs, std::shared_ptr<ArticleCommonState> state) : ArticleState(defs->id, std::move(state)), _row(0)
 	{
-		Armor *armor = _game->getRuleset()->getArmor(defs->id);
+		Armor *armor = _game->getMod()->getArmor(defs->id, true);
 
 		// add screen elements
 		_txtTitle = new Text(300, 17, 5, 24);
 
 		// Set palette
-		setPalette("PAL_BATTLEPEDIA");
+		auto customArmorSprite = defs->image_id.empty() ? nullptr : _game->getMod()->getSurface(defs->image_id, true);
+		if (defs->customPalette && customArmorSprite)
+		{
+			setCustomPalette(customArmorSprite->getPalette(), Mod::BATTLESCAPE_CURSOR);
+		}
+		else
+		{
+			setStandardPalette("PAL_BATTLEPEDIA");
+		}
+
+		_buttonColor = _game->getMod()->getInterface("articleArmor")->getElement("button")->color;
+		_textColor = _game->getMod()->getInterface("articleArmor")->getElement("text")->color;
+		_textColor2 = _game->getMod()->getInterface("articleArmor")->getElement("text")->color2;
+		_listColor1 = _game->getMod()->getInterface("articleArmor")->getElement("list")->color;
+		_listColor2 = _game->getMod()->getInterface("articleArmor")->getElement("list")->color2;
 
 		ArticleState::initLayout();
 
@@ -54,44 +67,73 @@ namespace OpenXcom
 		add(_txtTitle);
 
 		// Set up objects
-		_btnOk->setColor(Palette::blockOffset(0)+15);
-		_btnPrev->setColor(Palette::blockOffset(0)+15);
-		_btnNext->setColor(Palette::blockOffset(0)+15);
+		_btnOk->setColor(_buttonColor);
+		_btnPrev->setColor(_buttonColor);
+		_btnNext->setColor(_buttonColor);
+		_btnInfo->setColor(_buttonColor);
+		_btnInfo->setVisible(_game->getMod()->getShowPediaInfoButton());
 
-		_txtTitle->setColor(Palette::blockOffset(14)+15);
+		_txtTitle->setColor(_textColor);
 		_txtTitle->setBig();
-		_txtTitle->setText(tr(defs->title));
+		_txtTitle->setText(tr(defs->getTitleForPage(_state->current_page)));
 
-		_image = new Surface(320, 200, 0, 0);
-		add(_image);
-
-		std::string look = armor->getSpriteInventory();
-		look += "M0.SPK";
-		if (!CrossPlatform::fileExists(FileMap::getFilePath("UFOGRAPH/" + look)) && !_game->getResourcePack()->getSurface(look))
+		if (customArmorSprite)
 		{
-			look = armor->getSpriteInventory() + ".SPK";
+			// blit on the background, so that text and button are always visible
+			customArmorSprite->blitNShade(_bg, 0, 0);
 		}
-		_game->getResourcePack()->getSurface(look)->blit(_image);
+		else if (armor->hasLayersDefinition())
+		{
+			// dummy default soldier (M0)
+			Soldier *s = new Soldier(_game->getMod()->getSoldier(_game->getMod()->getSoldiersList().front(), true), armor, 0 /*nationality*/, 0 /*id*/);
+			s->setGender(GENDER_MALE);
+			s->setLook(LOOK_BLONDE);
+			s->setLookVariant(0);
+
+			for (const auto& layer : s->getArmorLayers())
+			{
+				auto surf = _game->getMod()->getSurface(layer, true);
+				surf->blitNShade(_bg, 0, 0);
+			}
+			delete s;
+			s = nullptr;
+		}
+		else
+		{
+			std::string look = armor->getSpriteInventory();
+			look += "M0.SPK";
+			if (!_game->getMod()->getSurface(look, false))
+			{
+				look = armor->getSpriteInventory() + ".SPK";
+			}
+			if (!_game->getMod()->getSurface(look, false))
+			{
+				look = armor->getSpriteInventory();
+			}
+			_game->getMod()->getSurface(look, true)->blitNShade(_bg, 0, 0);
+		}
 
 
 		_lstInfo = new TextList(150, 96, 150, 46);
 		add(_lstInfo);
 
-		_lstInfo->setColor(Palette::blockOffset(14)+15);
+		_lstInfo->setColor(_listColor1);
 		_lstInfo->setColumns(2, 125, 25);
 		_lstInfo->setDot(true);
 
-		_txtInfo = new Text(300, 56, 8, 150);
+		_txtInfo = new Text(300, 48, 8, 150);
 		add(_txtInfo);
 
-		_txtInfo->setColor(Palette::blockOffset(14)+15);
+		_txtInfo->setColor(_textColor);
+		_txtInfo->setSecondaryColor(_textColor2);
 		_txtInfo->setWordWrap(true);
-		_txtInfo->setText(tr(defs->text));
+		_txtInfo->setScrollable(true);
+		_txtInfo->setText(tr(defs->getTextForPage(_state->current_page)));
 
 		// Add armor values
 		addStat("STR_FRONT_ARMOR", armor->getFrontArmor());
-		addStat("STR_LEFT_ARMOR", armor->getSideArmor());
-		addStat("STR_RIGHT_ARMOR", armor->getSideArmor());
+		addStat("STR_LEFT_ARMOR", armor->getLeftSideArmor());
+		addStat("STR_RIGHT_ARMOR", armor->getRightSideArmor());
 		addStat("STR_REAR_ARMOR", armor->getRearArmor());
 		addStat("STR_UNDER_ARMOR", armor->getUnderArmor());
 
@@ -106,7 +148,7 @@ namespace OpenXcom
 			std::string damage = getDamageTypeText(dt);
 			if (percentage != 100 && damage != "STR_UNKNOWN")
 			{
-				addStat(damage, Text::formatPercentage(percentage));
+				addStat(damage, Unicode::formatPercentage(percentage));
 			}
 		}
 
@@ -123,6 +165,7 @@ namespace OpenXcom
 		addStat("STR_THROWING_ACCURACY", armor->getStats()->throwing, true);
 		addStat("STR_MELEE_ACCURACY", armor->getStats()->melee, true);
 		addStat("STR_STRENGTH", armor->getStats()->strength, true);
+		addStat("STR_MANA_POOL", armor->getStats()->mana, true);
 		addStat("STR_PSIONIC_STRENGTH", armor->getStats()->psiStrength, true);
 		addStat("STR_PSIONIC_SKILL", armor->getStats()->psiSkill, true);
 
@@ -136,20 +179,20 @@ namespace OpenXcom
 	{
 		if (stat != 0)
 		{
-			std::wostringstream ss;
+			std::ostringstream ss;
 			if (plus && stat > 0)
-				ss << L"+";
+				ss << "+";
 			ss << stat;
 			_lstInfo->addRow(2, tr(label).c_str(), ss.str().c_str());
-			_lstInfo->setCellColor(_row, 1, Palette::blockOffset(15)+4);
+			_lstInfo->setCellColor(_row, 1, _listColor2);
 			++_row;
 		}
 	}
 
-	void ArticleStateArmor::addStat(const std::string &label, const std::wstring &stat)
+	void ArticleStateArmor::addStat(const std::string &label, const std::string &stat)
 	{
 		_lstInfo->addRow(2, tr(label).c_str(), stat.c_str());
-		_lstInfo->setCellColor(_row, 1, Palette::blockOffset(15)+4);
+		_lstInfo->setCellColor(_row, 1, _listColor2);
 		++_row;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,21 +19,22 @@
 #include "UfoDetectedState.h"
 #include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextList.h"
 #include "../Savegame/Ufo.h"
-#include "../Ruleset/RuleUfo.h"
+#include "../Mod/RuleUfo.h"
 #include "GeoscapeState.h"
 #include "Globe.h"
 #include "../Savegame/SavedGame.h"
 #include "../Engine/Options.h"
+#include "../Engine/Unicode.h"
 #include "../Savegame/AlienMission.h"
 #include "InterceptState.h"
+#include "../Mod/RuleCraft.h"
 
 namespace OpenXcom
 {
@@ -52,6 +53,13 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	if (_ufo->getId() == 0)
 	{
 		_ufo->setId(_game->getSavedGame()->getId("STR_UFO"));
+
+		int soundId = _ufo->getRules()->getAlertSound();
+		if (soundId != Mod::NO_SOUND)
+		{
+			_customSound = _game->getMod()->getSound("GEO.CAT", soundId);
+		}
+
 	}
 	if (_ufo->getAltitude() == "STR_GROUND" && _ufo->getLandId() == 0)
 	{
@@ -75,8 +83,8 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	_txtUfo = new Text(207, 17, 28, 53);
 	_txtDetected = new Text(100, 9, 28, 69);
 	_txtHyperwave = new Text(214, 17, 21, 44);
-	_lstInfo = new TextList(207, 32, 28, 80);
-	_lstInfo2 = new TextList(207, 32, 28, 96);
+	_lstInfo = new TextList(217, 32, 28, 80);
+	_lstInfo2 = new TextList(217, 32, 28, 96);
 
 	if (hyperwave)
 	{
@@ -107,7 +115,7 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	add(_lstInfo2, "text", "UFOInfo");
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK15.SCR"));
+	setWindowBackground(_window, "UFOInfo");
 
 	centerAllSurfaces();
 
@@ -117,9 +125,20 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	_btnCentre->setText(tr("STR_CENTER_ON_UFO_TIME_5_SECONDS"));
 	_btnCentre->onMouseClick((ActionHandler)&UfoDetectedState::btnCentreClick);
 
-	_btnCancel->setText(tr("STR_CANCEL_UC"));
+	if (_game->isCtrlPressed())
+	{
+		_btnCancel->setText(tr("STR_IGNORE_UC"));
+	}
+	else
+	{
+		_btnCancel->setText(tr("STR_CANCEL_UC"));
+	}
 	_btnCancel->onMouseClick((ActionHandler)&UfoDetectedState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&UfoDetectedState::btnCancelClick, Options::keyCancel);
+	_btnCancel->onKeyboardPress((ActionHandler)&UfoDetectedState::toggleCancel, SDLK_LCTRL);
+	_btnCancel->onKeyboardRelease((ActionHandler)&UfoDetectedState::toggleCancel, SDLK_LCTRL);
+	_btnCancel->onKeyboardPress((ActionHandler)&UfoDetectedState::toggleCancel, SDLK_RCTRL);
+	_btnCancel->onKeyboardRelease((ActionHandler)&UfoDetectedState::toggleCancel, SDLK_RCTRL);
 
 	if (detected)
 	{
@@ -127,7 +146,7 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	}
 	else
 	{
-		_txtDetected->setText(L"");
+		_txtDetected->setText("");
 	}
 
 	_txtHyperwave->setAlign(ALIGN_CENTER);
@@ -137,40 +156,62 @@ UfoDetectedState::UfoDetectedState(Ufo *ufo, GeoscapeState *state, bool detected
 	_txtUfo->setBig();
 	_txtUfo->setText(_ufo->getName(_game->getLanguage()));
 
-	_lstInfo->setColumns(2, 87, 120);
+	_lstInfo->setColumns(2, 77, 140);
 	_lstInfo->setDot(true);
-	std::wostringstream ss;
-	ss << L'\x01' << tr(_ufo->getRules()->getSize());
+
+	std::ostringstream ss;
+	ss << Unicode::TOK_COLOR_FLIP << tr(_ufo->getRules()->getSize());
 	_lstInfo->addRow(2, tr("STR_SIZE_UC").c_str(), ss.str().c_str());
-	ss.str(L"");
+	ss.str("");
+
 	std::string altitude = _ufo->getAltitude() == "STR_GROUND" ? "STR_GROUNDED" : _ufo->getAltitude();
-	ss << L'\x01' << tr(altitude);
+	// Let's assume if there's any underwater craft, the UFO are underwater too
+	bool underwater = false;
+	for (auto& craftType : _game->getMod()->getCraftsList())
+	{
+		if (underwater)
+		{
+			break; // loop finished
+		}
+		underwater = _game->getMod()->getCraft(craftType)->isWaterOnly();
+	}
+	if (underwater && !_state->getGlobe()->insideLand(_ufo->getLongitude(), _ufo->getLatitude()))
+	{
+		altitude = "STR_AIRBORNE";
+	}
+	ss << Unicode::TOK_COLOR_FLIP << tr(altitude);
 	_lstInfo->addRow(2, tr("STR_ALTITUDE").c_str(), ss.str().c_str());
+
 	std::string heading = _ufo->getDirection();
 	if (_ufo->getStatus() != Ufo::FLYING)
 	{
 		heading = "STR_NONE_UC";
 	}
-	ss.str(L"");
-	ss << L'\x01' << tr(heading);
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << tr(heading);
 	_lstInfo->addRow(2, tr("STR_HEADING").c_str(), ss.str().c_str());
-	ss.str(L"");
-	ss << L'\x01' << Text::formatNumber(_ufo->getSpeed());
+
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << Unicode::formatNumber(_ufo->getSpeed());
 	_lstInfo->addRow(2, tr("STR_SPEED").c_str(), ss.str().c_str());
 
-	_lstInfo2->setColumns(2, 87, 120);
+	_lstInfo2->setColumns(2, 77, 140);
 	_lstInfo2->setDot(true);
-	ss.str(L"");
-	ss << L'\x01' << tr(_ufo->getRules()->getType());
+
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << tr(_ufo->getRules()->getType());
 	_lstInfo2->addRow(2, tr("STR_CRAFT_TYPE").c_str(), ss.str().c_str());
-	ss.str(L"");
-	ss << L'\x01' << tr(_ufo->getAlienRace());
+
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << tr(_ufo->getAlienRace());
 	_lstInfo2->addRow(2, tr("STR_RACE").c_str(), ss.str().c_str());
-	ss.str(L"");
-	ss << L'\x01' << tr(_ufo->getMissionType());
+
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << tr(_ufo->getMissionType());
 	_lstInfo2->addRow(2, tr("STR_MISSION").c_str(), ss.str().c_str());
-	ss.str(L"");
-	ss << L'\x01' << tr(_ufo->getMission()->getRegion());
+
+	ss.str("");
+	ss << Unicode::TOK_COLOR_FLIP << tr(_ufo->getMission()->getRegion());
 	_lstInfo2->addRow(2, tr("STR_ZONE").c_str(), ss.str().c_str());
 }
 
@@ -190,7 +231,7 @@ void UfoDetectedState::btnInterceptClick(Action *)
 {
 	_state->timerReset();
 	_state->getGlobe()->center(_ufo->getLongitude(), _ufo->getLatitude());
-	_game->pushState(new InterceptState(_state->getGlobe(), 0, _ufo));
+	_game->pushState(new InterceptState(_state->getGlobe(), false, 0, _ufo));
 }
 
 /**
@@ -210,7 +251,28 @@ void UfoDetectedState::btnCentreClick(Action *)
  */
 void UfoDetectedState::btnCancelClick(Action *)
 {
+	if (_game->isCtrlPressed())
+	{
+		// don't show UFO Detected window for this UFO anymore
+		_game->getSavedGame()->addUfoToIgnoreList(_ufo->getId());
+	}
 	_game->popState();
+}
+
+/**
+ * Toggles Cancel button.
+ * @param action Pointer to an action.
+ */
+void UfoDetectedState::toggleCancel(Action *)
+{
+	if (_game->isCtrlPressed())
+	{
+		_btnCancel->setText(tr("STR_IGNORE_UC"));
+	}
+	else
+	{
+		_btnCancel->setText(tr("STR_CANCEL_UC"));
+	}
 }
 
 }

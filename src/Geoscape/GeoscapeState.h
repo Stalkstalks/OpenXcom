@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_GEOSCAPESTATE_H
-#define OPENXCOM_GEOSCAPESTATE_H
-
 #include "../Engine/State.h"
 #include <list>
 
@@ -30,11 +28,14 @@ class Globe;
 class TextButton;
 class InteractiveSurface;
 class Text;
+class ComboBox;
 class Timer;
 class DogfightState;
+class Craft;
 class Ufo;
 class MissionSite;
 class Base;
+class RuleMissionScript;
 
 /**
  * Geoscape screen which shows an overview of
@@ -54,20 +55,34 @@ private:
 	Timer *_gameTimer, *_zoomInEffectTimer, *_zoomOutEffectTimer, *_dogfightStartTimer, *_dogfightTimer;
 	bool _pause, _zoomInEffectDone, _zoomOutEffectDone;
 	Text *_txtDebug;
+	ComboBox *_cbxRegion, *_cbxZone, *_cbxArea, *_cbxCountry;
+	Text *_txtSlacking;
 	std::list<State*> _popups;
 	std::list<DogfightState*> _dogfights, _dogfightsToBeStarted;
+	std::vector<Craft*> _activeCrafts;
 	size_t _minimizedDogfights;
+	int _slowdownCounter;
+
+	/// Update list of active crafts.
+	const std::vector<Craft*>* updateActiveCrafts();
+
+	void cbxRegionChange(Action *action);
+	void cbxZoneChange(Action *action);
+	void cbxAreaChange(Action *action);
+	void updateZoneInfo();
+	void cbxCountryChange(Action *action);
+
 public:
 	/// Creates the Geoscape state.
 	GeoscapeState();
 	/// Cleans up the Geoscape state.
 	~GeoscapeState();
 	/// Handle keypresses.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Updates the palette and timer.
-	void init();
+	void init() override;
 	/// Runs the timer.
-	void think();
+	void think() override;
 	/// Displays the game time/date. (+Funds)
 	void timeDisplay();
 	/// Advances the game timer.
@@ -76,8 +91,11 @@ public:
 	void time5Seconds();
 	/// Trigger whenever 10 minutes pass.
 	void time10Minutes();
+	void ufoHuntingAndEscorting();
+	void baseHunting();
 	/// Trigger whenever 30 minutes pass.
 	void time30Minutes();
+	void ufoDetection(Ufo* ufo, const std::vector<Craft*>* activeCrafts);
 	/// Trigger whenever 1 hour passes.
 	void time1Hour();
 	/// Trigger whenever 1 day passes.
@@ -94,6 +112,22 @@ public:
 	void globeClick(Action *action);
 	/// Handler for clicking the Intercept button.
 	void btnInterceptClick(Action *action);
+	/// Handler for clicking the UFO Tracker button.
+	void btnUfoTrackerClick(Action *action);
+	/// Handler for clicking the TechTreeViewer button.
+	void btnTechTreeViewerClick(Action *action);
+	/// Handler for clicking the [SelectMusicTrack] button.
+	void btnSelectMusicTrackClick(Action *action);
+	/// Handler for clicking the [GlobalProduction] key.
+	void btnGlobalProductionClick(Action *action);
+	/// Handler for clicking the [GlobalResearch] key.
+	void btnGlobalResearchClick(Action *action);
+	/// Handler for clicking the [GlobalAlienContainment] key.
+	void btnGlobalAlienContainmentClick(Action *action);
+	/// Handler for clicking the [DogfightExperience] key.
+	void btnDogfightExperienceClick(Action *action);
+	/// Handler for clicking the [Debug] key.
+	void btnDebugClick(Action *action);
 	/// Handler for clicking the Bases button.
 	void btnBasesClick(Action *action);
 	/// Handler for clicking the Graph button.
@@ -129,13 +163,16 @@ public:
 	/// Handler for right-clicking the Zoom Out icon.
 	void btnZoomOutRightClick(Action *action);
 	/// Blit method - renders the state and dogfights.
-	void blit();
+	void blit() override;
 	/// Globe zoom in effect for dogfights.
 	void zoomInEffect();
 	/// Globe zoom out effect for dogfights.
 	void zoomOutEffect();
 	/// Multi-dogfights logic handling.
 	void handleDogfights();
+	void handleDogfightMultiAction(int button);
+	/// Dogfight experience handling.
+	void handleDogfightExperience();
 	/// Gets the number of minimized dogfights.
 	int minimizedDogfightsCount();
 	/// Starts a new dogfight.
@@ -145,18 +182,18 @@ public:
 	/// Handler for clicking the timer button.
 	void btnTimerClick(Action *action);
 	/// Process a mission site
-	bool processMissionSite(MissionSite *site) const;
+	bool processMissionSite(MissionSite *site);
 	/// Handles base defense
 	void handleBaseDefense(Base *base, Ufo *ufo);
 	/// Update the resolution settings, we just resized the window.
-	void resize(int &dX, int &dY);
+	void resize(int &dX, int &dY) override;
 private:
 	/// Handle alien mission generation.
-	void determineAlienMissions(bool atGameStart = false);
-	/// Handle land mission generation.
-	void setupLandMission();
+	void determineAlienMissions();
+	/// Process each individual mission script command.
+	bool processCommand(RuleMissionScript *command);
+	bool buttonsDisabled();
+	void updateSlackingIndicator();
 };
 
 }
-
-#endif

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MULTIPLETARGETSSTATE_H
-#define OPENXCOM_MULTIPLETARGETSSTATE_H
-
 #include "../Engine/State.h"
 #include <vector>
 
@@ -42,18 +40,19 @@ private:
 	static const int BUTTON_HEIGHT = 16;
 
 	std::vector<Target*> _targets;
-	Craft *_craft;
+	std::vector<Craft*> _crafts;
 	GeoscapeState *_state;
+	bool _useCustomSound;
 
 	Window *_window;
 	std::vector<TextButton*> _btnTargets;
 public:
 	/// Creates the Multiple Targets state.
-	MultipleTargetsState(std::vector<Target*> targets, Craft *craft, GeoscapeState *state);
+	MultipleTargetsState(std::vector<Target*> targets, std::vector<Craft*> crafts, GeoscapeState *state, bool useCustomSound);
 	/// Cleans up the Multiple Targets state.
 	~MultipleTargetsState();
 	/// Updates the window.
-	void init();
+	void init() override;
 	/// Popup for a target.
 	void popupTarget(Target *target);
 	/// Handler for clicking the Cancel button.
@@ -63,5 +62,3 @@ public:
 };
 
 }
-
-#endif

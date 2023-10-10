@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_STARTSTATE_H
-#define OPENXCOM_STARTSTATE_H
-
 #include "../Engine/State.h"
+#include <string>
 #include <sstream>
 
 namespace OpenXcom
@@ -43,9 +42,10 @@ private:
 	Timer *_timer;
 	Language *_lang;
 	int _anim;
+	std::string _oldMaster;
 
 	SDL_Thread *_thread;
-	std::wostringstream _output;
+	std::ostringstream _output;
 public:
 	static LoadingPhase loading;
 	static std::string error;
@@ -55,19 +55,17 @@ public:
 	/// Cleans up the Start state.
 	~StartState();
 	/// Reset everything.
-	void init();
+	void init() override;
 	/// Displays messages.
-	void think();
+	void think() override;
 	/// Handles key clicks.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Animates the terminal.
 	void animate();
 	/// Adds a line of text.
-	void addLine(const std::wstring &str);
+	void addLine(const std::string &str);
 	/// Loads the game resources.
 	static int load(void *game_ptr);
 };
 
 }
-
-#endif

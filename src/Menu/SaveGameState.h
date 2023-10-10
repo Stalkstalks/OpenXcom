@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM__SAVEGAMESTATE
-#define OPENXCOM__SAVEGAMESTATE
-
 #include "../Engine/State.h"
 #include <SDL.h>
 #include <string>
@@ -45,15 +43,15 @@ public:
 	/// Creates the Save Game state.
 	SaveGameState(OptionsOrigin origin, const std::string &filename, SDL_Color *palette);
 	/// Creates the Load Game state.
-	SaveGameState(OptionsOrigin origin, SaveType type, SDL_Color *palette);
+	SaveGameState(OptionsOrigin origin, SaveType type, SDL_Color *palette, int currentTurn = 0);
 	/// Cleans up the Save Game state.
 	~SaveGameState();
 	/// Creates the interface.
 	void buildUi(SDL_Color *palette);
 	/// Saves the game.
-	void think();
+	void think() override;
+	/// Shows an error message.
+	void error(const std::string &msg);
 };
 
 }
-
-#endif

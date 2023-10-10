@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SLIDER_H
-#define OPENXCOM_SLIDER_H
-
 #include "../Engine/InteractiveSurface.h"
 
 namespace OpenXcom
@@ -44,7 +42,7 @@ private:
 	bool _pressed;
 	ActionHandler _change;
 	int _thickness, _textness, _minX, _maxX, _offsetX;
-	
+
 	/// Sets the slider's position.
 	void setPosition(double pos);
 public:
@@ -53,19 +51,19 @@ public:
 	/// Cleans up the slider.
 	~Slider();
 	/// Sets the X position of the surface.
-	void setX(int x);
+	void setX(int x) override;
 	/// Sets the Y position of the surface.
-	void setY(int y);
+	void setY(int y) override;
 	/// Initializes the slider's resources.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the slider's high contrast color setting.
-	void setHighContrast(bool contrast);
+	void setHighContrast(bool contrast) override;
 	/// Sets the slider's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the slider's color.
 	Uint8 getColor() const;
 	/// Sets the slider's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Sets the slider's range.
 	void setRange(int min, int max);
 	/// Sets the slider's value.
@@ -73,17 +71,15 @@ public:
 	/// Gets the slider's value.
 	int getValue() const;
 	/// Blits the slider onto another surface.
-	void blit(Surface *surface);
+	void blit(SDL_Surface *surface) override;
 	/// Moves the slider.
-	void handle(Action *action, State *state);
+	void handle(Action *action, State *state) override;
 	/// Special handling for mouse presses.
-	void mousePress(Action *action, State *state);
+	void mousePress(Action *action, State *state) override;
 	/// Special handling for mouse releases.
-	void mouseRelease(Action *action, State *state);
+	void mouseRelease(Action *action, State *state) override;
 	/// Hooks an action handler to when the slider changes.
 	void onChange(ActionHandler handler);
 };
 
 }
-
-#endif

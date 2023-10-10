@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,16 +18,14 @@
  */
 #include "ListLoadOriginalState.h"
 #include <sstream>
-#include "../Engine/Logger.h"
 #include "../Savegame/SaveConverter.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Engine/Game.h"
 #include "../Engine/Screen.h"
 #include "../Engine/Action.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -35,6 +33,7 @@
 #include "../Geoscape/GeoscapeState.h"
 #include "../Battlescape/BattlescapeState.h"
 #include "ErrorMessageState.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
@@ -42,8 +41,9 @@ namespace OpenXcom
 /**
  * Initializes all the elements in the Saved Game screen.
  * @param game Pointer to the core game.
+ * @param origin Game section that originated this state.
  */
-ListLoadOriginalState::ListLoadOriginalState()
+ListLoadOriginalState::ListLoadOriginalState(OptionsOrigin origin) : _origin(origin)
 {
 	_screen = false;
 
@@ -51,13 +51,13 @@ ListLoadOriginalState::ListLoadOriginalState()
 	_window = new Window(this, 320, 200, 0, 0);
 	_btnNew = new TextButton(80, 16, 60, 172);
 	_btnCancel = new TextButton(80, 16, 180, 172);
-	_txtTitle = new Text(310, 17, 5, 8);
+	_txtTitle = new Text(310, 17, 5, 7);
 	_txtName = new Text(160, 9, 36, 24);
 	_txtTime = new Text(30, 9, 195, 24);
 	_txtDate = new Text(90, 9, 225, 24);
 
 	// Set palette
-	setInterface("saveMenus");
+	setInterface("geoscape", true, _game->getSavedGame() ? _game->getSavedGame()->getSavedBattle() : 0);
 
 	add(_window, "window", "saveMenus");
 	add(_btnNew, "button", "saveMenus");
@@ -86,13 +86,13 @@ ListLoadOriginalState::ListLoadOriginalState()
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "saveMenus");
 
 	_btnNew->setText(tr("STR_OPENXCOM"));
 	_btnNew->onMouseClick((ActionHandler)&ListLoadOriginalState::btnNewClick);
 	_btnNew->onKeyboardPress((ActionHandler)&ListLoadOriginalState::btnNewClick, Options::keyCancel);
 
-	_btnCancel->setText(tr("STR_CANCEL_UC"));
+	_btnCancel->setText(tr("STR_CANCEL"));
 	_btnCancel->onMouseClick((ActionHandler)&ListLoadOriginalState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ListLoadOriginalState::btnCancelClick, Options::keyCancel);
 
@@ -106,11 +106,11 @@ ListLoadOriginalState::ListLoadOriginalState()
 
 	_txtDate->setText(tr("STR_DATE"));
 
-	std::wstring dots(80, '.');
+	std::string dots(80, '.');
 	SaveConverter::getList(_game->getLanguage(), _saves);
 	for (int i = 0; i < SaveConverter::NUM_SAVES; ++i)
 	{
-		std::wstringstream ss;
+		std::ostringstream ss;
 		ss << (i + 1);
 		_btnSlot[i]->setText(ss.str());
 		_btnSlot[i]->onMouseClick((ActionHandler)&ListLoadOriginalState::btnSlotClick);
@@ -127,6 +127,19 @@ ListLoadOriginalState::ListLoadOriginalState()
 ListLoadOriginalState::~ListLoadOriginalState()
 {
 
+}
+
+/**
+* Refreshes the saves list.
+*/
+void ListLoadOriginalState::init()
+{
+	State::init();
+
+	if (_origin == OPT_BATTLESCAPE)
+	{
+		applyBattlescapeTheme("saveMenus");
+	}
 }
 
 /**
@@ -168,14 +181,17 @@ void ListLoadOriginalState::btnSlotClick(Action *action)
 	{
 		if (_saves[n].tactical)
 		{
-			std::wostringstream error;
-			error << tr("STR_LOAD_UNSUCCESSFUL") << L'\x02' << L"Battlescape saves aren't supported yet.";
-			_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
+			std::ostringstream error;
+			error << tr("STR_LOAD_UNSUCCESSFUL") << Unicode::TOK_NL_SMALL << "Battlescape saves aren't supported.";
+			_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getMod()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getMod()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
 
 		}
 		else
 		{
-			SaveConverter converter(_saves[n].id, _game->getRuleset());
+			// Reset touch flags
+			_game->resetTouchButtonFlags();
+
+			SaveConverter converter(_saves[n].id, _game->getMod());
 			_game->setSavedGame(converter.loadOriginal());
 			Options::baseXResolution = Options::baseXGeoscape;
 			Options::baseYResolution = Options::baseYGeoscape;
@@ -183,7 +199,7 @@ void ListLoadOriginalState::btnSlotClick(Action *action)
 			_game->setState(new GeoscapeState);
 			if (_game->getSavedGame()->getSavedBattle() != 0)
 			{
-				_game->getSavedGame()->getSavedBattle()->loadMapResources(_game);
+				_game->getSavedGame()->getSavedBattle()->loadMapResources(_game->getMod());
 				Options::baseXResolution = Options::baseXBattlescape;
 				Options::baseYResolution = Options::baseYBattlescape;
 				_game->getScreen()->resetDisplay(false);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,9 +18,9 @@
  */
 #include "DismantleFacilityState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/Sound.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Engine/Options.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
@@ -28,8 +28,8 @@
 #include "../Savegame/Base.h"
 #include "../Savegame/BaseFacility.h"
 #include "../Savegame/ItemContainer.h"
-#include "../Basescape/BaseView.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "BaseView.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/SavedGame.h"
 
 namespace OpenXcom
@@ -52,6 +52,7 @@ DismantleFacilityState::DismantleFacilityState(Base *base, BaseView *view, BaseF
 	_btnCancel = new TextButton(44, 16, 112, 115);
 	_txtTitle = new Text(142, 9, 25, 75);
 	_txtFacility = new Text(142, 9, 25, 85);
+	_txtRefundValue = new Text(142, 9, 25, 100);
 
 	// Set palette
 	setInterface("dismantleFacility");
@@ -61,11 +62,12 @@ DismantleFacilityState::DismantleFacilityState(Base *base, BaseView *view, BaseF
 	add(_btnCancel, "button", "dismantleFacility");
 	add(_txtTitle, "text", "dismantleFacility");
 	add(_txtFacility, "text", "dismantleFacility");
+	add(_txtRefundValue, "text", "dismantleFacility");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK13.SCR"));
+	setWindowBackground(_window, "dismantleFacility");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&DismantleFacilityState::btnOkClick);
@@ -80,6 +82,22 @@ DismantleFacilityState::DismantleFacilityState(Base *base, BaseView *view, BaseF
 
 	_txtFacility->setAlign(ALIGN_CENTER);
 	_txtFacility->setText(tr(_fac->getRules()->getType()));
+
+	int refundValue = 0;
+	if (_fac->getBuildTime() > _fac->getRules()->getBuildTime())
+	{
+		// if only queued... full refund (= build cost)
+		refundValue = _fac->getRules()->getBuildCost();
+	}
+	else
+	{
+		// if already building or already built... partial refund (by default 0, used in mods)
+		refundValue = _fac->getRules()->getRefundValue();
+	}
+
+	_txtRefundValue->setAlign(ALIGN_CENTER);
+	_txtRefundValue->setText(tr("STR_REFUND_VALUE").arg(Unicode::formatFunding(refundValue)));
+	_txtRefundValue->setVisible(refundValue != 0);
 }
 
 /**
@@ -101,30 +119,96 @@ void DismantleFacilityState::btnOkClick(Action *)
 	{
 		const std::map<std::string, std::pair<int, int> > &itemCost = _fac->getRules()->getBuildCostItems();
 
-		// Give refund if this is an unstarted, queued build.
 		if (_fac->getBuildTime() > _fac->getRules()->getBuildTime())
 		{
+			// Give full refund if this is a (not yet started) queued build.
 			_game->getSavedGame()->setFunds(_game->getSavedGame()->getFunds() + _fac->getRules()->getBuildCost());
-			for (std::map<std::string, std::pair<int, int> >::const_iterator i = itemCost.begin(); i != itemCost.end(); ++i)
+			for (auto& pair : itemCost)
 			{
-				_base->getItems()->addItem(i->first, i->second.first);
+				_base->getStorageItems()->addItem(pair.first, pair.second.first);
 			}
 		}
 		else
 		{
-			for (std::map<std::string, std::pair<int, int> >::const_iterator i = itemCost.begin(); i != itemCost.end(); ++i)
+			// Give partial refund if this is a started build or a completed facility.
+			_game->getSavedGame()->setFunds(_game->getSavedGame()->getFunds() + _fac->getRules()->getRefundValue());
+			for (auto& pair : itemCost)
 			{
-				_base->getItems()->addItem(i->first, i->second.second);
+				_base->getStorageItems()->addItem(pair.first, pair.second.second);
 			}
 		}
 
-		for (std::vector<BaseFacility*>::iterator i = _base->getFacilities()->begin(); i != _base->getFacilities()->end(); ++i)
+		for (auto facIt = _base->getFacilities()->begin(); facIt != _base->getFacilities()->end(); ++facIt)
 		{
-			if (*i == _fac)
+			if (*facIt == _fac)
 			{
-				_base->getFacilities()->erase(i);
+				_base->getFacilities()->erase(facIt);
+				// Determine if we leave behind any facilities when this one is removed
+				if (_fac->getBuildTime() == 0 && _fac->getRules()->getLeavesBehindOnSell().size() != 0)
+				{
+					const auto &facList = _fac->getRules()->getLeavesBehindOnSell();
+					if (facList.at(0)->getPlaceSound() != Mod::NO_SOUND)
+					{
+						_game->getMod()->getSound("GEO.CAT", facList.at(0)->getPlaceSound())->play();
+					}
+					// Make sure the size of the facilities left behind matches the one we removed
+					if (facList.at(0)->getSize() == _fac->getRules()->getSize()) // equal size facilities
+					{
+						BaseFacility *fac = new BaseFacility(facList.at(0), _base);
+						fac->setX(_fac->getX());
+						fac->setY(_fac->getY());
+						if (_fac->getRules()->getRemovalTime() <= -1)
+						{
+							fac->setBuildTime(fac->getRules()->getBuildTime());
+						}
+						else
+						{
+							fac->setBuildTime(_fac->getRules()->getRemovalTime());
+						}
+						if (fac->getBuildTime() != 0)
+						{
+							fac->setIfHadPreviousFacility(true);
+						}
+						_base->getFacilities()->push_back(fac);
+					}
+					else
+					{
+						size_t j = 0;
+						// Otherwise, assume the list of facilities is size 1, and just iterate over it to fill in the old facility's place
+						for (int y = _fac->getY(); y != _fac->getY() + _fac->getRules()->getSize(); ++y)
+						{
+							for (int x = _fac->getX(); x != _fac->getX() + _fac->getRules()->getSize(); ++x)
+							{
+								BaseFacility *fac = new BaseFacility(facList.at(j), _base);
+								fac->setX(x);
+								fac->setY(y);
+								if (_fac->getRules()->getRemovalTime() <= -1)
+								{
+									fac->setBuildTime(fac->getRules()->getBuildTime());
+								}
+								else
+								{
+									fac->setBuildTime(_fac->getRules()->getRemovalTime());
+								}
+								if (fac->getBuildTime() != 0)
+								{
+									fac->setIfHadPreviousFacility(true);
+								}
+								_base->getFacilities()->push_back(fac);
+
+								++j;
+								if (j == facList.size())
+								{
+									j = 0;
+								}
+							}
+						}
+					}
+				}
 				_view->resetSelectedFacility();
 				delete _fac;
+				// Reset the basescape view in case new facilities were created by removing the old one
+				_view->setBase(_base);
 				if (Options::allowBuildingQueue) _view->reCalcQueuedBuildings();
 				break;
 			}
@@ -133,11 +217,11 @@ void DismantleFacilityState::btnOkClick(Action *)
 	// Remove whole base if it's the access lift
 	else
 	{
-		for (std::vector<Base*>::iterator i = _game->getSavedGame()->getBases()->begin(); i != _game->getSavedGame()->getBases()->end(); ++i)
+		for (auto xbaseIt = _game->getSavedGame()->getBases()->begin(); xbaseIt != _game->getSavedGame()->getBases()->end(); ++xbaseIt)
 		{
-			if (*i == _base)
+			if (*xbaseIt == _base)
 			{
-				_game->getSavedGame()->getBases()->erase(i);
+				_game->getSavedGame()->getBases()->erase(xbaseIt);
 				delete _base;
 				break;
 			}

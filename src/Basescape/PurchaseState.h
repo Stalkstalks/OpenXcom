@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PURCHASESTATE_H
-#define OPENXCOM_PURCHASESTATE_H
-
 #include "../Engine/State.h"
+#include "../Savegame/Transfer.h"
 #include <vector>
 #include <string>
 
@@ -29,9 +28,13 @@ namespace OpenXcom
 class TextButton;
 class Window;
 class Text;
+class TextEdit;
 class TextList;
+class ComboBox;
 class Timer;
 class Base;
+class CannotReequipState;
+class RuleItem;
 
 /**
  * Purchase/Hire screen that lets the player buy
@@ -41,33 +44,53 @@ class PurchaseState : public State
 {
 private:
 	Base *_base;
+	CannotReequipState *_parent;
+	bool _autoBuyDone;
+	std::map<RuleItem*, int> _missingItemsMap;
 
 	TextButton *_btnOk, *_btnCancel;
+	TextEdit *_btnQuickSearch;
 	Window *_window;
-	Text *_txtTitle, *_txtFunds, *_txtPurchases, *_txtItem, *_txtCost, *_txtQuantity, *_txtSpaceUsed;
+	Text *_txtTitle, *_txtFunds, *_txtPurchases, *_txtCost, *_txtQuantity, *_txtSpaceUsed;
+	ComboBox *_cbxCategory;
 	TextList *_lstItems;
-	std::vector<std::string> _crafts, _items;
-	std::vector<int> _qtys;
-	size_t _sel, _itemOffset;
-	int _total, _pQty, _cQty;
+	std::vector<TransferRow> _items;
+	std::vector<int> _rows;
+	std::vector<std::string> _cats;
+	size_t _vanillaCategories;
+	size_t _sel;
+	int _total, _pQty;
+	std::map<int,int> _tCQty;
 	double _iQty;
+	std::map<int, int> _iPrisonQty;
 	Uint8 _ammoColor;
 	Timer *_timerInc, *_timerDec;
-	/// Gets selected price.
-	int getPrice();
-	/// Is it excluded in the options file?
-	bool isExcluded(const std::string &item);
+	/// Gets the category of the current selection.
+	std::string getCategory(int sel) const;
+	/// Determines if the current selection belongs to a given category.
+	bool belongsToCategory(int sel, const std::string &cat) const;
+	/// Checks for hidden items
+	bool isHidden(int sel) const;
+	/// Checks for missing items
+	int getMissingQty(int sel) const;
+	/// Gets the row of the current selection.
+	TransferRow &getRow() { return _items[_rows[_sel]]; }
 public:
 	/// Creates the Purchase state.
-	PurchaseState(Base *base);
+	PurchaseState(Base *base, CannotReequipState *parent = nullptr);
 	/// Cleans up the Purchase state.
 	~PurchaseState();
 	/// Runs the timers.
-	void think();
+	void think() override;
+	/// Updates the item list.
+	void updateList();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
 	/// Handler for clicking the Cancel button.
 	void btnCancelClick(Action *action);
+	/// Handlers for Quick Search.
+	void btnQuickSearchToggle(Action *action);
+	void btnQuickSearchApply(Action *action);
 	/// Handler for pressing an Increase arrow in the list.
 	void lstItemsLeftArrowPress(Action *action);
 	/// Handler for releasing an Increase arrow in the list.
@@ -92,8 +115,8 @@ public:
 	void decreaseByValue(int change);
 	/// Updates the quantity-strings of the selected item.
 	void updateItemStrings();
+	/// Handler for changing the category filter.
+	void cbxCategoryChange(Action *action);
 };
 
 }
-
-#endif

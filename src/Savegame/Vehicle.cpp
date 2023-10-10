@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Vehicle.h"
-#include "../Ruleset/RuleItem.h"
+#include "../Mod/RuleItem.h"
 
 namespace OpenXcom
 {
@@ -101,8 +101,9 @@ void Vehicle::setAmmo(int ammo)
  * in a transport craft.
  * @return Size in tiles.
  */
-int Vehicle::getSize() const
+int Vehicle::getTotalSize() const
 {
 	return _size;
 }
+
 }

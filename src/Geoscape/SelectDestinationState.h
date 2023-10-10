@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SELECTDESTINATIONSTATE_H
-#define OPENXCOM_SELECTDESTINATIONSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -39,7 +37,7 @@ class TextButton;
 class SelectDestinationState : public State
 {
 private:
-	Craft *_craft;
+	std::vector<Craft*> _crafts; 
 	Globe *_globe;
 	InteractiveSurface *_btnRotateLeft, *_btnRotateRight, *_btnRotateUp, *_btnRotateDown, *_btnZoomIn, *_btnZoomOut;
 	Window *_window;
@@ -47,15 +45,15 @@ private:
 	TextButton *_btnCancel, *_btnCydonia;
 public:
 	/// Creates the Select Destination state.
-	SelectDestinationState(Craft *craft, Globe *globe);
+	SelectDestinationState(std::vector<Craft*> crafts, Globe *globe);
 	/// Cleans up the Select Destination state.
 	~SelectDestinationState();
 	/// Resets globe.
-	void init();
+	void init() override;
 	/// Runs the timer.
-	void think();
+	void think() override;
 	/// Handles actions.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Handler for clicking the globe.
 	void globeClick(Action *action);
 	/// Handler for pressing the Rotate Left arrow.
@@ -87,10 +85,8 @@ public:
 	/// Handler for clicking the Cydonia mission button.
 	void btnCydoniaClick(Action *action);
 	/// Let the state know the window has been resized.
-	void resize(int &dX, int &dY);
+	void resize(int &dX, int &dY) override;
 
 };
 
 }
-
-#endif

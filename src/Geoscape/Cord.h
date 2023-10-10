@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2012 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CORD_H
-#define	OPENXCOM_CORD_H
-
-#include <cmath>
 #include "../fmath.h"
 
 namespace OpenXcom
 {
+
 struct Cord;
 
 struct CordPolar
@@ -35,17 +33,17 @@ struct CordPolar
 		lon = plon;
 		lat = plat;
 	}
-	inline CordPolar(const CordPolar& pol)
-	{
-		lon = pol.lon;
-		lat = pol.lat;
-	}
+
+	CordPolar(const CordPolar& pol) = default;
+
 	inline CordPolar()
 	{
 		lon = 0;
 		lat = 0;
 	}
 	explicit inline CordPolar(const Cord&);
+
+	CordPolar& operator=(const CordPolar& pol) = default;
 };
 
 struct Cord
@@ -58,19 +56,18 @@ struct Cord
 		y = py;
 		z = pz;
 	}
-	inline Cord(const Cord& c)
-	{
-		x = c.x;
-		y = c.y;
-		z = c.z;
-	}
 	inline Cord()
 	{
 		x = 0.0;
 		y = 0.0;
 		z = 0.0;
 	}
+	inline Cord(const Cord& c) = default;
+
 	explicit inline Cord(const CordPolar&);
+
+	Cord& operator=(const Cord& pol) = default;
+
 
 	inline Cord operator +()
 	{
@@ -135,5 +132,4 @@ inline CordPolar::CordPolar(const Cord& c)
 }
 
 }//namespace OpenXcom
-#endif	/* OPENXCOM_CORD_H */
 

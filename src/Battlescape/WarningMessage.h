@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_WARNINGMESSAGE_H
-#define OPENXCOM_WARNINGMESSAGE_H
-
 #include "../Engine/Surface.h"
 
 namespace OpenXcom
@@ -44,23 +42,21 @@ public:
 	/// Cleans up the warning message.
 	~WarningMessage();
 	/// Sets the color for the warning message.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Sets the text color for the warning message.
 	void setTextColor(Uint8 color);
 	/// Initializes the warning message's resources.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the warning message's palette.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Shows the warning message.
-	void showMessage(const std::wstring &msg);
+	void showMessage(const std::string &msg, int time = 2);
 	/// Handles the timers.
-	void think();
+	void think() override;
 	/// Fades the message.
 	void fade();
 	/// Draws the message.
-	void draw();
+	void draw() override;
 };
 
 }
-
-#endif

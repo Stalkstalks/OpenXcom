@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,9 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "InfoboxState.h"
-#include <string>
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
 #include "../Engine/Timer.h"
 #include "../Interface/Text.h"
 #include "../Interface/Frame.h"
@@ -35,7 +33,7 @@ namespace OpenXcom
  * @param game Pointer to the core game.
  * @param msg Message string.
  */
-InfoboxState::InfoboxState(const std::wstring &msg)
+InfoboxState::InfoboxState(const std::string &msg)
 {
 	_screen = false;
 
@@ -61,7 +59,15 @@ InfoboxState::InfoboxState(const std::wstring &msg)
 	_text->setText(msg);
 	_text->setHighContrast(true);
 
-	_timer = new Timer(INFOBOX_DELAY);
+	int delay = INFOBOX_DELAY;
+	if (msg.empty())
+	{
+		delay = 500;
+		_frame->setVisible(false);
+		_text->setVisible(false);
+	}
+
+	_timer = new Timer(delay);
 	_timer->onTimer((StateHandler)&InfoboxState::close);
 	_timer->start();
 }

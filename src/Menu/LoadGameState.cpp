@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,17 +21,20 @@
 #include "../Engine/Logger.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Engine/Game.h"
-#include "../Engine/Action.h"
 #include "../Engine/Exception.h"
 #include "../Engine/Options.h"
 #include "../Engine/CrossPlatform.h"
 #include "../Engine/Screen.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/Text.h"
 #include "../Geoscape/GeoscapeState.h"
 #include "ErrorMessageState.h"
 #include "../Battlescape/BattlescapeState.h"
+#include "../Mod/Mod.h"
+#include "../Engine/Sound.h"
+#include "../Engine/Unicode.h"
+#include "../Mod/RuleInterface.h"
+#include "StatisticsState.h"
 
 namespace OpenXcom
 {
@@ -72,7 +75,7 @@ LoadGameState::LoadGameState(OptionsOrigin origin, SaveType type, SDL_Color *pal
 		// can't auto-load ironman games
 		break;
 	}
-	
+
 	buildUi(palette);
 }
 
@@ -96,12 +99,16 @@ void LoadGameState::buildUi(SDL_Color *palette)
 	_txtStatus = new Text(320, 17, 0, 92);
 
 	// Set palette
-	setPalette(palette);
+	setStatePalette(palette);
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
 		add(_txtStatus, "textLoad", "battlescape");
 		_txtStatus->setHighContrast(true);
+		if (_game->getSavedGame()->getSavedBattle()->getAmbientSound() != Mod::NO_SOUND)
+		{
+			_game->getMod()->getSoundByDepth(0, _game->getSavedGame()->getSavedBattle()->getAmbientSound())->stopLoop();
+		}
 	}
 	else
 	{
@@ -123,7 +130,7 @@ void LoadGameState::buildUi(SDL_Color *palette)
 void LoadGameState::init()
 {
 	State::init();
-	if (_filename == SavedGame::QUICKSAVE && !CrossPlatform::fileExists(Options::getUserFolder() + _filename))
+	if (_filename == SavedGame::QUICKSAVE && !CrossPlatform::fileExists(Options::getMasterUserFolder() + _filename))
 	{
 		_game->popState();
 		return;
@@ -145,59 +152,92 @@ void LoadGameState::think()
 	{
 		_game->popState();
 
+		// Remember for later (palette reset)
+		BattlescapeState *origBattleState = 0;
+		if (_game->getSavedGame() != 0 && _game->getSavedGame()->getSavedBattle() != 0)
+		{
+			origBattleState = _game->getSavedGame()->getSavedBattle()->getBattleState();
+		}
+
+		// Reset touch flags
+		_game->resetTouchButtonFlags();
+
 		// Load the game
 		SavedGame *s = new SavedGame();
 		try
 		{
-			s->load(_filename, _game->getRuleset());
+			s->load(_filename, _game->getMod(), _game->getLanguage());
 			_game->setSavedGame(s);
-			Options::baseXResolution = Options::baseXGeoscape;
-			Options::baseYResolution = Options::baseYGeoscape;
-			_game->getScreen()->resetDisplay(false);
-			_game->setState(new GeoscapeState);
-			if (_game->getSavedGame()->getSavedBattle() != 0)
+			if (_game->getSavedGame()->getEnding() != END_NONE)
 			{
-				_game->getSavedGame()->getSavedBattle()->loadMapResources(_game);
-				Options::baseXResolution = Options::baseXBattlescape;
-				Options::baseYResolution = Options::baseYBattlescape;
+				Options::baseXResolution = Screen::ORIGINAL_WIDTH;
+				Options::baseYResolution = Screen::ORIGINAL_HEIGHT;
 				_game->getScreen()->resetDisplay(false);
-				BattlescapeState *bs = new BattlescapeState;
-				_game->pushState(bs);
-				_game->getSavedGame()->getSavedBattle()->setBattleState(bs);
+				_game->setState(new StatisticsState);
+			}
+			else
+			{
+				Options::baseXResolution = Options::baseXGeoscape;
+				Options::baseYResolution = Options::baseYGeoscape;
+				_game->getScreen()->resetDisplay(false);
+				if (origBattleState != 0)
+				{
+					// We need to reset palettes here already, can't wait for the destructor
+					origBattleState->resetPalettes();
+				}
+				_game->setState(new GeoscapeState);
+				if (_game->getSavedGame()->getSavedBattle() != 0)
+				{
+					_game->getSavedGame()->getSavedBattle()->loadMapResources(_game->getMod());
+					Options::baseXResolution = Options::baseXBattlescape;
+					Options::baseYResolution = Options::baseYBattlescape;
+					_game->getScreen()->resetDisplay(false);
+					BattlescapeState *bs = new BattlescapeState;
+					_game->pushState(bs);
+					_game->getSavedGame()->getSavedBattle()->setBattleState(bs);
+				}
+			}
+
+			// Clear the SDL event queue (i.e. ignore input from impatient users)
+			SDL_Event e;
+			while (SDL_PollEvent(&e))
+			{
+				// do nothing
 			}
 		}
 		catch (Exception &e)
 		{
-			Log(LOG_ERROR) << e.what();
-			std::wostringstream error;
-			error << tr("STR_LOAD_UNSUCCESSFUL") << L'\x02' << Language::fsToWstr(e.what());
-			if (_origin != OPT_BATTLESCAPE)
-				_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
-			else
-				_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getRuleset()->getInterface("errorMessages")->getElement("battlescapeColor")->color, "TAC00.SCR", _game->getRuleset()->getInterface("errorMessages")->getElement("battlescapePalette")->color));
-
-			if (_game->getSavedGame() == s)
-				_game->setSavedGame(0);
-			else
-				delete s;
+			error(e.what(), s);
 		}
 		catch (YAML::Exception &e)
 		{
-			Log(LOG_ERROR) << e.what();
-			std::wostringstream error;
-			error << tr("STR_LOAD_UNSUCCESSFUL") << L'\x02' << Language::fsToWstr(e.what());
-			if (_origin != OPT_BATTLESCAPE)
-				_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getRuleset()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
-			else
-				_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getRuleset()->getInterface("errorMessages")->getElement("battlescapeColor")->color, "TAC00.SCR", _game->getRuleset()->getInterface("errorMessages")->getElement("battlescapePalette")->color));
-
-			if (_game->getSavedGame() == s)
-				_game->setSavedGame(0);
-			else
-				delete s;
+			error(e.what(), s);
 		}
 		CrossPlatform::flashWindow();
 	}
+}
+
+/**
+ * Pops up a window with an error message
+ * and cleans up afterwards.
+ * @param msg Error message.
+ * @param save Pending save.
+ */
+void LoadGameState::error(const std::string &msg, SavedGame *save)
+{
+
+	Log(LOG_ERROR) << msg;
+	std::ostringstream error;
+	error << tr("STR_LOAD_UNSUCCESSFUL") << Unicode::TOK_NL_SMALL << msg;
+	if (_origin != OPT_BATTLESCAPE)
+		_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getMod()->getInterface("errorMessages")->getElement("geoscapeColor")->color, "BACK01.SCR", _game->getMod()->getInterface("errorMessages")->getElement("geoscapePalette")->color));
+	else
+		_game->pushState(new ErrorMessageState(error.str(), _palette, _game->getMod()->getInterface("errorMessages")->getElement("battlescapeColor")->color, "TAC00.SCR", _game->getMod()->getInterface("errorMessages")->getElement("battlescapePalette")->color));
+
+	if (_game->getSavedGame() == save)
+		_game->setSavedGame(0);
+	else
+		delete save;
 }
 
 }

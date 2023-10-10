@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_WEIGHTEDOPTIONS_H
-#define OPENXCOM_WEIGHTEDOPTIONS_H
-
 #include <string>
 #include <map>
+#include <vector>
 #include <yaml-cpp/yaml.h>
 
 
@@ -37,9 +36,7 @@ public:
 	/// Create an empty set.
 	WeightedOptions() : _totalWeight(0) { /* Empty by design. */ }
 	/// Select from among the items.
-	const std::string choose() const;
-	/// Select the top item.
-	const std::string top() const;
+	std::string choose() const;
 	/// Set an option's weight.
 	void set(const std::string &id, size_t weight);
 	/// Is this empty?
@@ -50,10 +47,11 @@ public:
 	void load(const YAML::Node &node);
 	/// Store our list in YAML.
 	YAML::Node save() const;
+	/// Get the list of strings associated with these weights.
+	std::vector<std::string> getNames();
 private:
 	std::map<std::string, size_t> _choices; //!< Options and weights
 	size_t _totalWeight; //!< The total weight of all options.
 };
 
 }
-#endif

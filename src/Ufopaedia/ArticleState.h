@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,13 +17,10 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATE_H
-#define OPENXCOM_ARTICLESTATE_H
-
 #include "../Engine/State.h"
-#include "../Ruleset/RuleItem.h"
+#include "../Mod/RuleItem.h"
 #include <string>
+#include <memory>
 
 namespace OpenXcom
 {
@@ -30,6 +28,44 @@ namespace OpenXcom
 	class Action;
 	class Surface;
 	class TextButton;
+	class ArticleDefinition;
+
+
+	/// Current state of ufopedia
+	struct ArticleCommonState
+	{
+		/// Invalid index.
+		static constexpr size_t invalid = -1;
+
+		/// Current selected article index (for previous/next navigation).
+		size_t current_index = invalid;
+
+		/// Current sub page of article.
+		size_t current_page = 0;
+
+		/// List of all available articles.
+		std::vector<ArticleDefinition *> articleList;
+
+		/// Get current Article definition for current index position.
+		ArticleDefinition* getCurrentArticle() const
+		{
+			return articleList[current_index];
+		}
+
+		/// Change index position to next article
+		void nextArticle();
+
+		/// Change page to next in article or move to next index position.
+		void nextArticlePage();
+		bool hasNextArticlePage();
+
+		/// Change index position to previous article.
+		void prevArticle();
+
+		/// Change page to previous in article or move to previous index position.
+		void prevArticlePage();
+		bool hasPrevArticlePage();
+	};
 
 	/**
 	 * UfopaediaArticle is the base class for all articles of various types.
@@ -41,7 +77,7 @@ namespace OpenXcom
 	{
 	protected:
 		/// constructor (protected, so it can only be instantiated by derived classes)
-		ArticleState(const std::string &article_id);
+		ArticleState(const std::string &article_id, std::shared_ptr<ArticleCommonState> state);
 		/// destructor
 		virtual ~ArticleState();
 
@@ -59,12 +95,17 @@ namespace OpenXcom
 
 		/// callback for OK button
 		void btnOkClick(Action *action);
+		void btnResetMusicClick(Action *action);
 
 		/// callback for PREV button
 		void btnPrevClick(Action *action);
 
 		/// callback for NEXT button
 		void btnNextClick(Action *action);
+
+		/// callback for INFO button
+		void btnInfoClick(Action *action);
+
 		/// the article id
 		std::string _id;
 
@@ -73,7 +114,9 @@ namespace OpenXcom
 		TextButton *_btnOk;
 		TextButton *_btnPrev;
 		TextButton *_btnNext;
+		TextButton *_btnInfo;
+
+		/// Shared state.
+		std::shared_ptr<ArticleCommonState> _state;
 	};
 }
-
-#endif

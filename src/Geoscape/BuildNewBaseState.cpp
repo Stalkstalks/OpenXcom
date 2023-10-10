@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,13 +17,10 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "BuildNewBaseState.h"
-#include <cmath>
 #include "../fmath.h"
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
 #include "../Engine/Surface.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Screen.h"
@@ -33,10 +30,12 @@
 #include "../Interface/TextButton.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/Craft.h"
+#include "../Savegame/SavedGame.h"
 #include "BaseNameState.h"
 #include "ConfirmNewBaseState.h"
 #include "../Engine/Options.h"
 #include "../Menu/ErrorMessageState.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
@@ -74,7 +73,7 @@ BuildNewBaseState::BuildNewBaseState(Base *base, Globe *globe, bool first) : _ba
 	_hoverTimer = new Timer(50);
 	_hoverTimer->onTimer((StateHandler)&BuildNewBaseState::hoverRedraw);
 	_hoverTimer->start();
-	
+
 	// Set palette
 	setInterface("geoscape");
 
@@ -126,7 +125,7 @@ BuildNewBaseState::BuildNewBaseState(Base *base, Globe *globe, bool first) : _ba
 	_btnRotateUp->setListButton();
 	_btnRotateDown->setListButton();
 
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "geoscape");
 
 	_btnCancel->setText(tr("STR_CANCEL_UC"));
 	_btnCancel->onMouseClick((ActionHandler)&BuildNewBaseState::btnCancelClick);
@@ -162,7 +161,7 @@ void BuildNewBaseState::init()
 	State::init();
 	_globe->onMouseOver((ActionHandler)&BuildNewBaseState::globeHover);
 	_globe->rotateStop();
-	_globe->setNewBaseHover();
+	_globe->setNewBaseHover(true);
 }
 
 /**
@@ -203,7 +202,7 @@ void BuildNewBaseState::hoverRedraw(void)
 	if (lon == lon && lat == lat)
 	{
 		_globe->setNewBaseHoverPos(lon,lat);
-		_globe->setNewBaseHover();
+		_globe->setNewBaseHover(true);
 	}
 	if (Options::globeRadarLines && !(AreSame(_oldlat, lat) && AreSame(_oldlon, lon)) )
 	{
@@ -235,25 +234,40 @@ void BuildNewBaseState::globeClick(Action *action)
 	{
 		if (_globe->insideLand(lon, lat))
 		{
-			_base->setLongitude(lon);
-			_base->setLatitude(lat);
-			for (std::vector<Craft*>::iterator i = _base->getCrafts()->begin(); i != _base->getCrafts()->end(); ++i)
+			bool fakeUnderwaterBasesUnlocked = true;
+			if (!_game->getMod()->getFakeUnderwaterBaseUnlockResearch().empty())
 			{
-				(*i)->setLongitude(lon);
-				(*i)->setLatitude(lat);
+				fakeUnderwaterBasesUnlocked = _game->getSavedGame()->isResearched(_game->getMod()->getFakeUnderwaterBaseUnlockResearch(), true);
 			}
-			if (_first)
+			bool fakeUnderwaterTexture = _globe->insideFakeUnderwaterTexture(lon, lat);
+			if ((_first || !fakeUnderwaterBasesUnlocked) && fakeUnderwaterTexture)
 			{
-				_game->pushState(new BaseNameState(_base, _globe, _first));
+				// first (starting) base can't be fake underwater base
+				_game->pushState(new ErrorMessageState(tr("STR_XCOM_BASE_CANNOT_BE_BUILT"), _palette, _game->getMod()->getInterface("geoscape")->getElement("genericWindow")->color, "BACK01.SCR", _game->getMod()->getInterface("geoscape")->getElement("palette")->color));
 			}
 			else
 			{
-				_game->pushState(new ConfirmNewBaseState(_base, _globe));
+				_base->setFakeUnderwater(fakeUnderwaterTexture);
+				_base->setLongitude(lon);
+				_base->setLatitude(lat);
+				for (auto* craft : *_base->getCrafts())
+				{
+					craft->setLongitude(lon);
+					craft->setLatitude(lat);
+				}
+				if (_first)
+				{
+					_game->pushState(new BaseNameState(_base, _globe, _first, false));
+				}
+				else
+				{
+					_game->pushState(new ConfirmNewBaseState(_base, _globe));
+				}
 			}
 		}
 		else
 		{
-			_game->pushState(new ErrorMessageState(tr("STR_XCOM_BASE_CANNOT_BE_BUILT"), _palette, _game->getRuleset()->getInterface("geoscape")->getElement("genericWindow")->color, "BACK01.SCR", _game->getRuleset()->getInterface("geoscape")->getElement("palette")->color));
+			_game->pushState(new ErrorMessageState(tr("STR_XCOM_BASE_CANNOT_BE_BUILT"), _palette, _game->getMod()->getInterface("geoscape")->getElement("genericWindow")->color, "BACK01.SCR", _game->getMod()->getInterface("geoscape")->getElement("palette")->color));
 		}
 	}
 }
@@ -383,13 +397,14 @@ void BuildNewBaseState::btnCancelClick(Action *)
  */
 void BuildNewBaseState::resize(int &dX, int &dY)
 {
-	for (std::vector<Surface*>::const_iterator i = _surfaces.begin(); i != _surfaces.end(); ++i)
+	for (auto* surface : _surfaces)
 	{
-		(*i)->setX((*i)->getX() + dX / 2);
-		if (*i != _window && *i != _btnCancel && *i != _txtTitle)
+		surface->setX(surface->getX() + dX / 2);
+		if (surface != _window && surface != _btnCancel && surface != _txtTitle)
 		{
-			(*i)->setY((*i)->getY() + dY / 2);
+			surface->setY(surface->getY() + dY / 2);
 		}
 	}
 }
+
 }

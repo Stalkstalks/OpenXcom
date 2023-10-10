@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,15 +17,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_INFOBOXSTATE_H
-#define OPENXCOM_INFOBOXSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
 {
 
-class Game;
 class Text;
 class Timer;
 class Frame;
@@ -41,18 +38,16 @@ private:
 public:
 	static const int INFOBOX_DELAY = 2000;
 	/// Creates the Infobox state.
-	InfoboxState(const std::wstring &msg);
+	InfoboxState(const std::string &msg);
 	/// Cleans up the Infobox state.
 	~InfoboxState();
 	/// Handler for clicking anything.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Handles the timers.
-	void think();
+	void think() override;
 	/// Closes the window.
 	void close();
 
 };
 
 }
-
-#endif

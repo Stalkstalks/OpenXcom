@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BATTLESCAPEGAME_H
-#define OPENXCOM_BATTLESCAPEGAME_H
-
 #include "Position.h"
-#include "../Ruleset/RuleItem.h"
-#include <SDL.h>
+#include "../Mod/RuleItem.h"
+#include "Pathfinding.h"
 #include <string>
 #include <list>
 #include <vector>
@@ -34,25 +32,28 @@ class SavedBattleGame;
 class BattleItem;
 class BattleState;
 class BattlescapeState;
-class ResourcePack;
 class Map;
 class TileEngine;
 class Pathfinding;
-class Ruleset;
+class Mod;
 class InfoboxOKState;
-
-enum BattleActionType { BA_NONE, BA_TURN, BA_WALK, BA_PRIME, BA_THROW, BA_AUTOSHOT, BA_SNAPSHOT, BA_AIMEDSHOT, BA_HIT, BA_USE, BA_LAUNCH, BA_MINDCONTROL, BA_PANIC, BA_RETHINK };
+class SoldierDiary;
+class RuleSkill;
 
 struct BattleActionCost : RuleItemUseCost
 {
 	BattleActionType type;
-	BattleUnit *actor;
-	BattleItem *weapon;
+	BattleUnit *actor = nullptr;
+	BattleItem *weapon = nullptr;
+	const RuleSkill* skillRules = nullptr; // if defined, this is a skill action
 
-	//Default constructor.
-	BattleActionCost() : type(BA_NONE), actor(0), weapon(0) { }
+	/// Default constructor.
+	BattleActionCost() : type(BA_NONE) { }
 
-	//Constructor with update.
+	/// Constructor from unit.
+	BattleActionCost(BattleUnit *unit) : type(BA_NONE), actor(unit) { }
+
+	/// Constructor with update.
 	BattleActionCost(BattleActionType action, BattleUnit *unit, BattleItem *item) : type(action), actor(unit), weapon(item) { updateTU(); }
 
 	/// Update value of TU based of actor, weapon and type.
@@ -72,17 +73,57 @@ struct BattleAction : BattleActionCost
 	bool targeting;
 	int value;
 	std::string result;
-	bool strafe, run;
+	bool strafe = false;
+	bool run = false;
+	bool sneak = false;
+	bool ignoreSpottedEnemies = false;
+	bool kneel = false;
 	int diff;
 	int autoShotCounter;
 	Position cameraPosition;
-    bool desperate; // ignoring newly-spotted units
+	bool desperate; // ignoring newly-spotted units
 	int finalFacing;
 	bool finalAction;
-    int number; // first action of turn, second, etc.?
+	int number; // first action of turn, second, etc.?
+	bool sprayTargeting; // Used to separate waypoint checks between confirm firing mode and the "spray" autoshot
+	BattleActionOrigin relativeOrigin = BattleActionOrigin::CENTRE; // preferred origin voxel (centre, left or right)
+	int terrainMeleeTilePart = 0; // terrain melee
+	int tuBefore = 0; // used to check if we actually did anyting in popState, if not we mark this unit for wanting to be skipped
 
-	//Default constructor
-	BattleAction() : targeting(false), value(0), strafe(false), run(false), diff(0), autoShotCounter(0), cameraPosition(0, 0, -1), desperate(false), finalFacing(-1), finalAction(false), number(0) { }
+	/// Default constructor
+	BattleAction() : target(-1, -1, -1), targeting(false), value(0), diff(0), autoShotCounter(0), cameraPosition(0, 0, -1), desperate(false), finalFacing(-1), finalAction(false), number(0), sprayTargeting(false) { }
+
+	/// Get move type
+	BattleActionMove getMoveType() const
+	{
+		return strafe ? BAM_STRAFE : run ? BAM_RUN : sneak ? BAM_SNEAK : BAM_NORMAL;
+	}
+};
+
+
+/**
+ * Count of different state of units to determine who wins
+ */
+struct BattlescapeTally
+{
+	/// number of live enemies (aliens and MC'ed soldiers)
+	int liveAliens = 0;
+	/// number of live soldiers (only ones that are not MC'ed, including tanks, but not summoned units)
+	int liveSoldiers = 0;
+
+	/// number of live soldiers on entrance tiles
+	int inEntrance = 0;
+	/// number of live soldiers on exit tiles.
+	int inExit = 0;
+	/// number of live soldiers in the middle of the battlefield.
+	int inField = 0;
+
+	/// number of live VIPs on entrance tiles
+	int vipInEntrance = 0;
+	/// number of live VIPs on exit tiles.
+	int vipInExit = 0;
+	/// number of live VIPs in the middle of the battlefield.
+	int vipInField = 0;
 };
 
 /**
@@ -90,21 +131,57 @@ struct BattleAction : BattleActionCost
  */
 class BattlescapeGame
 {
+	class SingleRun
+	{
+		bool _done = false;
+
+	public:
+
+		/**
+		 * Check if this function was already ran.
+		 * @return True if this is first time, False if any other until reseted.
+		 */
+		bool tryRun()
+		{
+			if (_done)
+			{
+				return false;
+			}
+
+			_done = true;
+			return true;
+		}
+
+		/**
+		 * Reset stat to starting condition.
+		 */
+		void reset()
+		{
+			_done = false;
+		}
+	};
+
 private:
 	SavedBattleGame *_save;
 	BattlescapeState *_parentState;
+	BattleUnit *_nextUnitToSelect; 
 	std::list<BattleState*> _states, _deleted;
 	bool _playerPanicHandled;
 	int _AIActionCounter;
 	BattleAction _currentAction;
-	bool _AISecondMove, _playedAggroSound;
-	bool _endTurnRequested, _endTurnProcessed;
+	bool _playedAggroSound;
+	bool _endTurnRequested;
+	bool _endConfirmationHandled;
+	bool _allEnemiesNeutralized;
+
+	SingleRun _endTurnProcessed;
+	SingleRun _triggerProcessed;
 
 	/// Ends the turn.
 	void endTurn();
 	/// Picks the first soldier that is panicking.
 	bool handlePanickingPlayer();
-	/// Common function for hanlding panicking units.
+	/// Common function for handling panicking units.
 	bool handlePanickingUnit(BattleUnit *unit);
 	/// Determines whether there are any actions pending for the given unit.
 	bool noActionsPending(BattleUnit *bu);
@@ -124,7 +201,7 @@ public:
 	/// Initializes the Battlescape game.
 	void init();
 	/// Determines whether a playable unit is selected.
-	bool playableUnitSelected();
+	bool playableUnitSelected() const;
 	/// Handles states timer.
 	void handleState();
 	/// Pushes a state to the front of the list.
@@ -140,39 +217,51 @@ public:
 	/// Sets state think interval.
 	void setStateInterval(Uint32 interval);
 	/// Checks for casualties in battle.
-	void checkForCasualties(BattleItem *murderweapon, BattleUnit *murderer, bool hiddenExplosion = false, bool terrainExplosion = false);
-	/// Checks if a unit panics.
-	void checkForPanic(BattleUnit *unit);
+	void checkForCasualties(const RuleDamageType *damageType, BattleActionAttack attack, bool hiddenExplosion = false, bool terrainExplosion = false);
 	/// Checks reserved tu and energy.
 	bool checkReservedTU(BattleUnit *bu, int tu, int energy, bool justChecking = false);
 	/// Handles unit AI.
 	void handleAI(BattleUnit *unit);
 	/// Drops an item and affects it with gravity.
-	void dropItem(const Position &position, BattleItem *item, bool newItem = false, bool removeItem = false);
+	void dropItem(Position position, BattleItem *item, bool removeItem = false, bool updateLight = true);
 	/// Converts a unit into a unit of another type.
-	BattleUnit *convertUnit(BattleUnit *unit, const std::string &newType);
+	BattleUnit *convertUnit(BattleUnit *unit);
+	/// Spawns a new unit in the middle of battle.
+	void spawnNewUnit(BattleItem *item);
+	void spawnNewUnit(BattleActionAttack attack, Position position);
+	/// Spawns a new item in the middle of battle.
+	void spawnNewItem(BattleItem *item);
+	void spawnNewItem(BattleActionAttack attack, Position position);
+	/// Spawns units from items that explode before battle
+	void spawnFromPrimedItems();
+	/// Removes spawned units that belong to the player to avoid dealing with recovery
+	void removeSummonedPlayerUnits();
+	/// Tally summoned player-controlled VIPs. We may still need to correct this in the Debriefing.
+	void tallySummonedVIPs();
 	/// Handles kneeling action.
 	bool kneel(BattleUnit *bu);
 	/// Cancels the current action.
 	bool cancelCurrentAction(bool bForce = false);
+	/// Cancels all actions.
+	void cancelAllActions();
 	/// Gets a pointer to access action members directly.
 	BattleAction *getCurrentAction();
 	/// Determines whether there is an action currently going on.
-	bool isBusy();
+	bool isBusy() const;
 	/// Activates primary action (left click).
-	void primaryAction(const Position &pos);
+	void primaryAction(Position pos);
 	/// Activates secondary action (right click).
-	void secondaryAction(const Position &pos);
+	void secondaryAction(Position pos);
 	/// Handler for the blaster launcher button.
 	void launchAction();
 	/// Handler for the psi button.
 	void psiButtonAction();
-	/// Handle psi attack.
-	bool psiAttack(BattleAction *action);
+	/// Handle psi attack result message.
+	void psiAttackMessage(BattleActionAttack attack, BattleUnit *victim);
 	/// Moves a unit up or down.
 	void moveUpDown(BattleUnit *unit, int dir);
 	/// Requests the end of the turn (wait for explosions etc to really end the turn).
-	void requestEndTurn();
+	void requestEndTurn(bool askForConfirmation);
 	/// Sets the TU reserved type.
 	void setTUReserved(BattleActionType tur);
 	/// Sets up the cursor taking into account the action.
@@ -181,22 +270,20 @@ public:
 	Map *getMap();
 	/// Gets the save.
 	SavedBattleGame *getSave();
-	/// Gets the tilengine.
+	/// Gets the tile engine.
 	TileEngine *getTileEngine();
 	/// Gets the pathfinding.
 	Pathfinding *getPathfinding();
-	/// Gets the resourcepack.
-	ResourcePack *getResourcePack();
-	/// Gets the ruleset.
-	const Ruleset *getRuleset() const;
+	/// Gets the mod.
+	Mod *getMod();
 	/// Returns whether panic has been handled.
-	bool getPanicHandled() { return _playerPanicHandled; }
+	bool getPanicHandled() const;
 	/// Tries to find an item and pick it up if possible.
-	void findItem(BattleAction *action);
+	bool findItem(BattleAction *action, bool pickUpWeaponsMoreActively, bool& walkToItem);
 	/// Checks through all the items on the ground and picks one.
-	BattleItem *surveyItems(BattleAction *action);
+	BattleItem *surveyItems(BattleAction *action, bool pickUpWeaponsMoreActively, std::vector<PathfindingNode *> targetNodes);
 	/// Evaluates if it's worthwhile to take this item.
-	bool worthTaking(BattleItem* item, BattleAction *action);
+	bool worthTaking(BattleItem* item, BattleAction *action, bool pickUpWeaponsMoreActively);
 	/// Picks the item up from the ground.
 	int takeItemFromGround(BattleItem* item, BattleAction *action);
 	/// Assigns the item to a slot (stolen from battlescapeGenerator::addItem()).
@@ -204,14 +291,16 @@ public:
 	/// Returns the type of action that is reserved.
 	BattleActionType getReservedAction();
 	/// Tallies the living units, converting them if necessary.
-	void tallyUnits(int &liveAliens, int &liveSoldiers);
+	bool isSurrendering(BattleUnit* bu);
+	/// Check count of units in different state
+	BattlescapeTally tallyUnits();
 	bool convertInfected();
 	/// Sets the kneel reservation setting.
 	void setKneelReserved(bool reserved);
 	/// Checks the kneel reservation setting.
-	bool getKneelReserved();
+	bool getKneelReserved() const;
 	/// Checks for and triggers proximity grenades.
-	bool checkForProximityGrenades(BattleUnit *unit);
+	int checkForProximityGrenades(BattleUnit *unit);
 	/// Cleans up all the deleted states.
 	void cleanupDeleted();
 	/// Get the depth of the saved game.
@@ -220,8 +309,21 @@ public:
 	void playSound(int sound, const Position &pos);
 	/// Play sound on battlefield.
 	void playSound(int sound);
+	/// Play unit response sound on battlefield.
+	void playUnitResponseSound(BattleUnit *unit, int type);
+	/// Sets up a mission complete notification.
+	void missionComplete();
+	std::list<BattleState*> getStates();
+	/// Auto end the battle if conditions are met.
+	void autoEndBattle();
+	/// Were all enemies neutralized?
+	bool areAllEnemiesNeutralized() const { return _allEnemiesNeutralized; }
+	/// Resets the flag.
+	void resetAllEnemiesNeutralized() { _allEnemiesNeutralized = false; }
+	/// Allows AI to tell us which unit should be selected next
+	void setNextUnitToSelect(BattleUnit *unit);
+	/// Returns which unit the AI wanted to select next
+	BattleUnit *getNextUnitToSelect();
 };
 
 }
-
-#endif

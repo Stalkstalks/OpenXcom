@@ -126,6 +126,7 @@ units:
     value: 30
     intelligence: 4
     energyRecovery: 20
+    deathSound: [41, 42, 43]
   - type: FEMALE_CIVILIAN
     race: STR_CIVILIAN
     stats:
@@ -146,7 +147,7 @@ units:
     value: 30
     intelligence: 4
     energyRecovery: 20
-    female: true
+    deathSound: [44, 45, 46]
   - type: STR_SECTOID_SOLDIER
     race: STR_SECTOID
     rank: STR_LIVE_SOLDIER
@@ -247,7 +248,7 @@ units:
       firing: 52
       throwing: 58
       strength: 30
-      psiStrength: 40
+      psiStrength: 50
       psiSkill: 50
       melee: 76
     armor: SECTOID_ARMOR0
@@ -269,7 +270,7 @@ units:
       firing: 52
       throwing: 58
       strength: 30
-      psiStrength: 40
+      psiStrength: 50
       psiSkill: 60
       melee: 76
     armor: SECTOID_ARMOR0
@@ -282,6 +283,7 @@ units:
   - type: STR_CYBERDISC_TERRORIST
     race: STR_CYBERDISC
     rank: STR_LIVE_TERRORIST
+    liveAlien: ""
     stats:
       tu: 62
       stamina: 90
@@ -306,6 +308,7 @@ units:
     energyRecovery: 50
     specab: 1
     livingWeapon: true
+    capturable: false
   - type: STR_FLOATER_SOLDIER
     race: STR_FLOATER
     rank: STR_LIVE_SOLDIER
@@ -565,7 +568,7 @@ units:
     deathSound: 8
     moveSound: 0
     intelligence: 5
-    aggression: 2  
+    aggression: 2
   - type: STR_SNAKEMAN_COMMANDER
     race: STR_SNAKEMAN
     rank: STR_LIVE_COMMANDER
@@ -807,6 +810,7 @@ units:
   - type: STR_SECTOPOD_TERRORIST
     race: STR_SECTOPOD
     rank: STR_LIVE_TERRORIST
+    liveAlien: ""
     stats:
       tu: 62
       stamina: 90
@@ -828,6 +832,7 @@ units:
     aggression: 1
     energyRecovery: 50
     livingWeapon: true
+    capturable: false
   - type: STR_ZOMBIE
     race: STR_ZOMBIE
     rank: STR_LIVE_TERRORIST
@@ -852,4 +857,4 @@ units:
     energyRecovery: 20
     spawnUnit: STR_CHRYSSALID_TERRORIST
     livingWeapon: true
-    deathSound: -2
+    # Zombies are silent on death, no deathSound

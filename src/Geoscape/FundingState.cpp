@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,15 +19,15 @@
 #include "FundingState.h"
 #include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextList.h"
 #include "../Savegame/Country.h"
-#include "../Ruleset/RuleCountry.h"
+#include "../Mod/RuleCountry.h"
 #include "../Savegame/SavedGame.h"
 #include "../Engine/Options.h"
 
@@ -65,7 +65,7 @@ FundingState::FundingState()
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK13.SCR"));
+	setWindowBackground(_window, "fundingWindow");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&FundingState::btnOkClick);
@@ -85,28 +85,29 @@ FundingState::FundingState()
 
 	_lstCountries->setColumns(3, 108, 100, 52);
 	_lstCountries->setDot(true);
-	for (std::vector<Country*>::iterator i = _game->getSavedGame()->getCountries()->begin(); i != _game->getSavedGame()->getCountries()->end(); ++i)
+	for (auto* country : *_game->getSavedGame()->getCountries())
 	{
-		std::wostringstream ss, ss2;
-		ss << L'\x01' << Text::formatFunding((*i)->getFunding().at((*i)->getFunding().size()-1)) << L'\x01';
-		if ((*i)->getFunding().size() > 1)
+		std::ostringstream ss, ss2;
+		ss << Unicode::TOK_COLOR_FLIP << Unicode::formatFunding(country->getFunding().at(country->getFunding().size()-1)) << Unicode::TOK_COLOR_FLIP;
+		if (country->getFunding().size() > 1)
 		{
-			ss2 << L'\x01';
-			int change = (*i)->getFunding().back() - (*i)->getFunding().at((*i)->getFunding().size()-2);
+			ss2 << Unicode::TOK_COLOR_FLIP;
+			int change = country->getFunding().back() - country->getFunding().at(country->getFunding().size()-2);
 			if (change > 0)
-				ss2 << L'+';
-			ss2 << Text::formatFunding(change);
-			ss2 << L'\x01';
+				ss2 << '+';
+			ss2 << Unicode::formatFunding(change);
+			ss2 << Unicode::TOK_COLOR_FLIP;
 		}
 		else
 		{
-			ss2 << Text::formatFunding(0);
+			ss2 << Unicode::formatFunding(0);
 		}
-		_lstCountries->addRow(3, tr((*i)->getRules()->getType()).c_str(), ss.str().c_str(), ss2.str().c_str());
+		_lstCountries->addRow(3, tr(country->getRules()->getType()).c_str(), ss.str().c_str(), ss2.str().c_str());
 	}
-	_lstCountries->addRow(2, tr("STR_TOTAL_UC").c_str(), Text::formatFunding(_game->getSavedGame()->getCountryFunding()).c_str());
+	_lstCountries->addRow(2, tr("STR_TOTAL_UC").c_str(), Unicode::formatFunding(_game->getSavedGame()->getCountryFunding()).c_str());
 	_lstCountries->setRowColor(_game->getSavedGame()->getCountries()->size(), _txtCountry->getColor());
 }
+
 /**
  *
  */

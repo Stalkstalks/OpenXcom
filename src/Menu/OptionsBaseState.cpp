@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,10 +20,8 @@
 #include <SDL.h>
 #include "../Engine/Game.h"
 #include "../Engine/Options.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Language.h"
 #include "../Engine/Screen.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Interface/Window.h"
@@ -35,12 +33,12 @@
 #include "../Battlescape/BattlescapeState.h"
 #include "OptionsVideoState.h"
 #include "OptionsAudioState.h"
+#include "OptionsFoldersState.h"
 #include "OptionsNoAudioState.h"
 #include "OptionsControlsState.h"
 #include "OptionsGeoscapeState.h"
 #include "OptionsBattlescapeState.h"
 #include "OptionsAdvancedState.h"
-#include "OptionsModsState.h"
 #include "OptionsDefaultsState.h"
 #include "OptionsConfirmState.h"
 #include "StartState.h"
@@ -53,7 +51,7 @@ namespace OpenXcom
  * @param game Pointer to the core game.
  * @param origin Game section that originated this state.
  */
-OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
+OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin), _group(0)
 {
 	// Create objects
 	_window = new Window(this, 320, 200, 0, 0);
@@ -64,7 +62,7 @@ OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
 	_btnGeoscape = new TextButton(80, 16, 8, 68);
 	_btnBattlescape = new TextButton(80, 16, 8, 88);
 	_btnAdvanced = new TextButton(80, 16, 8, 108);
-	_btnMods = new TextButton(80, 16, 8, 128);
+	_btnFolders = new TextButton(80, 16, 8, 128);
 
 	_btnOk = new TextButton(100, 16, 8, 176);
 	_btnCancel = new TextButton(100, 16, 110, 176);
@@ -73,7 +71,7 @@ OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
 	_txtTooltip = new Text(305, 25, 8, 148);
 
 	// Set palette
-	setInterface("optionsMenu", false, _origin == OPT_BATTLESCAPE);
+	setInterface("optionsMenu", false, _game->getSavedGame() ? _game->getSavedGame()->getSavedBattle() : 0);
 
 	add(_window, "window", "optionsMenu");
 
@@ -83,7 +81,7 @@ OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
 	add(_btnGeoscape, "button", "optionsMenu");
 	add(_btnBattlescape, "button", "optionsMenu");
 	add(_btnAdvanced, "button", "optionsMenu");
-	add(_btnMods, "button", "optionsMenu");
+	add(_btnFolders, "button", "optionsMenu");
 
 	add(_btnOk, "button", "optionsMenu");
 	add(_btnCancel, "button", "optionsMenu");
@@ -92,7 +90,7 @@ OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
 	add(_txtTooltip, "tooltip", "optionsMenu");
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "optionsMenu");
 
 	_btnVideo->setText(tr("STR_VIDEO"));
 	_btnVideo->onMousePress((ActionHandler)&OptionsBaseState::btnGroupPress, SDL_BUTTON_LEFT);
@@ -112,9 +110,8 @@ OptionsBaseState::OptionsBaseState(OptionsOrigin origin) : _origin(origin)
 	_btnAdvanced->setText(tr("STR_ADVANCED"));
 	_btnAdvanced->onMousePress((ActionHandler)&OptionsBaseState::btnGroupPress, SDL_BUTTON_LEFT);
 
-	_btnMods->setText(tr("STR_MODS"));
-	_btnMods->onMousePress((ActionHandler)&OptionsBaseState::btnGroupPress, SDL_BUTTON_LEFT);
-	_btnMods->setVisible(_origin == OPT_MENU); // Mods require a restart, don't enable them in-game
+	_btnFolders->setText(tr("STR_FOLDERS"));
+	_btnFolders->onMousePress((ActionHandler)&OptionsBaseState::btnGroupPress, SDL_BUTTON_LEFT);
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&OptionsBaseState::btnOkClick);
@@ -140,6 +137,9 @@ OptionsBaseState::~OptionsBaseState()
 
 void OptionsBaseState::restart(OptionsOrigin origin)
 {
+	// Reset touch flags
+	_game->resetTouchButtonFlags();
+
 	if (origin == OPT_MENU)
 	{
 		_game->setState(new MainMenuState);
@@ -150,6 +150,17 @@ void OptionsBaseState::restart(OptionsOrigin origin)
 	}
 	else if (origin == OPT_BATTLESCAPE)
 	{
+		BattlescapeState *origBattleState = 0;
+		if (_game->getSavedGame() != 0 && _game->getSavedGame()->getSavedBattle() != 0)
+		{
+			origBattleState = _game->getSavedGame()->getSavedBattle()->getBattleState();
+		}
+		if (origBattleState != 0)
+		{
+			// We need to reset palettes here already, can't wait for the destructor
+			origBattleState->resetPalettes();
+		}
+
 		_game->setState(new GeoscapeState);
 		BattlescapeState *bs = new BattlescapeState;
 		_game->pushState(bs);
@@ -165,7 +176,7 @@ void OptionsBaseState::init()
 	State::init();
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("optionsMenu");
 	}
 }
 
@@ -182,7 +193,7 @@ void OptionsBaseState::setCategory(TextButton *button)
 	_btnGeoscape->setGroup(&_group);
 	_btnBattlescape->setGroup(&_group);
 	_btnAdvanced->setGroup(&_group);
-	_btnMods->setGroup(&_group);
+	_btnFolders->setGroup(&_group);
 }
 
 /**
@@ -191,20 +202,16 @@ void OptionsBaseState::setCategory(TextButton *button)
  */
 void OptionsBaseState::btnOkClick(Action *)
 {
+	Options::switchDisplay();
 	int dX = Options::baseXResolution;
 	int dY = Options::baseYResolution;
-	Screen::updateScale(Options::battlescapeScale, Options::newBattlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, _origin == OPT_BATTLESCAPE);
-	Screen::updateScale(Options::geoscapeScale, Options::newGeoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, _origin != OPT_BATTLESCAPE);
+	Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, _origin == OPT_BATTLESCAPE);
+	Screen::updateScale(Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, _origin != OPT_BATTLESCAPE);
 	dX = Options::baseXResolution - dX;
 	dY = Options::baseYResolution - dY;
 	recenter(dX, dY);
-	Options::switchDisplay();
 	Options::save();
-	if (Options::reload && _origin == OPT_MENU)
-	{
-		Options::mapResources();
-	}
-	_game->loadLanguage(Options::language);
+	_game->loadLanguages();
 	SDL_WM_GrabInput(Options::captureMouse);
 	_game->getScreen()->resetDisplay();
 	_game->setVolume(Options::soundVolume, Options::musicVolume, Options::uiVolume);
@@ -240,8 +247,8 @@ void OptionsBaseState::btnCancelClick(Action *)
 	Options::reload = false;
 	Options::load();
 	SDL_WM_GrabInput(Options::captureMouse);
-	Screen::updateScale(Options::newBattlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, _origin == OPT_BATTLESCAPE);
-	Screen::updateScale(Options::newGeoscapeScale, Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, _origin != OPT_BATTLESCAPE);
+	Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, _origin == OPT_BATTLESCAPE);
+	Screen::updateScale(Options::geoscapeScale, Options::baseXGeoscape, Options::baseYGeoscape, _origin != OPT_BATTLESCAPE);
 	_game->setVolume(Options::soundVolume, Options::musicVolume, Options::uiVolume);
 	_game->popState();
 }
@@ -250,7 +257,7 @@ void OptionsBaseState::btnCancelClick(Action *)
  * Restores the Options to default settings.
  * @param action Pointer to an action.
  */
-void OptionsBaseState::btnDefaultClick(Action *action)
+void OptionsBaseState::btnDefaultClick(Action *)
 {
 	_game->pushState(new OptionsDefaultsState(_origin, this));
 }
@@ -292,17 +299,17 @@ void OptionsBaseState::btnGroupPress(Action *action)
 		{
 			_game->pushState(new OptionsAdvancedState(_origin));
 		}
-		else if (sender == _btnMods)
+		else if (sender == _btnFolders)
 		{
-			_game->pushState(new OptionsModsState(_origin));
+			_game->pushState(new OptionsFoldersState(_origin));
 		}
 	}
 }
 
 /**
-* Shows a tooltip for the appropriate button.
-* @param action Pointer to an action.
-*/
+ * Shows a tooltip for the appropriate button.
+ * @param action Pointer to an action.
+ */
 void OptionsBaseState::txtTooltipIn(Action *action)
 {
 	_currentTooltip = action->getSender()->getTooltip();
@@ -310,14 +317,14 @@ void OptionsBaseState::txtTooltipIn(Action *action)
 }
 
 /**
-* Clears the tooltip text.
-* @param action Pointer to an action.
-*/
+ * Clears the tooltip text.
+ * @param action Pointer to an action.
+ */
 void OptionsBaseState::txtTooltipOut(Action *action)
 {
 	if (_currentTooltip == action->getSender()->getTooltip())
 	{
-		_txtTooltip->setText(L"");
+		_txtTooltip->setText("");
 	}
 }
 
@@ -331,6 +338,6 @@ void OptionsBaseState::resize(int &dX, int &dY)
 	Options::newDisplayWidth = Options::displayWidth;
 	Options::newDisplayHeight = Options::displayHeight;
 	State::resize(dX, dY);
-
 }
+
 }

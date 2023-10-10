@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BUILDFACILITIESSTATE_H
-#define OPENXCOM_BUILDFACILITIESSTATE_H
-
 #include <vector>
 #include "../Engine/State.h"
 
@@ -41,7 +39,8 @@ class BuildFacilitiesState : public State
 protected:
 	Base *_base;
 	State *_state;
-	std::vector<RuleBaseFacility*> _facilities;
+	std::vector<RuleBaseFacility*> _facilities, _disabledFacilities;
+	size_t _lstScroll;
 
 	TextButton *_btnOk;
 	Window *_window;
@@ -53,9 +52,9 @@ public:
 	/// Cleans up the Build Facilities state.
 	~BuildFacilitiesState();
 	/// Populates the build option list.
-	virtual void PopulateBuildList();
+	virtual void populateBuildList();
 	/// Updates the base stats.
-	void init();
+	void init() override;
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
 	/// Handler for clicking the Facilities list.
@@ -63,5 +62,3 @@ public:
 };
 
 }
-
-#endif

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,12 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_UFOPAEDIASTARTSTATE_H
-#define OPENXCOM_UFOPAEDIASTARTSTATE_H
-
 #include "../Engine/State.h"
 #include <string>
+#include <vector>
 
 namespace OpenXcom
 {
@@ -30,6 +28,8 @@ namespace OpenXcom
 	class Window;
 	class Text;
 	class TextButton;
+	class ArrowButton;
+	class Timer;
 
 	/**
 	 * UfopaediaStartState is the screen that opens when clicking Ufopaedia button in Geoscape.
@@ -43,18 +43,30 @@ namespace OpenXcom
 		virtual ~UfopaediaStartState();
 
 	protected:
-		static const int NUM_SECTIONS = 9;
-		static const std::string SECTIONS[NUM_SECTIONS];
-		
 		Window *_window;
 		Text *_txtTitle;
 		TextButton *_btnOk;
-		TextButton *_btnSection[NUM_SECTIONS];
+		std::vector<TextButton*> _btnSections;
+		ArrowButton *_btnScrollUp, *_btnScrollDown;
+		Timer *_timerScroll;
+
+		int _offset, _scroll;
+		size_t _maxButtons;
+		int _heightOffset, _windowOffset;
+		const std::vector<std::string> &_cats;
 
 		// navigation callbacks
+		void think() override;
 		void btnSectionClick(Action *action);
 		void btnOkClick(Action *action);
+
+		// scrolling logic
+		void btnScrollUpPress(Action *action);
+		void btnScrollUpClick(Action *action);
+		void btnScrollDownPress(Action *action);
+		void btnScrollDownClick(Action *action);
+		void btnScrollRelease(Action *action);
+		void scroll();
+		void updateButtons();
 	};
 }
-
-#endif

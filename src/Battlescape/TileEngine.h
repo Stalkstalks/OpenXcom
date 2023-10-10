@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,14 +17,11 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TILEENGINE_H
-#define OPENXCOM_TILEENGINE_H
-
 #include <vector>
 #include "Position.h"
 #include "BattlescapeGame.h"
-#include "../Ruleset/RuleItem.h"
-#include <SDL.h>
+#include "../Mod/RuleItem.h"
+#include "../Mod/MapData.h"
 
 namespace OpenXcom
 {
@@ -32,7 +30,18 @@ class SavedBattleGame;
 class BattleUnit;
 class BattleItem;
 class Tile;
+class RuleSkill;
 struct BattleAction;
+template<typename Tag, typename DataType> struct AreaSubset;
+
+enum UnitBodyPart : int;
+
+/**
+ * Define some part of map
+ */
+using MapSubset = AreaSubset<Position, Sint16>;
+enum BattleActionType : Uint8;
+enum LightLayers : Uint8;
 
 
 /**
@@ -41,39 +50,92 @@ struct BattleAction;
  */
 class TileEngine
 {
-private:
-	SavedBattleGame *_save;
-	std::vector<Uint16> *_voxelData;
-	static const int heightFromCenter[11];
-	bool _personalLighting;
-	const int _maxViewDistance;        // 20 tiles by default
-	const int _maxViewDistanceSq;      // 20 * 20
-	const int _maxVoxelViewDistance;   // maxViewDistance * 16
-	const int _maxDarknessToSeeUnits;  // 9 by default
+public:
+	/// Value representing non-existing position.
+	static constexpr Position invalid = { -1, -1, -1 };
 
-	/// Add light source.
-	void addLight(const Position &center, int power, int layer);
-	/// Calculate blockage amount.
-	int blockage(Tile *tile, const int part, ItemDamageType type, int direction = -1, bool checkingFromOrigin = false);
-	/// Get max view distance.
-	inline int getMaxViewDistance() const        {return _maxViewDistance;}
-	/// Get square of max view distance.
-	inline int getMaxViewDistanceSq() const      {return _maxViewDistanceSq;}
-	/// Get max view distance in voxel space.
-	inline int getMaxVoxelViewDistance() const   {return _maxVoxelViewDistance;}
-	/// Get threshold of darkness for LoS calculation.
-	inline int getMaxDarknessToSeeUnits() const  {return _maxDarknessToSeeUnits;}
+	/// Size of tile in voxels
+	static constexpr Position voxelTileSize = { Position::TileXY, Position::TileXY, Position::TileZ };
+	/// Half of size of tile in voxels
+	static constexpr Position voxelTileCenter = { Position::TileXY / 2, Position::TileXY / 2, Position::TileZ / 2 };
+
+private:
+	/**
+	 * Helper class storing cached visibility blockage data.
+	 */
+	struct VisibilityBlockCache
+	{
+		Uint32 blockDir;
+
+		Uint8 bigWall;
+
+		Uint8 height;
+	};
 
 	/**
-	 * Helper class storing reaction data
+	 * Helper class storing reaction data.
 	 */
 	struct ReactionScore
 	{
 		BattleUnit *unit;
-		int attackType;
+		BattleItem *weapon;
+		BattleActionType attackType;
 		double reactionScore;
 		double reactionReduction;
+		int count;
 	};
+
+	SavedBattleGame *_save;
+	const std::vector<Uint16> *_voxelData;
+	std::vector<VisibilityBlockCache> _blockVisibility;
+	const RuleInventory *_inventorySlotGround;
+	constexpr static int heightFromCenter[11] = {0,-2,+2,-4,+4,-6,+6,-8,+8,-12,+12};
+	bool _personalLighting;
+	Tile *_cacheTile;
+	Tile *_cacheTileBelow;
+	Position _cacheTilePos;
+	const int _maxViewDistance;        // 20 tiles by default
+	const int _maxViewDistanceSq;      // 20 * 20
+	const int _maxVoxelViewDistance;   // maxViewDistance * 16
+	const int _maxDarknessToSeeUnits;  // 9 by default
+	const int _maxStaticLightDistance;
+	const int _maxDynamicLightDistance;
+	const int _enhancedLighting;
+	Position _eventVisibilitySectorL, _eventVisibilitySectorR, _eventVisibilityObserverPos;
+	std::vector<BattleUnit*> _movingUnitPrev;
+	BattleUnit* _movingUnit = nullptr;
+	std::map<std::pair<int, int>, bool> _visibilityCache;
+
+	/// Add light source.
+	void addLight(MapSubset gs, Position center, int power, LightLayers layer);
+	/// Calculate blockage amount.
+	int blockage(Tile *tile, const TilePart part, ItemDamageType type, int direction = -1, bool checkingFromOrigin = false);
+	/// Get max distance that fire light can reach.
+	int getMaxStaticLightDistance() const { return _maxStaticLightDistance; }
+	/// Get max distance that light can reach.
+	int getMaxDynamicLightDistance() const { return _maxDynamicLightDistance; }
+	/// Get flags for enhanced lighting.
+	int getEnhancedLighting() const { return _enhancedLighting; }
+	/// Get max view distance.
+	int getMaxViewDistance() const { return _maxViewDistance; }
+	/// Get square of max view distance.
+	int getMaxViewDistanceSq() const { return _maxViewDistanceSq; }
+	/// Get max view distance in voxel space.
+	int getMaxVoxelViewDistance() const { return _maxVoxelViewDistance; }
+	/// Get threshold of darkness for LoS calculation.
+	int getMaxDarknessToSeeUnits() const { return _maxDarknessToSeeUnits; }
+
+	bool setupEventVisibilitySector(const Position &observerPos, const Position &eventPos, const int &eventRadius);
+	inline bool inEventVisibilitySector(const Position &toCheck) const;
+
+	/// Calculates sun shading of the whole map.
+	void calculateSunShading(MapSubset gs);
+	/// Recalculates lighting of the battlescape for terrain.
+	void calculateTerrainBackground(MapSubset gs);
+	/// Recalculates lighting of the battlescape for terrain.
+	void calculateTerrainItems(MapSubset gs);
+	/// Recalculates lighting of the battlescape for units.
+	void calculateUnitLighting(MapSubset gs);
 
 	/// Checks validity of a snap shot to this position.
 	ReactionScore determineReactionType(BattleUnit *unit, BattleUnit *target);
@@ -82,109 +144,149 @@ private:
 	/// Given a vector of spotters, and a unit, picks the spotter with the highest reaction score.
 	ReactionScore *getReactor(std::vector<ReactionScore> &spotters, BattleUnit *unit);
 	/// Tries to perform a reaction snap shot to this location.
-	bool tryReaction(BattleUnit *unit, BattleUnit *target, int attackType);
+	bool tryReaction(ReactionScore *reaction, BattleUnit *target, const BattleAction &originalAction);
 public:
 	/// Creates a new TileEngine class.
-	TileEngine(SavedBattleGame *save, std::vector<Uint16> *voxelData, int maxViewDistance, int maxDarknessToSeeUnits);
+	TileEngine(SavedBattleGame *save, Mod *mod);
 	/// Cleans up the TileEngine.
 	~TileEngine();
-	/// Calculates sun shading of the whole map.
-	void calculateSunShading();
-	/// Calculates sun shading of a single tile.
-	void calculateSunShading(Tile *tile);
+	/// Calculates visible tiles within the field of view. Supply an eventPosition to do an update limited to a small slice of the view sector.
+	void calculateTilesInFOV(BattleUnit *unit, const Position eventPos = invalid, const int eventRadius = 0);
+	/// Calculates visible units within the field of view. Supply an eventPosition to do an update limited to a small slice of the view sector.
+	bool calculateUnitsInFOV(BattleUnit* unit, const Position eventPos = invalid, const int eventRadius = 0);
 	/// Calculates the field of view from a units view point.
-	bool calculateFOV(BattleUnit *unit);
+	bool calculateFOV(BattleUnit *unit, bool doTileRecalc = true, bool doUnitRecalc = true);
 	/// Calculates the field of view within range of a certain position.
-	void calculateFOV(const Position &position);
+	void calculateFOV(Position position, int eventRadius = -1, const bool updateTiles = true, const bool appendToTileVisibility = false);
 	/// Checks reaction fire.
-	bool checkReactionFire(BattleUnit *unit);
-	/// Recalculates lighting of the battlescape for terrain.
-	void calculateTerrainLighting();
-	/// Recalculates lighting of the battlescape for units.
-	void calculateUnitLighting();
+	bool checkReactionFire(BattleUnit *unit, const BattleAction &originalAction);
+	/// Recalculate all lighting in some area.
+	void calculateLighting(LightLayers layer, Position position = invalid, int eventRadius = 0, bool terrianChanged = false);
 	/// Handles tile hit.
-	void hitTile(Tile *tile, int damage, const RuleDamageType* type);
+	int hitTile(Tile *tile, int damage, const RuleDamageType* type);
+	/// Handles experience training.
+	bool awardExperience(BattleActionAttack attack, BattleUnit *target, bool rangeAtack);
 	/// Handles unit hit.
-	bool hitUnit(BattleUnit *unit, BattleUnit *target, const Position &relative, int damage, const RuleDamageType *type, bool rangeAtack = true);
+	bool hitUnit(BattleActionAttack attack, BattleUnit *target, const Position &relative, int damage, const RuleDamageType *type, bool rangeAtack = true);
 	/// Handles bullet/weapon hits.
-	BattleUnit *hit(const Position &center, int power, const RuleDamageType *type, BattleUnit *unit, bool rangeAtack = true);
+	void hit(BattleActionAttack attack, Position center, int power, const RuleDamageType *type, bool rangeAtack = true, int terrainMeleeTilePart = 0);
 	/// Handles explosions.
-	void explode(const Position &center, int power, const RuleDamageType *type, int maxRadius, BattleUnit *unit = 0, bool rangeAtack = true);
+	void explode(BattleActionAttack attack, Position center, int power, const RuleDamageType *type, int maxRadius, bool rangeAtack = true);
 	/// Checks if a destroyed tile starts an explosion.
 	Tile *checkForTerrainExplosions();
 	/// Unit opens door?
 	int unitOpensDoor(BattleUnit *unit, bool rClick = false, int dir = -1);
 	/// Closes ufo doors.
 	int closeUfoDoors();
-	/// Calculates a line trajectory.
-	int calculateLine(const Position& origin, const Position& target, bool storeTrajectory, std::vector<Position> *trajectory, BattleUnit *excludeUnit, bool doVoxelCheck = true, bool onlyVisible = false, BattleUnit *excludeAllBut = 0);
+	/// Calculates a line trajectory in tile space.
+	int calculateLineTile(Position origin, Position target, std::vector<Position> &trajectory);
+	/// Calculates a line trajectory in voxel space.
+	VoxelType calculateLineVoxel(Position origin, Position target, bool storeTrajectory, std::vector<Position> *trajectory, BattleUnit *excludeUnit, BattleUnit *excludeAllBut = 0, bool onlyVisible = false);
 	/// Calculates a parabola trajectory.
-	int calculateParabola(const Position& origin, const Position& target, bool storeTrajectory, std::vector<Position> *trajectory, BattleUnit *excludeUnit, double curvature, const Position delta);
+	int calculateParabolaVoxel(Position origin, Position target, bool storeTrajectory, std::vector<Position> *trajectory, BattleUnit *excludeUnit, double curvature, const Position delta);
 	/// Gets the origin voxel of a unit's eyesight.
 	Position getSightOriginVoxel(BattleUnit *currentUnit);
 	/// Checks visibility of a unit on this tile.
 	bool visible(BattleUnit *currentUnit, Tile *tile);
+	/// Checks visibility of a tile.
+	bool isTileInLOS(BattleAction *action, Tile *tile);
 	/// Turn XCom soldier's personal lighting on or off.
 	void togglePersonalLighting();
-	/// Checks the distance between two positions.
-	int distance(const Position &pos1, const Position &pos2) const;
-	/// Checks the distance squared between two positions.
-	int distanceSq(const Position &pos1, const Position &pos2, bool considerZ = true) const;
 	/// Checks the horizontal blockage of a tile.
 	int horizontalBlockage(Tile *startTile, Tile *endTile, ItemDamageType type, bool skipObject = false);
 	/// Checks the vertical blockage of a tile.
 	int verticalBlockage(Tile *startTile, Tile *endTile, ItemDamageType type, bool skipObject = false);
+
 	/// Calculate success rate of psi attack.
-	int psiAttackCalculate(BattleActionType type, BattleUnit *attacker, BattleUnit *victim, BattleItem *weapon);
+	int psiAttackCalculate(BattleActionAttack::ReadOnly attack, const BattleUnit *victim);
 	/// Attempts a panic or mind control action.
-	bool psiAttack(BattleAction *action);
+	bool psiAttack(BattleActionAttack attack, BattleUnit *victim);
+	/// Calculate success rate of melee attack action.
+	int meleeAttackCalculate(BattleActionAttack::ReadOnly attack, const BattleUnit *victim);
 	/// Attempts a melee attack action.
-	bool meleeAttack(BattleAction *action);
+	bool meleeAttack(BattleActionAttack attack, BattleUnit *victim, int terrainMeleeTilePart = 0);
+
+	/// Remove the medikit from the game if consumable and empty.
+	void medikitRemoveIfEmpty(BattleAction *action);
 	/// Try using medikit heal ability.
-	void medikitHeal(BattleAction *action, BattleUnit *target, int bodyPart);
-	/// Try using medikit stimulant ability.
-	void medikitStimulant(BattleAction *action, BattleUnit *target);
-	/// Try using medikit pain killer ability.
-	void medikitPainKiller(BattleAction *action, BattleUnit *target);
+	bool medikitUse(BattleAction *action, BattleUnit *target, BattleMediKitAction medikitAction, UnitBodyPart bodyPart);
+	/// Try using a skill.
+	bool skillUse(BattleAction *action, const RuleSkill *skill);
+	/// Try to conceal a unit.
+	bool tryConcealUnit(BattleUnit* unit);
 	/// Applies gravity to anything that occupy this tile.
 	Tile *applyGravity(Tile *t);
+
+	/// Drop item on ground.
+	void itemDrop(Tile *t, BattleItem *item, bool updateLight);
+	/// Drop all unit items on ground.
+	void itemDropInventory(Tile *t, BattleUnit *unit, bool unprimeItems = false, bool deleteFixedItems = false);
+	/// Move item to other place in inventory or ground.
+	void itemMoveInventory(Tile *t, BattleUnit *unit, BattleItem *item, const RuleInventory *slot, int x, int y);
+
+	/// Add moving unit.
+	void addMovingUnit(BattleUnit* unit);
+	/// Add moving unit.
+	void removeMovingUnit(BattleUnit* unit);
+	/// Get current moving unit.
+	BattleUnit* getMovingUnit();
+
 	/// Returns melee validity between two units.
 	bool validMeleeRange(BattleUnit *attacker, BattleUnit *target, int dir);
 	/// Returns validity of a melee attack from a given position.
 	bool validMeleeRange(Position pos, int direction, BattleUnit *attacker, BattleUnit *target, Position *dest, bool preferEnemy = true);
+	bool validTerrainMeleeRange(BattleAction* action);
 	/// Gets the AI to look through a window.
-	int faceWindow(const Position &position);
-	/// Checks a unit's % exposure on a tile.
-	int checkVoxelExposure(Position *originVoxel, Tile *tile, BattleUnit *excludeUnit, BattleUnit *excludeAllBut);
+	int faceWindow(Position position);
+	/// Checks a unit's % exposure on a tile, and fills array of exposed voxels
+	double checkVoxelExposure(Position *originVoxel, Tile *tile, BattleUnit *excludeUnit, bool isDebug = false, std::vector<Position> *exposedVoxels = nullptr, bool isSimpleMode = true);
 	/// Checks validity for targetting a unit.
-	bool canTargetUnit(Position *originVoxel, Tile *tile, Position *scanVoxel, BattleUnit *excludeUnit, BattleUnit *potentialUnit = 0);
+	bool canTargetUnit(Position *originVoxel, Tile *tile, Position *scanVoxel, BattleUnit *excludeUnit, bool rememberObstacles, BattleUnit *potentialUnit = 0);
 	/// Check validity for targetting a tile.
-	bool canTargetTile(Position *originVoxel, Tile *tile, int part, Position *scanVoxel, BattleUnit *excludeUnit);
+	bool canTargetTile(Position *originVoxel, Tile *tile, int part, Position *scanVoxel, BattleUnit *excludeUnit, bool rememberObstacles);
 	/// Calculates the z voxel for shadows.
-	int castedShade(const Position& voxel);
+	int castedShade(Position voxel);
 	/// Checks the visibility of a given voxel.
-	bool isVoxelVisible(const Position& voxel);
+	bool isVoxelVisible(Position voxel);
 	/// Checks what type of voxel occupies this space.
-	int voxelCheck(const Position& voxel, BattleUnit *excludeUnit, bool excludeAllUnits = false, bool onlyVisible = false, BattleUnit *excludeAllBut = 0);
+	VoxelType voxelCheck(Position voxel, BattleUnit *excludeUnit, bool excludeAllUnits = false, bool onlyVisible = false, BattleUnit *excludeAllBut = 0);
+	/// Flushes cache of voxel check
+	void voxelCheckFlush();
 	/// Blows this tile up.
 	bool detonate(Tile* tile, int power);
 	/// Validates a throwing action.
-	bool validateThrow(BattleAction &action, Position originVoxel, Position targetVoxel, double *curve = 0, int *voxelType = 0);
+	bool validateThrow(BattleAction &action, Position originVoxel, Position targetVoxel, int depth, double *curve = 0, int *voxelType = 0, bool forced = false);
 	/// Opens any doors this door is connected to.
-	void checkAdjacentDoors(Position pos, int part);
+	std::pair<int, Position> checkAdjacentDoors(Position pos, TilePart part);
 	/// Recalculates FOV of all units in-game.
 	void recalculateFOV();
 	/// Get direction to a certain point
-	int getDirectionTo(const Position &origin, const Position &target) const;
+	int getDirectionTo(Position origin, Position target) const;
 	/// Get arc between two direction.
 	int getArcDirection(int directionA, int directionB) const;
 	/// determine the origin voxel of a given action.
 	Position getOriginVoxel(BattleAction &action, Tile *tile);
 	/// mark a region of the map as "dangerous" for a turn.
 	void setDangerZone(Position pos, int radius, BattleUnit *unit);
+	/// Checks if a position is valid for a unit, used for spawning and forced movement.
+	bool isPositionValidForUnit(Position &position, BattleUnit *unit, bool checkSurrounding = false, int startSurroundingCheckDirection = 0);
+	/// Update game state after script hook execution.
+	void updateGameStateAfterScript(BattleActionAttack battleActionAttack, Position pos);
 
+	/// Checks if a tile either has a door is next to a door
+	bool isNextToDoor(Tile *tile, bool flipDoor = false);
+	/// Checks if any tiles around this tile are next to a door
+	bool isNearDoor(Tile* tile);
+	/// Returns a vector of tiles that would be visible from a specific location
+	std::set<Tile*> visibleTilesFrom(BattleUnit* unit, Position pos, int direction, bool onlyNew = false);
+	/// remember how the visibility from a specific position to another would be
+	void setVisibilityCache(Position from, Position to, bool visible);
+	/// recall how the visibility from a specific position to another was
+	bool getVisibilityCache(Position from, Position to);
+	/// checks whether there's an entry for a specific position-pair
+	bool hasEntry(Position from, Position to);
+	/// empties the visibility cache, call whenever a door is opened or destructive terrain is destroyed
+	void resetVisibilityCache();
 };
 
 }
-
-#endif

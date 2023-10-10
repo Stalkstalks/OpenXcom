@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,9 +19,7 @@
 #include "AliensCrashState.h"
 #include "DebriefingState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -40,10 +38,10 @@ AliensCrashState::AliensCrashState()
 	_window = new Window(this, 256, 160, 32, 20);
 	_btnOk = new TextButton(120, 18, 100, 154);
 	_txtTitle = new Text(246, 80, 37, 50);
-	
+
 	// Set palette
-	setPalette("PAL_BATTLESCAPE");
-	
+	setStandardPalette("PAL_BATTLESCAPE");
+
 	add(_window, "messageWindowBorder", "battlescape");
 	add(_btnOk, "messageWindowButtons", "battlescape");
 	add(_txtTitle, "messageWindows", "battlescape");
@@ -52,7 +50,7 @@ AliensCrashState::AliensCrashState()
 
 	// Set up objects
 	_window->setHighContrast(true);
-	_window->setBackground(_game->getResourcePack()->getSurface("TAC00.SCR"));
+	_window->setBackground(_game->getMod()->getSurface("TAC00.SCR"));
 
 	_btnOk->setHighContrast(true);
 	_btnOk->setText(tr("STR_OK"));

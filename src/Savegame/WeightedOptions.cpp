@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,7 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <assert.h>
 #include "WeightedOptions.h"
 #include "../Engine/RNG.h"
 
@@ -29,14 +28,14 @@ namespace OpenXcom
  * Each time this is called, the returned value can be different.
  * @return The key of the selected choice.
  */
-const std::string WeightedOptions::choose() const
+std::string WeightedOptions::choose() const
 {
 	if (_totalWeight == 0)
 	{
 		return "";
 	}
 	size_t var = RNG::generate(0, _totalWeight);
-	std::map<std::string, size_t>::const_iterator ii = _choices.begin();
+	auto ii = _choices.begin();
 	for (; ii != _choices.end(); ++ii)
 	{
 		if (var <= ii->second)
@@ -45,31 +44,6 @@ const std::string WeightedOptions::choose() const
 	}
 	// We always have a valid iterator here.
 	return ii->first;
-}
-
-/**
- * Select the most likely option.
- * This MUST be called on non-empty objects.
- * @return The key of the selected choice.
- */
-const std::string WeightedOptions::top() const
-{
-	if (_totalWeight == 0)
-	{
-		return "";
-	}
-	size_t max = 0;
-	std::map<std::string, size_t>::const_iterator i = _choices.begin();
-	for (std::map<std::string, size_t>::const_iterator ii = _choices.begin(); ii != _choices.end(); ++ii)
-	{
-		if (ii->second >= max)
-		{
-			max = ii->second;
-			i = ii;
-		}
-	}
-	// We always have a valid iterator here.
-	return i->first;
 }
 
 /**
@@ -82,7 +56,7 @@ const std::string WeightedOptions::top() const
  */
 void WeightedOptions::set(const std::string &id, size_t weight)
 {
-	std::map<std::string, size_t>::iterator option = _choices.find(id);
+	auto option = _choices.find(id);
 	if (option != _choices.end())
 	{
 		_totalWeight -= option->second;
@@ -126,11 +100,25 @@ void WeightedOptions::load(const YAML::Node &nd)
 YAML::Node WeightedOptions::save() const
 {
 	YAML::Node node;
-	for (std::map<std::string, size_t>::const_iterator ii = _choices.begin(); ii != _choices.end(); ++ii)
+	for (const auto& pair : _choices)
 	{
-		node[ii->first] = ii->second;
+		node[pair.first] = pair.second;
 	}
 	return node;
+}
+
+/**
+ * Get the list of strings associated with these weights.
+ * @return the list of strings in these weights.
+ */
+std::vector<std::string> WeightedOptions::getNames()
+{
+	std::vector<std::string> names;
+	for (const auto& pair : _choices)
+	{
+		names.push_back(pair.first);
+	}
+	return names;
 }
 
 }

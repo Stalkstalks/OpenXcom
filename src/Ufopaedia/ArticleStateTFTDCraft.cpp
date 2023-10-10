@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,36 +17,88 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../Ruleset/ArticleDefinition.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/RuleCraft.h"
+#include "../Mod/ArticleDefinition.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleCraft.h"
 #include "ArticleStateTFTD.h"
 #include "ArticleStateTFTDCraft.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Language.h"
+#include "../Engine/LocalizedText.h"
+#include "../Interface/TextButton.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/Text.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateTFTDCraft::ArticleStateTFTDCraft(ArticleDefinitionTFTD *defs) : ArticleStateTFTD(defs)
+	ArticleStateTFTDCraft::ArticleStateTFTDCraft(ArticleDefinitionTFTD *defs, std::shared_ptr<ArticleCommonState> state) : ArticleStateTFTD(defs, std::move(state))
 	{
-		RuleCraft *craft = _game->getRuleset()->getCraft(defs->id);
-		_txtStats = new Text(126, 56, 192, 116);
+		_txtInfo->setHeight(80);
+
+		_btnInfo->setVisible(_game->getMod()->getShowPediaInfoButton());
+
+		RuleCraft *craft = _game->getMod()->getCraft(defs->id, true);
+		_txtStats = new Text(131, 56, 187, 116);
 		add(_txtStats);
 
-		_txtStats->setColor(Palette::blockOffset(0)+2);
-		_txtStats->setSecondaryColor(Palette::blockOffset(15)+4);
+		_txtStats->setColor(_textColor);
+		_txtStats->setSecondaryColor(_textColor2);
 
-		std::wostringstream ss;
-		ss << tr("STR_MAXIMUM_SPEED_UC").arg(Text::formatNumber(craft->getMaxSpeed())) << L'\n';
-		ss << tr("STR_ACCELERATION").arg(craft->getAcceleration()) << L'\n';
-		ss << tr("STR_FUEL_CAPACITY").arg(Text::formatNumber(craft->getMaxFuel())) << L'\n';
-		ss << tr("STR_WEAPON_PODS").arg(craft->getWeapons()) << L'\n';
-		ss << tr("STR_DAMAGE_CAPACITY_UC").arg(Text::formatNumber(craft->getMaxDamage())) << L'\n';
-		ss << tr("STR_CARGO_SPACE").arg(craft->getSoldiers()) << L'\n';
-		ss << tr("STR_HWP_CAPACITY").arg(craft->getVehicles());
+		std::ostringstream ss;
+		ss << tr("STR_MAXIMUM_SPEED_UC").arg(Unicode::formatNumber(craft->getMaxSpeed())) << '\n';
+		ss << tr("STR_ACCELERATION").arg(craft->getAcceleration()) << '\n';
+		int range;
+		switch (_game->getMod()->getPediaReplaceCraftFuelWithRangeType())
+		{
+			// Both max range alone and average range get rounded
+			case 0:
+			case 2:
+				range = craft->calculateRange(_game->getMod()->getPediaReplaceCraftFuelWithRangeType());
+				if (range == -1)
+				{
+					ss << tr("STR_MAXIMUM_RANGE").arg(tr("STR_INFINITE_RANGE")) << '\n';
+					break;
+				}
+
+				// Round the answer to
+				if (range < 100)
+				{
+					// don't round if it's small!
+				}
+				else if (range < 1000)
+				{
+					// nearest 10 nautical miles
+					range += 10 / 2;
+					range -= range % 10;
+				}
+				else
+				{
+					// nearest 100 nautical miles
+					range += 100 / 2;
+					range -= range % 100;
+				}
+
+				ss << tr("STR_MAXIMUM_RANGE").arg(Unicode::formatNumber(range)) << '\n';
+				break;
+			// Min-maxxers can fret over exact numbers
+			case 1:
+				if (craft->calculateRange(0) == -1)
+				{
+					ss << tr("STR_MAXIMUM_RANGE").arg(tr("STR_INFINITE_RANGE")) << '\n';
+					break;
+				}
+
+				ss << tr("STR_MINIMUM_RANGE").arg(Unicode::formatNumber(craft->calculateRange(1))) << '\n';
+				ss << tr("STR_MAXIMUM_RANGE").arg(Unicode::formatNumber(craft->calculateRange(0))) << '\n';
+				break;
+			default :
+				ss << tr("STR_FUEL_CAPACITY").arg(Unicode::formatNumber(craft->getMaxFuel())) << '\n';
+				break;
+		}
+		ss << tr("STR_WEAPON_PODS").arg(craft->getWeapons()) << '\n';
+		ss << tr("STR_DAMAGE_CAPACITY_UC").arg(Unicode::formatNumber(craft->getMaxDamage())) << '\n';
+		ss << tr("STR_CARGO_SPACE").arg(craft->getMaxUnits()) << '\n';
+		ss << tr("STR_HWP_CAPACITY").arg(craft->getMaxVehiclesAndLargeSoldiers());
 		_txtStats->setText(ss.str());
 
 		centerAllSurfaces();

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATETEXTIMAGE_H
-#define OPENXCOM_ARTICLESTATETEXTIMAGE_H
-
 #include "ArticleState.h"
 
 namespace OpenXcom
@@ -36,13 +33,12 @@ namespace OpenXcom
 	class ArticleStateTextImage : public ArticleState
 	{
 	public:
-		ArticleStateTextImage(ArticleDefinitionTextImage *defs);
+		ArticleStateTextImage(ArticleDefinitionTextImage *defs, std::shared_ptr<ArticleCommonState> state);
 		virtual ~ArticleStateTextImage();
 
 	protected:
 		Text *_txtTitle;
 		Text *_txtInfo;
+		Uint8 _buttonColor, _titleColor, _textColor1, _textColor2;
 	};
 }
-
-#endif

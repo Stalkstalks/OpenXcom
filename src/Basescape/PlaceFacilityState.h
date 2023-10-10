@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,15 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_PLACEFACILITYSTATE_H
-#define OPENXCOM_PLACEFACILITYSTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
 {
 
 class Base;
+class BaseFacility;
 class RuleBaseFacility;
 class BaseView;
 class TextButton;
@@ -39,15 +38,16 @@ class PlaceFacilityState : public State
 {
 protected:
 	Base *_base;
-	RuleBaseFacility *_rule;
+	const RuleBaseFacility *_rule;
+	BaseFacility *_origFac;
 
 	BaseView *_view;
 	TextButton *_btnCancel;
 	Window *_window;
-	Text *_txtFacility, *_txtCost, *_numCost, *_txtTime, *_numTime, *_txtMaintenance, *_numMaintenance;
+	Text *_txtFacility, *_txtCost, *_numCost, *_numResources, *_txtTime, *_numTime, *_txtMaintenance, *_numMaintenance;
 public:
 	/// Creates the Place Facility state.
-	PlaceFacilityState(Base *base, RuleBaseFacility *rule);
+	PlaceFacilityState(Base *base, const RuleBaseFacility *rule, BaseFacility *origFac = 0);
 	/// Cleans up the Place Facility state.
 	~PlaceFacilityState();
 	/// Handler for clicking the Cancel button.
@@ -57,5 +57,3 @@ public:
 };
 
 }
-
-#endif

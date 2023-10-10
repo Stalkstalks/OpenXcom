@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_COMBOBOX_H
-#define OPENXCOM_COMBOBOX_H
-
 #include "../Engine/InteractiveSurface.h"
 #include <vector>
 #include <string>
@@ -55,30 +53,31 @@ private:
 	Language *_lang;
 	Uint8 _color;
 	bool _toggled;
+	bool _popupAboveButton;
 
 	void drawArrow();
 	void setDropdown(int options);
 public:
 	/// Creates a combo box with the specified size and position.
-	ComboBox(State *state, int width, int height, int x = 0, int y = 0);
+	ComboBox(State *state, int width, int height, int x = 0, int y = 0, bool popupAboveButton = false);
 	/// Cleans up the combo box.
 	~ComboBox();
 	/// Sets the X position of the surface.
-	void setX(int x);
+	void setX(int x) override;
 	/// Sets the Y position of the surface.
-	void setY(int y);
+	void setY(int y) override;
 	/// Sets the palette of the text list.
-	void setPalette(SDL_Color *colors, int firstcolor = 0, int ncolors = 256);
+	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	/// Initializes the resources for the text list.
-	void initText(Font *big, Font *small, Language *lang);
+	void initText(Font *big, Font *small, Language *lang) override;
 	/// Sets the background surface.
 	void setBackground(Surface *bg);
 	/// Sets the border color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the border color.
 	Uint8 getColor() const;
 	/// Sets the high contrast color setting.
-	void setHighContrast(bool contrast);
+	void setHighContrast(bool contrast) override;
 	/// Sets the arrow color of the text list.
 	void setArrowColor(Uint8 color);
 	/// Gets the selected option in the list.
@@ -86,20 +85,20 @@ public:
 	/// Gets the item that is currently hovered over in the popup list, or the current
 	/// selected item if no item is hovered over.
 	size_t getHoveredListIdx() const;
+	/// Sets the button text without changing the selected option
+	void setText(const std::string &text);
 	/// Sets the selected option in the list.
 	void setSelected(size_t sel);
 	/// Sets the list of options.
-	void setOptions(const std::vector<std::string> &options);
-	/// Sets the list of options.
-	void setOptions(const std::vector<std::wstring> &options);
+	void setOptions(const std::vector<std::string> &options, bool translate = false);
 	/// Blits the combo box onto another surface.
-	void blit(Surface *surface);	
+	void blit(SDL_Surface *surface) override;
 	/// Thinks arrow buttons.
-	void think();
+	void think() override;
 	/// Handle arrow buttons.
-	void handle(Action *action, State *state);
+	void handle(Action *action, State *state) override;
 	/// Toggles the combo box state.
-	void toggle(bool first = false);
+	void toggle(bool first, bool listClick);
 	/// Hooks an action handler to when the slider changes.
 	void onChange(ActionHandler handler);
 	/// Hooks an action handler to moving the mouse in to the listbox when it is visible.
@@ -111,5 +110,3 @@ public:
 };
 
 }
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,16 +20,14 @@
 #include "MedikitView.h"
 #include "../Engine/InteractiveSurface.h"
 #include "../Engine/Game.h"
-#include "../Engine/Language.h"
 #include "../Engine/Action.h"
 #include "../Engine/Palette.h"
 #include "../Interface/Text.h"
 #include "../Engine/Screen.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Resource/ResourcePack.h"
-#include <iostream>
+#include "../Mod/RuleItem.h"
+#include "../Mod/Mod.h"
 #include <sstream>
 #include "../Engine/Options.h"
 #include "../Savegame/SavedGame.h"
@@ -45,9 +43,9 @@ namespace OpenXcom
  * @return A string representation of the value.
  */
 template<typename type>
-std::wstring toString (type t)
+std::string toString (type t)
 {
-	std::wostringstream ss;
+	std::ostringstream ss;
 	ss << t;
 	return ss.str();
 }
@@ -59,7 +57,7 @@ class MedikitTitle : public Text
 {
 public:
 	/// Creates a medikit title.
-	MedikitTitle(int y, const std::wstring & title);
+	MedikitTitle(int y, const std::string & title);
 };
 
 /**
@@ -67,7 +65,7 @@ public:
  * @param y The title's y origin.
  * @param title The title.
  */
-MedikitTitle::MedikitTitle (int y, const std::wstring & title) : Text (73, 9, 186, y)
+MedikitTitle::MedikitTitle (int y, const std::string & title) : Text (73, 9, 186, y)
 {
 	this->setText(title);
 	this->setHighContrast(true);
@@ -152,7 +150,7 @@ MedikitState::MedikitState (BattleUnit *targetUnit, BattleAction *action, TileEn
 	_healTxt = new MedikitTxt (124);
 	add(_bg);
 	add(_medikitView, "body", "medikit", _bg);
-	add(_endButton);
+	add(_endButton, "buttonEnd", "medikit", _bg);
 	add(new MedikitTitle (37, tr("STR_PAIN_KILLER")), "textPK", "medikit", _bg);
 	add(new MedikitTitle (73, tr("STR_STIMULANT")), "textStim", "medikit", _bg);
 	add(new MedikitTitle (109, tr("STR_HEAL")), "textHeal", "medikit", _bg);
@@ -167,7 +165,17 @@ MedikitState::MedikitState (BattleUnit *targetUnit, BattleAction *action, TileEn
 
 	centerAllSurfaces();
 
-	_game->getResourcePack()->getSurface("MEDIBORD.PCK")->blit(_bg);
+	Surface *backgroundSprite = 0;
+	if (!_item->getRules()->getMediKitCustomBackground().empty())
+	{
+		backgroundSprite = _game->getMod()->getSurface(_item->getRules()->getMediKitCustomBackground(), false);
+	}
+	if (!backgroundSprite)
+	{
+		backgroundSprite = _game->getMod()->getSurface("MEDIBORD.PCK");
+	}
+
+	backgroundSprite->blitNShade(_bg, 0, 0);
 	_pkText->setBig();
 	_stimulantTxt->setBig();
 	_healTxt->setBig();
@@ -188,7 +196,7 @@ MedikitState::MedikitState (BattleUnit *targetUnit, BattleAction *action, TileEn
 void MedikitState::handle(Action *action)
 {
 	State::handle(action);
-	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	if (action->getDetails()->type == SDL_MOUSEBUTTONDOWN && _game->isRightClick(action))
 	{
 		onEndClick(0);
 	}
@@ -202,10 +210,11 @@ void MedikitState::onEndClick(Action *)
 {
 	if (Options::maximizeInfoScreens)
 	{
-		Screen::updateScale(Options::battlescapeScale, Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
+		Screen::updateScale(Options::battlescapeScale, Options::baseXBattlescape, Options::baseYBattlescape, true);
 		_game->getScreen()->resetDisplay(false);
 	}
 	_game->popState();
+	_tileEngine->medikitRemoveIfEmpty(_action);
 }
 
 /**
@@ -221,10 +230,14 @@ void MedikitState::onHealClick(Action *)
 
 	if (_action->spendTU(&_action->result))
 	{
-		_tileEngine->medikitHeal(_action, _targetUnit, _medikitView->getSelectedPart());
+		bool canContinueHealing = _tileEngine->medikitUse(_action, _targetUnit, BMA_HEAL, (UnitBodyPart)_medikitView->getSelectedPart());
 		_medikitView->updateSelectedPart();
 		_medikitView->invalidate();
 		update();
+		if (!canContinueHealing)
+		{
+			onEndClick(0);
+		}
 	}
 	else
 	{
@@ -245,11 +258,9 @@ void MedikitState::onStimulantClick(Action *)
 
 	if (_action->spendTU(&_action->result))
 	{
-		_tileEngine->medikitStimulant(_action, _targetUnit);
+		bool canContinueHealing = _tileEngine->medikitUse(_action, _targetUnit, BMA_STIMULANT, BODYPART_TORSO);
 		update();
-
-		// if the unit has revived we quit this screen automatically
-		if (_targetUnit->getStatus() == STATUS_UNCONSCIOUS && _targetUnit->getStunlevel() < _targetUnit->getHealth() && _targetUnit->getHealth() > 0)
+		if (!canContinueHealing)
 		{
 			onEndClick(0);
 		}
@@ -273,8 +284,12 @@ void MedikitState::onPainKillerClick(Action *)
 
 	if (_action->spendTU(&_action->result))
 	{
-		_tileEngine->medikitPainKiller(_action, _targetUnit);
+		bool canContinueHealing = _tileEngine->medikitUse(_action, _targetUnit, BMA_PAINKILLER, BODYPART_TORSO);
 		update();
+		if (!canContinueHealing)
+		{
+			onEndClick(0);
+		}
 	}
 	else
 	{

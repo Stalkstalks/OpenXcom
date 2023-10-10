@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -27,11 +27,13 @@ const int Explosion::BULLET_FRAMES = 10;
 /**
  * Sets up a Explosion sprite with the specified size and position.
  * @param position Explosion center position in voxel x/y/z.
- * @param startFrame A startframe - can be used to offset different explosions at different frames.
+ * @param startFrame A start frame - can be used to offset different explosions at different frames.
  * @param big Flag to indicate it is a bullet hit (false), or a real explosion (true).
  * @param hit True for melee and psi attacks.
+ * @param frames Override for number of frames in the animation.
  */
-Explosion::Explosion(Position position, int startFrame, int frameDelay, bool big, bool hit) : _position(position), _currentFrame(startFrame), _startFrame(startFrame), _frameDelay(frameDelay), _big(big), _hit(hit)
+Explosion::Explosion(Position position, int startFrame, int frameDelay, bool big, bool hit, int frames) :
+	_position(position), _currentFrame(startFrame), _startFrame(startFrame), _frameDelay(frameDelay), _big(big), _hit(hit), _frames(frames)
 {
 
 }
@@ -56,10 +58,24 @@ bool Explosion::animate()
 		return true;
 	}
 
+	if (_frames <= 0)
+	{
+		if (_hit)
+		{
+			_frames = HIT_FRAMES;
+		}
+		else if (_big)
+		{
+			_frames = EXPLODE_FRAMES;
+		}
+		else
+		{
+			_frames = BULLET_FRAMES;
+		}
+	}
+
 	_currentFrame++;
-	if ((_hit && _currentFrame == _startFrame + HIT_FRAMES) ||
-		(_big && _currentFrame == _startFrame + EXPLODE_FRAMES) ||
-		(!_big && !_hit && _currentFrame == _startFrame + BULLET_FRAMES))
+	if (_currentFrame == _startFrame + _frames)
 	{
 		return false;
 	}
@@ -106,4 +122,5 @@ bool Explosion::isHit() const
 {
 	return _hit;
 }
+
 }

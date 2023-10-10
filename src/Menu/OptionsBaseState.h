@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_OPTIONSBASESTATE_H
-#define OPENXCOM_OPTIONSBASESTATE_H
-
 #include "../Engine/State.h"
 #include <string>
 
@@ -45,7 +43,7 @@ class OptionsBaseState : public State
 protected:
 	OptionsOrigin _origin;
 	Window *_window;
-	TextButton *_btnVideo, *_btnAudio, *_btnControls, *_btnGeoscape, *_btnBattlescape, *_btnAdvanced, *_btnMods;
+	TextButton *_btnVideo, *_btnAudio, *_btnControls, *_btnGeoscape, *_btnBattlescape, *_btnAdvanced, *_btnFolders;
 	TextButton *_btnOk, *_btnCancel, *_btnDefault;
 	Text *_txtTooltip;
 	std::string _currentTooltip;
@@ -58,7 +56,7 @@ public:
 	/// Restarts the game states.
 	static void restart(OptionsOrigin origin);
 	/// Initializes palettes.
-	void init();
+	void init() override;
 	/// Presses a certain category button.
 	void setCategory(TextButton *button);
 	/// Handler for clicking the OK button.
@@ -74,9 +72,7 @@ public:
 	/// Handler for hiding tooltip.
 	void txtTooltipOut(Action *action);
 	/// Update the resolution settings, we just resized the window.
-	void resize(int &dX, int &dY);
+	void resize(int &dX, int &dY) override;
 };
 
 }
-
-#endif

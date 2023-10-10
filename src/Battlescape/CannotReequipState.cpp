@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,31 +19,32 @@
 #include "CannotReequipState.h"
 #include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextList.h"
-#include "../Savegame/SavedGame.h"
-#include "../Savegame/Base.h"
-#include "../Savegame/Soldier.h"
 #include "../Engine/Options.h"
+#include "../Savegame/Base.h"
+#include "../Basescape/ManufactureState.h"
+#include "../Basescape/PurchaseState.h"
 
 namespace OpenXcom
 {
 
 /**
  * Initializes all the elements in the Cannot Reequip screen.
- * @param game Pointer to the core game.
  * @param missingItems List of items still needed for reequip.
+ * @param base Relevant xcom base.
  */
-CannotReequipState::CannotReequipState(std::vector<ReequipStat> missingItems)
+CannotReequipState::CannotReequipState(std::vector<ReequipStat> &missingItems, Base *base) : _missingItems(missingItems), _base(base)
 {
 	// Create objects
 	_window = new Window(this, 320, 200, 0, 0);
-	_btnOk = new TextButton(120, 18, 100, 174);
+	_btnManufacture = new TextButton(128, 14, 10, 178);
+	_btnPurchase = new TextButton(128, 14, 144, 178);
+	_btnOk = new TextButton(34, 14, 278, 178);
 	_txtTitle = new Text(220, 32, 50, 8);
 	_txtItem = new Text(142, 9, 10, 50);
 	_txtQuantity = new Text(88, 9, 152, 50);
@@ -54,6 +55,8 @@ CannotReequipState::CannotReequipState(std::vector<ReequipStat> missingItems)
 	setInterface("cannotReequip");
 
 	add(_window, "window", "cannotReequip");
+	add(_btnManufacture, "button", "cannotReequip");
+	add(_btnPurchase, "button", "cannotReequip");
 	add(_btnOk, "button", "cannotReequip");
 	add(_txtTitle, "heading", "cannotReequip");
 	add(_txtItem, "text", "cannotReequip");
@@ -64,7 +67,13 @@ CannotReequipState::CannotReequipState(std::vector<ReequipStat> missingItems)
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "cannotReequip");
+
+	_btnManufacture->setText(tr("STR_MANUFACTURE"));
+	_btnManufacture->onMouseClick((ActionHandler)&CannotReequipState::btnManufactureClick);
+
+	_btnPurchase->setText(tr("STR_PURCHASE_RECRUIT"));
+	_btnPurchase->onMouseClick((ActionHandler)&CannotReequipState::btnPurchaseClick);
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&CannotReequipState::btnOkClick);
@@ -86,13 +95,6 @@ CannotReequipState::CannotReequipState(std::vector<ReequipStat> missingItems)
 	_lstItems->setSelectable(true);
 	_lstItems->setBackground(_window);
 	_lstItems->setMargin(2);
-
-	for (std::vector<ReequipStat>::iterator i = missingItems.begin(); i != missingItems.end(); ++i)
-	{
-		std::wostringstream ss;
-		ss << i->qty;
-		_lstItems->addRow(3, tr(i->item).c_str(), ss.str().c_str(), i->craft.c_str());
-	}
 }
 
 /**
@@ -103,12 +105,75 @@ CannotReequipState::~CannotReequipState()
 }
 
 /**
+ * Resets stuff when coming back from other screens.
+ */
+void CannotReequipState::init()
+{
+	State::init();
+
+	_lstItems->clearList();
+
+	for (const auto& reequipStat : _missingItems)
+	{
+		if (reequipStat.qty > 0)
+		{
+			std::ostringstream ss;
+			ss << reequipStat.qty;
+			_lstItems->addRow(3, tr(reequipStat.item).c_str(), ss.str().c_str(), reequipStat.craft.c_str());
+		}
+	}
+}
+
+/**
  * Returns to the previous screen.
  * @param action Pointer to an action.
  */
 void CannotReequipState::btnOkClick(Action *)
 {
 	_game->popState();
+}
+
+/**
+ * Goes to the Manufacture screen.
+ * @param action Pointer to an action.
+ */
+void CannotReequipState::btnManufactureClick(Action *)
+{
+	_game->pushState(new ManufactureState(_base));
+}
+
+/**
+ * Goes to the Purchase screen.
+ * @param action Pointer to an action.
+ */
+void CannotReequipState::btnPurchaseClick(Action *)
+{
+	_game->pushState(new PurchaseState(_base, this));
+}
+
+/**
+ * Gets the list of missing items.
+ */
+const std::vector<ReequipStat>& CannotReequipState::getMissingItems() const
+{
+	return _missingItems;
+}
+
+/**
+ * Decreases the number of missing items by the bought amount.
+ * @param rule Type of item.
+ * @param amount Number of items bought.
+ */
+void CannotReequipState::decreaseMissingItemCount(const RuleItem* rule, int amount)
+{
+	for (auto& reequipStat : _missingItems)
+	{
+		if (reequipStat.item == rule->getType())
+		{
+			reequipStat.qty = std::max(0, reequipStat.qty - amount);
+			break;
+		}
+	}
 }
 
 }

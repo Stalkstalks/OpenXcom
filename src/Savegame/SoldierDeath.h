@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,16 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SOLDIERDEATH_H
-#define OPENXCOM_SOLDIERDEATH_H
-
 #include <yaml-cpp/yaml.h>
 #include "GameTime.h"
 
 namespace OpenXcom
 {
 
-class GameTime;
+struct BattleUnitKills;
 
 /**
  * Stores info about a soldier's death.
@@ -34,9 +32,11 @@ class SoldierDeath
 {
 private:
 	GameTime _time;
+	BattleUnitKills *_cause;
 public:
+	SoldierDeath() : _time(0, 0, 0, 0, 0, 0, 0), _cause(0) {}
 	/// Creates a death.
-	SoldierDeath();
+	SoldierDeath(GameTime time, BattleUnitKills *cause);
 	/// Cleans up the death.
 	~SoldierDeath();
 	/// Loads the death from YAML.
@@ -45,10 +45,8 @@ public:
 	YAML::Node save() const;
 	/// Gets the death time.
 	const GameTime *getTime() const;
-	/// Sets the death time.
-	void setTime(GameTime time);
+	/// Gets the death cause.
+	const BattleUnitKills *getCause() const;
 };
 
 }
-
-#endif

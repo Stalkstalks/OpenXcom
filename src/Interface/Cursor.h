@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CURSOR_H
-#define OPENXCOM_CURSOR_H
-
 #include "../Engine/Surface.h"
 
 namespace OpenXcom
@@ -44,13 +42,11 @@ public:
 	/// Handles mouse events.
 	void handle(Action *action);
 	/// Sets the cursor's color.
-	void setColor(Uint8 color);
+	void setColor(Uint8 color) override;
 	/// Gets the cursor's color.
 	Uint8 getColor() const;
 	/// Draws the cursor.
-	void draw();
+	void draw() override;
 };
 
 }
-
-#endif

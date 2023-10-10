@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -20,6 +20,8 @@
 #include "GMCat.h"
 #include <vector>
 #include "Music.h"
+#include "Logger.h"
+#include "SDL2Helpers.h"
 
 namespace OpenXcom
 {
@@ -111,7 +113,7 @@ static inline void gmext_write_delta (std::vector<unsigned char> &midi,
 	do {
 		data[i++] = delta & 0x7F;
 		delta >>= 7;
-	} while (delta > 0);
+	} while (delta > 0 && i <= 3);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
@@ -361,33 +363,32 @@ static int gmext_write_midi (const struct gmstream *stream,
 Music *GMCatFile::loadMIDI(unsigned int i)
 {
 	Music *music = new Music;
+	auto cat_rwops = getRWops(i);
 
-	unsigned char *raw = static_cast<unsigned char*> ((void*)load(i));
-
-	if (!raw)
-		return music;
+	if (!cat_rwops) { throw("Can't get GMcat object"); }
 
 	// stream info
 	struct gmstream stream;
-	if (gmext_read_stream(&stream, getObjectSize(i), raw) == -1) {
-		delete[] raw;
+	memset(&stream, 0, sizeof(stream));
+	size_t size;
+	auto nameskip = SDL_ReadU8(cat_rwops) + 1;
+	SDL_RWseek(cat_rwops, RW_SEEK_SET, 0);
+	auto data = (unsigned char *)SDL_LoadFile_RW(cat_rwops, &size, SDL_TRUE);
+	if (gmext_read_stream(&stream, size - nameskip, data + nameskip) == -1) {
+		Log(LOG_ERROR) << "GMCatFile::loadMIDI("<<fileName()<<", "<<i<<"): Error reading MIDI stream";
 		return music;
 	}
 
 	std::vector<unsigned char> midi;
-	midi.reserve(65536);
+	midi.reserve(65536);	// FIXME: well... what is this
 
-	// fields in stream still point into raw
 	if (gmext_write_midi(&stream, midi) == -1) {
-		delete[] raw;
-		return music;
+		Log(LOG_ERROR) << "GMCatFile::loadMIDI("<<fileName()<<", "<<i<<"): Error writing MIDI stream";
+	} else {
+		music->load(SDL_RWFromConstMem(midi.data(), midi.size()));
 	}
-
-	delete[] raw;
-
-	music->load(&midi[0], midi.size());
-
+	Log(LOG_VERBOSE) << "GMCatFile::loadMIDI("<<fileName()<<", "<<i<<"): loaded ok.";
+	SDL_free(data);
 	return music;
 }
-
 }

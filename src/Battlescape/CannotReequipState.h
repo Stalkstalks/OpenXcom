@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CANNOTREEQUIPSTATE_H
-#define OPENXCOM_CANNOTREEQUIPSTATE_H
-
 #include "../Engine/State.h"
 #include "DebriefingState.h"
 #include <vector>
@@ -30,6 +28,7 @@ class TextButton;
 class Window;
 class Text;
 class TextList;
+class Base;
 
 /**
  * Screen shown when there's not enough equipment
@@ -38,19 +37,30 @@ class TextList;
 class CannotReequipState : public State
 {
 private:
-	TextButton *_btnOk;
+	std::vector<ReequipStat> _missingItems;
+	Base *_base;
+
+	TextButton *_btnOk, *_btnManufacture, *_btnPurchase;
 	Window *_window;
 	Text *_txtTitle, *_txtItem, *_txtQuantity, *_txtCraft;
 	TextList *_lstItems;
 public:
 	/// Creates the Cannot Reequip state.
-	CannotReequipState(std::vector<ReequipStat> missingItems);
+	CannotReequipState(std::vector<ReequipStat> &missingItems, Base *base);
 	/// Cleans up the Cannot Reequip state.
 	~CannotReequipState();
+	/// Resets state.
+	void init() override;
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handler for clicking the Manufacture button.
+	void btnManufactureClick(Action *action);
+	/// Handler for clicking the Purchase/Hire button.
+	void btnPurchaseClick(Action *action);
+	/// Gets the list of missing items.
+	const std::vector<ReequipStat>& getMissingItems() const;
+	// Decreases the number of missing items by the bought amount.
+	void decreaseMissingItemCount(const RuleItem* rule, int amount);
 };
 
 }
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,18 +19,13 @@
 #include "PsiAttackBState.h"
 #include "ExplosionBState.h"
 #include "BattlescapeGame.h"
-#include "BattlescapeState.h"
 #include "TileEngine.h"
-#include "InfoboxState.h"
 #include "Map.h"
 #include "Camera.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Engine/Game.h"
-#include "../Engine/RNG.h"
-#include "../Engine/Language.h"
-#include "../Engine/Sound.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
+#include "../Savegame/BattleUnitStatistics.h"
 
 namespace OpenXcom
 {
@@ -38,7 +33,7 @@ namespace OpenXcom
 /**
  * Sets up a PsiAttackBState.
  */
-PsiAttackBState::PsiAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _item(0), _initialized(false)
+PsiAttackBState::PsiAttackBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _target(0), _item(0), _initialized(false)
 {
 }
 
@@ -77,7 +72,8 @@ void PsiAttackBState::init()
 
 	_unit = _action.actor;
 
-	if (_parent->getTileEngine()->distance(_action.actor->getPosition(), _action.target) > _action.weapon->getRules()->getMaxRange())
+	int distanceSq = _action.actor->distance3dToPositionSq(_action.target);
+	if (_action.weapon->getRules()->isOutOfRange(distanceSq))
 	{
 		// out of range
 		_action.result = "STR_OUT_OF_RANGE";
@@ -100,8 +96,8 @@ void PsiAttackBState::init()
 	}
 
 	int height = _target->getFloatHeight() + (_target->getHeight() / 2) - _parent->getSave()->getTile(_action.target)->getTerrainLevel();
-	Position voxel = _action.target.toVexel() + Position(8, 8, height);
-	_parent->statePushFront(new ExplosionBState(_parent, voxel, _action.type, _item, _unit));
+	Position voxel = _action.target.toVoxel() + Position(8, 8, height);
+	_parent->statePushFront(new ExplosionBState(_parent, voxel, BattleActionAttack::GetAferShoot(_action, _action.weapon)));
 }
 
 

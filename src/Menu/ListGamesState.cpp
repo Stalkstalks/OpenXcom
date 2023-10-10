@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,18 +16,18 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <algorithm>
+#include <functional>
 #include "ListGamesState.h"
-#include <utility>
 #include "../Engine/Logger.h"
 #include "../Savegame/SavedGame.h"
 #include "../Engine/Game.h"
 #include "../Engine/Action.h"
 #include "../Engine/Exception.h"
 #include "../Engine/Options.h"
-#include "../Engine/CrossPlatform.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/Unicode.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -38,8 +38,12 @@
 namespace OpenXcom
 {
 
-struct compareSaveName : public std::binary_function<SaveInfo&, SaveInfo&, bool>
+struct compareSaveName
 {
+	typedef SaveInfo& first_argument_type;
+	typedef SaveInfo& second_argument_type;
+	typedef bool result_type;
+
 	bool _reverse;
 
 	compareSaveName(bool reverse) : _reverse(reverse) {}
@@ -48,7 +52,7 @@ struct compareSaveName : public std::binary_function<SaveInfo&, SaveInfo&, bool>
 	{
 		if (a.reserved == b.reserved)
 		{
-			return CrossPlatform::naturalCompare(a.displayName, b.displayName);
+			return Unicode::naturalCompare(a.displayName, b.displayName);
 		}
 		else
 		{
@@ -57,8 +61,12 @@ struct compareSaveName : public std::binary_function<SaveInfo&, SaveInfo&, bool>
 	}
 };
 
-struct compareSaveTimestamp : public std::binary_function<SaveInfo&, SaveInfo&, bool>
+struct compareSaveTimestamp
 {
+	typedef SaveInfo& first_argument_type;
+	typedef SaveInfo& second_argument_type;
+	typedef bool result_type;
+
 	bool _reverse;
 
 	compareSaveTimestamp(bool reverse) : _reverse(reverse) {}
@@ -100,7 +108,7 @@ ListGamesState::ListGamesState(OptionsOrigin origin, int firstValidRow, bool aut
 	_sortDate = new ArrowButton(ARROW_NONE, 11, 8, 204, 32);
 
 	// Set palette
-	setInterface("geoscape", true, _origin == OPT_BATTLESCAPE);
+	setInterface("geoscape", true, _game->getSavedGame() ? _game->getSavedGame()->getSavedBattle() : 0);
 
 	add(_window, "window", "saveMenus");
 	add(_btnCancel, "button", "saveMenus");
@@ -114,9 +122,9 @@ ListGamesState::ListGamesState(OptionsOrigin origin, int firstValidRow, bool aut
 	add(_sortDate, "text", "saveMenus");
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "saveMenus");
 
-	_btnCancel->setText(tr("STR_CANCEL_UC"));
+	_btnCancel->setText(tr("STR_CANCEL"));
 	_btnCancel->onMouseClick((ActionHandler)&ListGamesState::btnCancelClick);
 	_btnCancel->onKeyboardPress((ActionHandler)&ListGamesState::btnCancelClick, Options::keyCancel);
 
@@ -139,7 +147,7 @@ ListGamesState::ListGamesState(OptionsOrigin origin, int firstValidRow, bool aut
 	_lstSaves->onMousePress((ActionHandler)&ListGamesState::lstSavesPress);
 
 	_txtDetails->setWordWrap(true);
-	_txtDetails->setText(tr("STR_DETAILS").arg(L""));
+	_txtDetails->setText(tr("STR_DETAILS").arg(""));
 
 	_sortName->setX(_sortName->getX() + _txtName->getTextWidth() + 5);
 	_sortName->onMouseClick((ActionHandler)&ListGamesState::sortNameClick);
@@ -167,7 +175,7 @@ void ListGamesState::init()
 
 	if (_origin == OPT_BATTLESCAPE)
 	{
-		applyBattlescapeTheme();
+		applyBattlescapeTheme("saveMenus");
 	}
 
 	try
@@ -239,10 +247,10 @@ void ListGamesState::updateList()
 {
 	int row = 0;
 	int color = _lstSaves->getSecondaryColor();
-	for (std::vector<SaveInfo>::const_iterator i = _saves.begin(); i != _saves.end(); ++i)
+	for (const auto& saveInfo : _saves)
 	{
-		_lstSaves->addRow(3, i->displayName.c_str(), i->isoDate.c_str(), i->isoTime.c_str());
-		if (i->reserved && _origin != OPT_BATTLESCAPE)
+		_lstSaves->addRow(3, saveInfo.displayName.c_str(), saveInfo.isoDate.c_str(), saveInfo.isoTime.c_str());
+		if (saveInfo.reserved && _origin != OPT_BATTLESCAPE)
 		{
 			_lstSaves->setRowColor(row, color);
 		}
@@ -266,7 +274,7 @@ void ListGamesState::btnCancelClick(Action *)
 void ListGamesState::lstSavesMouseOver(Action *)
 {
 	int sel = _lstSaves->getSelectedRow() - _firstValidRow;
-	std::wstring wstr;
+	std::string wstr;
 	if (sel >= 0 && sel < (int)_saves.size())
 	{
 		wstr = _saves[sel].details;
@@ -280,7 +288,7 @@ void ListGamesState::lstSavesMouseOver(Action *)
  */
 void ListGamesState::lstSavesMouseOut(Action *)
 {
-	_txtDetails->setText(tr("STR_DETAILS").arg(L""));
+	_txtDetails->setText(tr("STR_DETAILS").arg(""));
 }
 
 /**

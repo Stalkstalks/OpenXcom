@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,20 +21,15 @@
 #include "BattlescapeState.h"
 #include "Explosion.h"
 #include "TileEngine.h"
-#include "UnitDieBState.h"
 #include "Map.h"
 #include "Camera.h"
-#include "../Engine/Game.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/BattleItem.h"
-#include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Sound.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/Armor.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleItem.h"
+#include "../Mod/Armor.h"
 #include "../Engine/RNG.h"
 
 namespace OpenXcom
@@ -49,13 +44,14 @@ namespace OpenXcom
  * @param tile Tile the explosion is on.
  * @param lowerWeapon Whether the unit causing this explosion should now lower their weapon.
  * @param range Distance between weapon and target.
+ * @param explosionCounter Counter for chain terrain explosions.
+ * @param terrainMeleeTilePart Tile part for terrain melee.
  */
-ExplosionBState::ExplosionBState(BattlescapeGame *parent, Position center, BattleActionType action, BattleItem *item, BattleUnit *unit, Tile *tile, bool lowerWeapon, int range) : BattleState(parent), _unit(unit), _center(center), _item(item), _damageType(), _tile(tile), _power(0), _radius(6), _range(range), _areaOfEffect(false), _lowerWeapon(lowerWeapon), _pistolWhip(false), _hit(false)
+ExplosionBState::ExplosionBState(BattlescapeGame *parent, LastPositions center, BattleActionAttack attack, Tile *tile, bool lowerWeapon, int range, int explosionCounter, int terrainMeleeTilePart) : BattleState(parent),
+	_explosionCounter(explosionCounter), _terrainMeleeTilePart(terrainMeleeTilePart), _attack(attack), _center(center.last), _before(center.before), _damageType(), _tile(tile), _targetPsiOrHit(nullptr),
+	_power(0), _radius(6), _range(range), _areaOfEffect(false), _lowerWeapon(lowerWeapon), _hit(false), _psi(false)
 {
-	_action.type = action;
-	_action.weapon = item;
-	_action.actor = unit;
-	_action.target = center.toTile();
+
 }
 
 /**
@@ -87,50 +83,59 @@ void ExplosionBState::optValue(int& oldValue, int newValue) const
 void ExplosionBState::init()
 {
 	BattleType type = BT_NONE;
-	BattleActionType action = _action.type;
-	RuleItem* itemRule = 0;
+	BattleActionType action = _attack.type;
+	const RuleItem* itemRule = 0;
 	bool miss = false;
-	if (_item)
+	if (_attack.damage_item)
 	{
-		itemRule = _item->getRules();
+		itemRule = _attack.damage_item->getRules();
 		type = itemRule->getBattleType();
 
 		_power = 0;
-		_pistolWhip = (type != BT_MELEE && action == BA_HIT);
-		if (_pistolWhip)
+		_hit = action == BA_HIT;
+		_psi = type == BT_PSIAMP && action != BA_USE && !_hit;
+		if (_hit && type != BT_MELEE)
 		{
-			_power += itemRule->getMeleePower();
-			_power += itemRule->getMeleeBonus(_unit);
+			_power += itemRule->getMeleeBonus(_attack);
 
 			_radius = 0;
 			_damageType = itemRule->getMeleeType();
 		}
 		else
 		{
-			_power += itemRule->getPower();
-			_power += itemRule->getPowerBonus(_unit);
+			_power += itemRule->getPowerBonus(_attack);
 			_power -= itemRule->getPowerRangeReduction(_range);
 
-			_radius = itemRule->getExplosionRadius();
+			_radius = itemRule->getExplosionRadius(_attack);
 			_damageType = itemRule->getDamageType();
 		}
 
+		if (type == BT_PSIAMP || _hit)
+		{
+			Position targetPos = _center.toTile();
+			_targetPsiOrHit = _parent->getSave()->getTile(targetPos)->getOverlappingUnit(_parent->getSave());
+		}
+
 		//testing if we hit target
-		if (type == BT_PSIAMP)
+		if (type == BT_PSIAMP && !_hit)
 		{
 			if (action != BA_USE)
 			{
 				_power = 0;
 			}
-			if (!_parent->psiAttack(&_action))
+			if (!_parent->getTileEngine()->psiAttack(_attack, _targetPsiOrHit))
 			{
 				_power = 0;
 				miss = true;
 			}
+			else
+			{
+				_parent->psiAttackMessage(_attack, _targetPsiOrHit);
+			}
 		}
-		else if (type == BT_MELEE || _pistolWhip)
+		else if (type == BT_MELEE || _hit)
 		{
-			if (!_parent->getTileEngine()->meleeAttack(&_action))
+			if (!_parent->getTileEngine()->meleeAttack(_attack, _targetPsiOrHit, _terrainMeleeTilePart))
 			{
 				_power = 0;
 				miss = true;
@@ -144,10 +149,9 @@ void ExplosionBState::init()
 			}
 		}
 
-		_areaOfEffect = type != BT_MELEE &&
-						itemRule->getExplosionRadius() != 0 &&
+		_areaOfEffect = type != BT_MELEE && _radius != 0 &&
 						(type != BT_PSIAMP || action == BA_USE) &&
-						!_pistolWhip && !miss;
+						!_hit && !miss;
 	}
 	else if (_tile)
 	{
@@ -169,19 +173,25 @@ void ExplosionBState::init()
 		}
 		_power = _tile->getExplosive();
 		_tile->setExplosive(0, 0, true);
-		_damageType = _parent->getRuleset()->getDamageType(DT);
+		_damageType = _parent->getMod()->getDamageType(DT);
 		_radius = _power /10;
 		_areaOfEffect = true;
 	}
-	else if (_unit && (_unit->getSpecialAbility() == SPECAB_EXPLODEONDEATH || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE))
+	else if (_attack.type == BA_SELF_DESTRUCT)
 	{
-		RuleItem* corpse = _parent->getRuleset()->getItem(_unit->getArmor()->getCorpseGeoscape());
-		_power = corpse->getPower();
-		_power += corpse->getPowerBonus(_unit);
-		_damageType = corpse->getDamageType();
-		_radius = corpse->getExplosionRadius();
 		_areaOfEffect = true;
-		if (!RNG::percent(corpse->getSpecialChance()))
+		if (_attack.attacker)
+		{
+			itemRule = _attack.attacker->getArmor()->getCorpseGeoscape(); //TODO: not getCorpseBattlescape ones?
+			_power = itemRule->getPowerBonus(_attack);
+			_damageType = itemRule->getDamageType();
+			_radius = itemRule->getExplosionRadius(_attack);
+			if (!RNG::percent(itemRule->getSpecialChance()))
+			{
+				_power = 0;
+			}
+		}
+		else
 		{
 			_power = 0;
 		}
@@ -189,34 +199,50 @@ void ExplosionBState::init()
 	else
 	{
 		_power = 120;
-		_damageType = _parent->getRuleset()->getDamageType(DT_HE);
+		_damageType = _parent->getMod()->getDamageType(DT_HE);
 		_areaOfEffect = true;
 	}
 
-	Tile *t = _parent->getSave()->getTile(_action.target);
+
+	bool range = !(_hit || (_attack.weapon_item && _attack.weapon_item->getRules()->getBattleType() == BT_PSIAMP));
+
 	if (_areaOfEffect)
 	{
 		if (_power > 0)
 		{
-			int frame = ResourcePack::EXPLOSION_OFFSET;
-			if (_item)
+			_parent->getSave()->getTileEngine()->explode(_attack, _center, _power, _damageType, _radius, range);
+
+			int powerForAnimation = _power;
+			if (itemRule && itemRule->getPowerForAnimation() > 0)
+			{
+				powerForAnimation = itemRule->getPowerForAnimation();
+			}
+
+			int frame = Mod::EXPLOSION_OFFSET;
+			int frameCount = -1;
+			int sound = powerForAnimation <= 80 ? Mod::SMALL_EXPLOSION : Mod::LARGE_EXPLOSION;
+
+			if (itemRule)
 			{
 				frame = itemRule->getHitAnimation();
+				frameCount = itemRule->getHitAnimationFrames();
+				optValue(sound, itemRule->getExplosionHitSound());
 			}
 			if (_parent->getDepth() > 0)
 			{
-				frame -= Explosion::EXPLODE_FRAMES;
+				frame -= (frameCount > 0 ? frameCount : Explosion::EXPLODE_FRAMES);
 			}
 			int frameDelay = 0;
-			int counter = std::max(1, (_power/5) / 5);
+			int counter = std::max(1, (powerForAnimation / 5) / 5);
 			_parent->getMap()->setBlastFlash(true);
-			for (int i = 0; i < _power/5; i++)
+			int lowerLimit = std::max(1, powerForAnimation / 5);
+			for (int i = 0; i < lowerLimit; i++)
 			{
-				int X = RNG::generate(-_power/2,_power/2);
-				int Y = RNG::generate(-_power/2,_power/2);
+				int X = RNG::generate(-powerForAnimation / 2, powerForAnimation / 2);
+				int Y = RNG::generate(-powerForAnimation / 2, powerForAnimation / 2);
 				Position p = _center;
 				p.x += X; p.y += Y;
-				Explosion *explosion = new Explosion(p, frame, frameDelay, true);
+				Explosion *explosion = new Explosion(p, frame, frameDelay, true, false, frameCount);
 				// add the explosion on the map
 				_parent->getMap()->getExplosions()->push_back(explosion);
 				if (i > 0 && i % counter == 0)
@@ -224,13 +250,22 @@ void ExplosionBState::init()
 					frameDelay++;
 				}
 			}
-			_parent->setStateInterval(BattlescapeState::DEFAULT_ANIM_SPEED/2);
+			int explosionSpeed = BattlescapeState::DEFAULT_ANIM_SPEED/2;
+			if (itemRule)
+			{
+				explosionSpeed -= (10 * itemRule->getExplosionSpeed());
+			}
+			if (_explosionCounter > 6)
+			{
+				explosionSpeed = 1; // maximum animation speed for long chain terrain explosions
+			}
+			_parent->setStateInterval(std::max(1, explosionSpeed));
 			// explosion sound
-			int sound = _power <= 80 ? ResourcePack::SMALL_EXPLOSION : ResourcePack::LARGE_EXPLOSION;
-			if (_item) optValue(sound, itemRule->getExplosionHitSound());
 			_parent->playSound(sound);
-
-			_parent->getMap()->getCamera()->centerOnPosition(t->getPosition(), false);
+			if (_parent->getMap()->getFollowProjectile() || _explosionCounter > 0)
+			{
+				_parent->getMap()->getCamera()->centerOnPosition(_center.toTile(), false);
+			}
 		}
 		else
 		{
@@ -240,83 +275,105 @@ void ExplosionBState::init()
 	else
 	// create a bullet hit
 	{
+		_parent->getSave()->getTileEngine()->hit(_attack, _center, _power, _damageType, range, _terrainMeleeTilePart);
+
 		_parent->setStateInterval(std::max(1, ((BattlescapeState::DEFAULT_ANIM_SPEED/2) - (10 * itemRule->getExplosionSpeed()))));
-		_hit = _pistolWhip || type == BT_MELEE;
-		bool psi = type == BT_PSIAMP && action != BA_USE;
 		int anim = -1;
+		int animFrames = -1;
 		int sound = -1;
 
-		// melee weapon with ammo
-		BattleItem *ammo = !_pistolWhip && _hit ? _item->getAmmoItem() : 0;
+		const RuleItem *weaponRule = _attack.weapon_item->getRules();
+		const RuleItem *damageRule = _attack.weapon_item != _attack.damage_item ? itemRule : nullptr;
 
-		if (_hit || psi)
+		if (_hit || _psi)
 		{
-			anim = itemRule->getMeleeAnimation();
-			if (psi)
+			anim = weaponRule->getMeleeAnimation();
+			animFrames = weaponRule->getMeleeAnimationFrames();
+			if (_psi)
 			{
 				// psi attack sound is based weapon hit sound
-				sound = itemRule->getHitSound();
+				sound = weaponRule->getHitSound();
 
-				optValue(anim, itemRule->getPsiAnimation());
-				optValue(sound, itemRule->getPsiSound());
+				optValue(anim, weaponRule->getPsiAnimation());
+				optValue(animFrames, weaponRule->getPsiAnimationFrames());
+				optValue(sound, weaponRule->getPsiSound());
 			}
 			else
 			{
-				sound = itemRule->getMeleeSound();
-				if (ammo)
+				sound = weaponRule->getMeleeSound();
+				if (damageRule)
 				{
-					optValue(anim, ammo->getRules()->getMeleeAnimation());
-					optValue(sound, ammo->getRules()->getMeleeSound());
+					optValue(anim, damageRule->getMeleeAnimation());
+					optValue(animFrames, damageRule->getMeleeAnimationFrames());
+					optValue(sound, damageRule->getMeleeSound());
 				}
 			}
 		}
 		else
 		{
 			anim = itemRule->getHitAnimation();
+			animFrames = itemRule->getHitAnimationFrames();
 			sound = itemRule->getHitSound();
 		}
 
 		if (miss)
 		{
-			if (_hit || psi)
+			if (_hit || _psi)
 			{
-				optValue(anim, itemRule->getMeleeMissAnimation());
-				if (psi)
+				optValue(anim, weaponRule->getMeleeMissAnimation());
+				optValue(animFrames, weaponRule->getMeleeMissAnimationFrames());
+				if (_psi)
 				{
 					// psi attack sound is based weapon hit sound
-					optValue(sound, itemRule->getHitMissSound());
+					optValue(sound, weaponRule->getHitMissSound());
 
-					optValue(anim, itemRule->getPsiMissAnimation());
-					optValue(sound, itemRule->getPsiMissSound());
+					optValue(anim, weaponRule->getPsiMissAnimation());
+					optValue(animFrames, weaponRule->getPsiMissAnimationFrames());
+					optValue(sound, weaponRule->getPsiMissSound());
 				}
 				else
 				{
-					optValue(sound, itemRule->getMeleeMissSound());
-					if (ammo)
+					optValue(sound, weaponRule->getMeleeMissSound());
+					if (damageRule)
 					{
-						optValue(anim, ammo->getRules()->getMeleeMissAnimation());
-						optValue(sound, ammo->getRules()->getMeleeMissSound());
+						optValue(anim, damageRule->getMeleeMissAnimation());
+						optValue(animFrames, damageRule->getMeleeMissAnimationFrames());
+						optValue(sound, damageRule->getMeleeMissSound());
 					}
 				}
 			}
 			else
 			{
 				optValue(anim, itemRule->getHitMissAnimation());
+				optValue(animFrames, itemRule->getHitMissAnimationFrames());
 				optValue(sound, itemRule->getHitMissSound());
 			}
 		}
 
-		Explosion *explosion = new Explosion(_center, anim, 0, false, (_hit || psi)); // Don't burn the tile
-		_parent->getMap()->getExplosions()->push_back(explosion);
-		_parent->getMap()->getCamera()->setViewLevel(_center.z / 24);
-
-		BattleUnit *target = t->getUnit();
-		if ((_hit || psi) && _parent->getSave()->getSide() == FACTION_HOSTILE && target && target->getFaction() == FACTION_PLAYER)
+		if (anim != -1)
 		{
-			_parent->getMap()->getCamera()->centerOnPosition(t->getPosition(), false);
+			Explosion *explosion = new Explosion(_center, anim, 0, false, (_hit || _psi), animFrames); // Don't burn the tile
+			_parent->getMap()->getExplosions()->push_back(explosion);
+		}
+		if (_parent->getMap()->getFollowProjectile())
+		{
+			_parent->getMap()->getCamera()->setViewLevel(_center.z / 24);
+		}
+
+		if (_targetPsiOrHit && _parent->getSave()->getSide() == FACTION_HOSTILE && _targetPsiOrHit->getFaction() == FACTION_PLAYER)
+		{
+			_parent->getMap()->getCamera()->centerOnPosition(_center.toTile(), false);
 		}
 		// bullet hit sound
-		_parent->playSound(sound, _action.target);
+		_parent->playSound(sound, _center.toTile());
+	}
+
+	if (_attack.type == BA_SELF_DESTRUCT)
+	{
+		if (_attack.attacker)
+		{
+			_attack.attacker->setAlreadyExploded(false);
+		}
 	}
 }
 
@@ -328,12 +385,16 @@ void ExplosionBState::think()
 {
 	if (!_parent->getMap()->getBlastFlash())
 	{
-		for (std::list<Explosion*>::iterator i = _parent->getMap()->getExplosions()->begin(); i != _parent->getMap()->getExplosions()->end();)
+		if (_parent->getMap()->getExplosions()->empty())
+			explode();
+
+		for (auto iter = _parent->getMap()->getExplosions()->begin(); iter != _parent->getMap()->getExplosions()->end();)
 		{
-			if (!(*i)->animate())
+			Explosion* explosion = (*iter);
+			if (!explosion->animate())
 			{
-				delete (*i);
-				i = _parent->getMap()->getExplosions()->erase(i);
+				delete explosion;
+				iter = _parent->getMap()->getExplosions()->erase(iter);
 				if (_parent->getMap()->getExplosions()->empty())
 				{
 					explode();
@@ -342,7 +403,7 @@ void ExplosionBState::think()
 			}
 			else
 			{
-				++i;
+				++iter;
 			}
 		}
 	}
@@ -365,99 +426,74 @@ void ExplosionBState::explode()
 	// last minute adjustment: determine if we actually
 	if (_hit)
 	{
-		if (_unit && !_unit->isOut())
+		if (_attack.attacker && !_attack.attacker->isOut())
 		{
-			_unit->aim(false);
-			_unit->setCache(0);
+			_attack.attacker->aim(false);
 		}
 
 		if (_power <= 0)
 		{
-			_parent->getMap()->cacheUnits();
 			_parent->popState();
 			return;
 		}
 
-		int sound = _item->getRules()->getMeleeHitSound();
-		if (!_pistolWhip)
+		int sound = _attack.weapon_item->getRules()->getMeleeHitSound();
+		if (_attack.weapon_item != _attack.damage_item)
 		{
 			// melee weapon with ammo
-			BattleItem *ammo = _item->getAmmoItem();
-			if (ammo)
-			{
-				optValue(sound, ammo->getRules()->getMeleeHitSound());
-			}
+			optValue(sound, _attack.damage_item->getRules()->getMeleeHitSound());
 		}
-		_parent->playSound(sound, _action.target);
-	}
-	// after the animation is done, the real explosion/hit takes place
-	if (_item)
-	{
-		if (!_unit && _item->getPreviousOwner())
-		{
-			_unit = _item->getPreviousOwner();
-		}
-	}
-
-	bool range = !_hit || (_item && _item->getRules()->getBattleType() != BT_PSIAMP);
-
-	if (_areaOfEffect)
-	{
-		save->getTileEngine()->explode(_center, _power, _damageType, _radius, _unit, range);
-	}
-	else
-	{
-		BattleUnit *victim = save->getTileEngine()->hit(_center, _power, _damageType, _unit, range);
-		// check if this unit turns others into zombies
-		if (!_item->getRules()->getZombieUnit().empty()
-			&& RNG::percent(_item->getRules()->getSpecialChance())
-			&& victim
-			&& victim->getArmor()->getZombiImmune() == false
-			&& victim->getSpawnUnit().empty()
-			&& victim->getOriginalFaction() != FACTION_HOSTILE)
-		{
-			// converts the victim to a zombie on death
-			victim->setRespawn(true);
-			victim->setSpawnUnit(_item->getRules()->getZombieUnit());
-		}
+		_parent->playSound(sound, _center.toTile());
 	}
 
 	if (_tile)
 	{
 		terrainExplosion = true;
 	}
-	if (!_tile && !_item)
+	if (!_tile && !_attack.damage_item)
 	{
 		terrainExplosion = true;
 	}
 
 	// now check for new casualties
-	_parent->checkForCasualties(_item, _unit, false, terrainExplosion);
+	_parent->checkForCasualties(_attack.damage_item ? _damageType : nullptr, _attack, false, terrainExplosion);
 	// revive units if damage could give hp or reduce stun
 	_parent->getSave()->reviveUnconsciousUnits(true);
+	// if any unit get infected turn it to zombie
+	_parent->convertInfected();
 
 	// if this explosion was caused by a unit shooting, now it's the time to put the gun down
-	if (_unit && !_unit->isOut() && _lowerWeapon)
+	if (_attack.attacker && !_attack.attacker->isOut() && _lowerWeapon)
 	{
-		_unit->aim(false);
-		_unit->setCache(0);
+		_attack.attacker->aim(false);
 	}
 
-	if (_item && (_item->getRules()->getBattleType() == BT_GRENADE || _item->getRules()->getBattleType() == BT_PROXIMITYGRENADE))
+	if (_attack.damage_item && (_attack.damage_item->getRules()->getBattleType() == BT_GRENADE || _attack.damage_item->getRules()->getBattleType() == BT_PROXIMITYGRENADE))
 	{
-		_parent->getSave()->removeItem(_item);
+		_parent->getSave()->removeItem(_attack.damage_item);
 	}
 
-	_parent->getMap()->cacheUnits();
 	_parent->popState();
 
 	// check for terrain explosions
 	Tile *t = save->getTileEngine()->checkForTerrainExplosions();
 	if (t)
 	{
-		Position p = t->getPosition().toVexel();
+		Position p = t->getPosition().toVoxel();
 		p += Position(8,8,0);
-		_parent->statePushFront(new ExplosionBState(_parent, p, BA_NONE, 0, _unit, t));
+		_parent->statePushFront(new ExplosionBState(_parent, p, BattleActionAttack{ BA_NONE, _attack.attacker, }, t, false, 0, _explosionCounter + 1));
+	}
+
+	// Spawn a unit if the item does that
+	if (_attack.damage_item)
+	{
+		_parent->spawnNewUnit(_attack, _before.toTile());
+	}
+
+	// Spawn a item if the weapon does that
+	if (_attack.damage_item)
+	{
+		_parent->spawnNewItem(_attack, _before.toTile());
 	}
 }
 

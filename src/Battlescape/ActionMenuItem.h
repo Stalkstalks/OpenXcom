@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_ACTIONMENUITEM_H
-#define OPENXCOM_ACTIONMENUITEM_H
-
 #include "../Engine/InteractiveSurface.h"
 #include "BattlescapeGame.h"
 
@@ -30,6 +28,7 @@ class Font;
 class Language;
 class Text;
 class Frame;
+class RuleSkill;
 
 /**
  * A class that represents a single box in the action popup menu on the battlescape.
@@ -41,6 +40,7 @@ class ActionMenuItem : public InteractiveSurface
 private:
 	bool _highlighted;
 	BattleActionType _action;
+	const RuleSkill* _skill;
 	int _tu, _highlightModifier;
 	Frame *_frame;
 	Text *_txtDescription, *_txtAcc, *_txtTU;
@@ -50,22 +50,23 @@ public:
 	/// Cleans up the ActionMenuItem.
 	~ActionMenuItem();
 	/// Assigns an action to it.
-	void setAction(BattleActionType action, const std::wstring &description, const std::wstring &accuracy, const std::wstring &timeunits, int tu);
+	void setAction(BattleActionType action, const std::string &description, const std::string &accuracy, const std::string &timeunits, int tu);
+	void setSkill(const RuleSkill* skill);
 	/// Gets the assigned action.
 	BattleActionType getAction() const;
+	/// Gets the assigned skill.
+	const RuleSkill* getSkill() const;
 	/// Gets the assigned action TUs.
 	int getTUs() const;
 	/// Sets the palettes.
-	void setPalette(SDL_Color *colors, int firstcolor, int ncolors);
+	void setPalette(const SDL_Color *colors, int firstcolor, int ncolors) override;
 	/// Redraws it.
-	void draw();
+	void draw() override;
 	/// Processes a mouse hover in event.
-	void mouseIn(Action *action, State *state);
+	void mouseIn(Action *action, State *state) override;
 	/// Processes a mouse hover out event.
-	void mouseOut(Action *action, State *state);
+	void mouseOut(Action *action, State *state) override;
 
 };
 
 }
-
-#endif

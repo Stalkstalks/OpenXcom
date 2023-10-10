@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,18 +18,16 @@
  */
 
 #include <sstream>
-
-#include "Ufopaedia.h"
 #include "ArticleStateBaseFacility.h"
-#include "../Ruleset/ArticleDefinition.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "../Mod/ArticleDefinition.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Engine/Game.h"
 #include "../Engine/Palette.h"
 #include "../Engine/Surface.h"
 #include "../Engine/SurfaceSet.h"
-#include "../Engine/Language.h"
-#include "../Resource/ResourcePack.h"
+#include "../Engine/LocalizedText.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/TextList.h"
@@ -37,15 +35,15 @@
 namespace OpenXcom
 {
 
-	ArticleStateBaseFacility::ArticleStateBaseFacility(ArticleDefinitionBaseFacility *defs) : ArticleState(defs->id)
+	ArticleStateBaseFacility::ArticleStateBaseFacility(ArticleDefinitionBaseFacility *defs, std::shared_ptr<ArticleCommonState> state) : ArticleState(defs->id, std::move(state))
 	{
-		RuleBaseFacility *facility = _game->getRuleset()->getBaseFacility(defs->id);
+		RuleBaseFacility *facility = _game->getMod()->getBaseFacility(defs->id, true);
 
 		// add screen elements
 		_txtTitle = new Text(200, 17, 10, 24);
 
 		// Set palette
-		setPalette("PAL_BASESCAPE");
+		setStandardPalette("PAL_BASESCAPE");
 
 		ArticleState::initLayout();
 
@@ -53,21 +51,23 @@ namespace OpenXcom
 		add(_txtTitle);
 
 		// Set up objects
-		_game->getResourcePack()->getSurface("BACK09.SCR")->blit(_bg);
+		_game->getMod()->getSurface("BACK09.SCR")->blitNShade(_bg, 0, 0);
 		_btnOk->setColor(Palette::blockOffset(4));
 		_btnPrev->setColor(Palette::blockOffset(4));
 		_btnNext->setColor(Palette::blockOffset(4));
+		_btnInfo->setColor(Palette::blockOffset(4));
+		_btnInfo->setVisible(_game->getMod()->getShowPediaInfoButton());
 
 		_txtTitle->setColor(Palette::blockOffset(13)+10);
 		_txtTitle->setBig();
-		_txtTitle->setText(tr(defs->title));
+		_txtTitle->setText(tr(defs->getTitleForPage(_state->current_page)));
 
 		// build preview image
 		int tile_size = 32;
 		_image = new Surface(tile_size*2, tile_size*2, 232, 16);
 		add(_image);
 
-		SurfaceSet *graphic = _game->getResourcePack()->getSurfaceSet("BASEBITS.PCK");
+		SurfaceSet *graphic = _game->getMod()->getSurfaceSet("BASEBITS.PCK");
 		Surface *frame;
 		int x_offset, y_offset;
 		int x_pos, y_pos;
@@ -90,16 +90,12 @@ namespace OpenXcom
 			for (int x = 0; x < facility->getSize(); ++x)
 			{
 				frame = graphic->getFrame(facility->getSpriteShape() + num);
-				frame->setX(x_pos);
-				frame->setY(y_pos);
-				frame->blit(_image);
+				frame->blitNShade(_image, x_pos, y_pos);
 
-				if (facility->getSize()==1)
+				if (facility->getSpriteEnabled())
 				{
 					frame = graphic->getFrame(facility->getSpriteFacility() + num);
-					frame->setX(x_pos);
-					frame->setY(y_pos);
-					frame->blit(_image);
+					frame->blitNShade(_image, x_pos, y_pos);
 				}
 
 				x_pos += tile_size;
@@ -112,8 +108,10 @@ namespace OpenXcom
 		add(_txtInfo);
 
 		_txtInfo->setColor(Palette::blockOffset(13)+10);
+		_txtInfo->setSecondaryColor(Palette::blockOffset(13));
 		_txtInfo->setWordWrap(true);
-		_txtInfo->setText(tr(defs->text));
+		_txtInfo->setScrollable(true);
+		_txtInfo->setText(tr(defs->getTextForPage(_state->current_page)));
 
 		_lstInfo = new TextList(200, 42, 10, 42);
 		add(_lstInfo);
@@ -125,25 +123,25 @@ namespace OpenXcom
 		_lstInfo->addRow(2, tr("STR_CONSTRUCTION_TIME").c_str(), tr("STR_DAY", facility->getBuildTime()).c_str());
 		_lstInfo->setCellColor(0, 1, Palette::blockOffset(13)+0);
 
-		std::wostringstream ss;
-		ss << Text::formatFunding(facility->getBuildCost());
+		std::ostringstream ss;
+		ss << Unicode::formatFunding(facility->getBuildCost());
 		_lstInfo->addRow(2, tr("STR_CONSTRUCTION_COST").c_str(), ss.str().c_str());
 		_lstInfo->setCellColor(1, 1, Palette::blockOffset(13)+0);
 
-		ss.str(L"");ss.clear();
-		ss << Text::formatFunding(facility->getMonthlyCost());
+		ss.str("");ss.clear();
+		ss << Unicode::formatFunding(facility->getMonthlyCost());
 		_lstInfo->addRow(2, tr("STR_MAINTENANCE_COST").c_str(), ss.str().c_str());
 		_lstInfo->setCellColor(2, 1, Palette::blockOffset(13)+0);
 
 		if (facility->getDefenseValue() > 0)
 		{
-			ss.str(L"");ss.clear();
+			ss.str("");ss.clear();
 			ss << facility->getDefenseValue();
 			_lstInfo->addRow(2, tr("STR_DEFENSE_VALUE").c_str(), ss.str().c_str());
 			_lstInfo->setCellColor(3, 1, Palette::blockOffset(13)+0);
 
-			ss.str(L"");ss.clear();
-			ss << Text::formatPercentage(facility->getHitRatio());
+			ss.str("");ss.clear();
+			ss << Unicode::formatPercentage(facility->getHitRatio());
 			_lstInfo->addRow(2, tr("STR_HIT_RATIO").c_str(), ss.str().c_str());
 			_lstInfo->setCellColor(4, 1, Palette::blockOffset(13)+0);
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -24,20 +24,14 @@
 #include "BattlescapeState.h"
 #include "Map.h"
 #include "Camera.h"
-#include "BattleAIState.h"
-#include "ExplosionBState.h"
-#include "../Engine/Game.h"
-#include "../Savegame/BattleItem.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
-#include "../Resource/ResourcePack.h"
-#include "../Ruleset/Ruleset.h"
 #include "../Engine/Sound.h"
 #include "../Engine/Options.h"
-#include "../Ruleset/Armor.h"
 #include "../Engine/Logger.h"
-#include "../Ruleset/Ruleset.h"
+#include "../Mod/Armor.h"
+#include "../Mod/Mod.h"
 #include "UnitFallBState.h"
 
 namespace OpenXcom
@@ -48,7 +42,7 @@ namespace OpenXcom
  * @param parent Pointer to the Battlescape.
  * @param action Pointer to an action.
  */
-UnitWalkBState::UnitWalkBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _pf(0), _terrain(0), _falling(false), _beforeFirstStep(false), _numUnitsSpotted(0), _preMovementCost(0)
+UnitWalkBState::UnitWalkBState(BattlescapeGame *parent, BattleAction action) : BattleState(parent, action), _unit(0), _pf(0), _terrain(0), _beforeFirstStep(false), _numUnitsSpotted(0), _preMovementCost(0)
 {
 
 }
@@ -78,6 +72,15 @@ void UnitWalkBState::init()
 	{
 		_beforeFirstStep = true;
 	}
+	_terrain->addMovingUnit(_unit);
+}
+
+/**
+ * Deinitalize the state.
+ */
+void UnitWalkBState::deinit()
+{
+	_terrain->removeMovingUnit(_unit);
 }
 
 /**
@@ -85,6 +88,13 @@ void UnitWalkBState::init()
  */
 void UnitWalkBState::think()
 {
+	if (!_unit->getArmor()->allowsMoving())
+	{
+		_pf->abortPath();
+		_parent->popState();
+		return;
+	}
+
 	bool unitSpotted = false;
 	int size = _unit->getArmor()->getSize() - 1;
 	bool onScreen = (_unit->getVisible() && _parent->getMap()->getCamera()->isOnScreen(_unit->getPosition(), true, size, false));
@@ -92,20 +102,20 @@ void UnitWalkBState::think()
 	{
 		if (_parent->kneel(_unit))
 		{
-			_unit->setCache(0);
-			_terrain->calculateFOV(_unit);
-			_parent->getMap()->cacheUnit(_unit);
 			return;
 		}
 		else
 		{
-			_action.result = "STR_NOT_ENOUGH_TIME_UNITS";
+			if (_parent->getPanicHandled())
+			{
+				_action.result = "STR_NOT_ENOUGH_TIME_UNITS";
+			}
 			_pf->abortPath();
 			_parent->popState();
 			return;
 		}
 	}
-	Tile *tileBelow = _parent->getSave()->getTile(_unit->getPosition() + Position(0,0,-1));
+
 
 	if (_unit->isOut())
 	{
@@ -114,14 +124,31 @@ void UnitWalkBState::think()
 		return;
 	}
 
+	auto cancelCurentMove = [&]
+	{
+		if (_fallingWhenStopped && !_falling)
+		{
+			_falling = true;
+		}
+		else
+		{
+			_pf->abortPath();
+			_parent->popState();
+		}
+	};
+
 	if (_unit->getStatus() == STATUS_WALKING || _unit->getStatus() == STATUS_FLYING)
 	{
 		if ((_parent->getSave()->getTile(_unit->getDestination())->getUnit() == 0) || // next tile must be not occupied
 			(_parent->getSave()->getTile(_unit->getDestination())->getUnit() == _unit))
 		{
 			bool onScreenBoundary = (_unit->getVisible() && _parent->getMap()->getCamera()->isOnScreen(_unit->getPosition(), true, size, true));
-			_unit->keepWalking(tileBelow, onScreenBoundary); // advances the phase
+			_unit->keepWalking(_parent->getSave(), onScreenBoundary); // advances the phase
 			playMovementSound();
+			if (_parent->getSave()->isPreview())
+			{
+				_unit->resetTimeUnitsAndEnergy();
+			}
 		}
 		else if (!_falling)
 		{
@@ -132,25 +159,13 @@ void UnitWalkBState::think()
 		// unit moved from one tile to the other, update the tiles
 		if (_unit->getPosition() != _unit->getLastPosition())
 		{
-			bool largeCheck = true;
-			for (int x = size; x >= 0; x--)
-			{
-				for (int y = size; y >= 0; y--)
-				{
-					Tile *otherTileBelow = _parent->getSave()->getTile(_unit->getPosition() + Position(x,y,-1));
-					if (!_parent->getSave()->getTile(_unit->getPosition() + Position(x,y,0))->hasNoFloor(otherTileBelow) || _unit->getMovementType() == MT_FLY)
-						largeCheck = false;
-					_parent->getSave()->getTile(_unit->getLastPosition() + Position(x,y,0))->setUnit(0);
-				}
-			}
-			for (int x = size; x >= 0; x--)
-			{
-				for (int y = size; y >= 0; y--)
-				{
-					_parent->getSave()->getTile(_unit->getPosition() + Position(x,y,0))->setUnit(_unit, _parent->getSave()->getTile(_unit->getPosition() + Position(x,y,-1)));
-				}
-			}
-			_falling = largeCheck && _unit->getPosition().z != 0 && _unit->getTile()->hasNoFloor(tileBelow) && _unit->getMovementType() != MT_FLY && _unit->getWalkingPhase() == 0;
+			auto* belowTile = _parent->getSave()->getBelowTile(_unit->getTile());
+			_fallingWhenStopped = _unit->haveNoFloorBelow() && _unit->getPosition().z != 0 && _unit->getMovementType() != MT_FLY && _unit->getWalkingPhase() == 0;
+			_falling = _fallingWhenStopped && !(
+				belowTile && belowTile->hasLadder() && // we do not have any footing but "jump" from ladder to reach ledge
+				_unit->getPosition() == _unit->getLastPosition()+Position(0,0,1) && // only vertical move from ladder below
+				_pf->getStartDirection() != -1 // move is not canceled, when you cancel "jump" you should fallback to ladder below
+			);
 
 			if (_falling)
 			{
@@ -162,6 +177,7 @@ void UnitWalkBState::think()
 						if (otherTileBelow && otherTileBelow->getUnit())
 						{
 							_falling = false;
+							_fallingWhenStopped = false;
 							_pf->dequeuePath();
 							_parent->getSave()->addFallingUnit(_unit);
 							_parent->statePushFront(new UnitFallBState(_parent));
@@ -182,58 +198,61 @@ void UnitWalkBState::think()
 		{
 			// update the TU display
 			_parent->getSave()->getBattleState()->updateSoldierInfo();
-			// if the unit burns floortiles, burn floortiles as long as we're not falling
+			// if the unit burns floor tiles, burn floor tiles as long as we're not falling
 			if (!_falling && (_unit->getSpecialAbility() == SPECAB_BURNFLOOR || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE))
 			{
 				_unit->getTile()->ignite(1);
 				Position posHere = _unit->getPosition();
-				Position voxelHere = (posHere * Position(16,16,24)) + Position(8,8,-(_unit->getTile()->getTerrainLevel()));
-				_parent->getTileEngine()->hit(voxelHere, _unit->getBaseStats()->strength, _parent->getRuleset()->getDamageType(DT_IN), _unit, false);
+				Position voxelHere = posHere.toVoxel() + Position(8,8,-(_unit->getTile()->getTerrainLevel()));
+				_parent->getTileEngine()->hit(BattleActionAttack{ BA_NONE, _unit, }, voxelHere, _unit->getBaseStats()->strength, _parent->getMod()->getDamageType(DT_IN), false);
 
-				if (_unit->getPosition() != posHere) // ie: we burned a hole in the floor and fell through it
+				if (_unit->getStatus() != STATUS_STANDING) // ie: we burned a hole in the floor and fell through it
 				{
-					_action.clearTU();
 					_pf->abortPath();
-					_unit->setCache(0);
-					_parent->getMap()->cacheUnit(_unit);
-					_parent->popState();
 					return;
 				}
 			}
 
-			// move our personal lighting with us
-			_terrain->calculateUnitLighting();
 			if (_unit->getFaction() != FACTION_PLAYER)
 			{
 				_unit->setVisible(false);
 			}
-			_terrain->calculateFOV(_unit->getPosition());
-			unitSpotted = (!_falling && !_action.desperate && _parent->getPanicHandled() && _numUnitsSpotted != _unit->getUnitsSpottedThisTurn().size());
 
-			if (_parent->checkForProximityGrenades(_unit))
+			auto change = _parent->checkForProximityGrenades(_unit);
+			// move our personal lighting with us
+			_terrain->calculateLighting(change ? LL_ITEMS : LL_UNITS, _unit->getPosition(), 2);
+			_terrain->calculateFOV(_unit->getPosition(), 2, false); //update unit visibility for all units which can see last and current position.
+			//tile visibility for this unit is handled later.
+			unitSpotted = (!_action.ignoreSpottedEnemies && !_falling && !_action.desperate && _unit->getStatus() != STATUS_PANICKING && _numUnitsSpotted != _unit->getUnitsSpottedThisTurn().size());
+			// If our friends have already passed, wake them up again:
+			if (unitSpotted)
+			{
+				for (BattleUnit *unit : *(_parent->getSave()->getUnits()))
+				{
+					if (unit->isOut())
+						continue;
+					if (!unit->getAIModule() || !unit->isBrutal() || unit->getFaction() != _unit->getFaction())
+						continue;
+					unit->checkForReactivation();
+				}
+			}
+
+			if (change > 1)
 			{
 				_parent->popState();
 				return;
 			}
 			if (unitSpotted)
 			{
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
-				_pf->abortPath();
-				_parent->popState();
-				return;
+				return cancelCurentMove();
 			}
 			// check for reaction fire
-			if (!_falling)
+			if (!_falling && !_fallingWhenStopped)
 			{
-				if (_terrain->checkReactionFire(_unit))
+				if (_terrain->checkReactionFire(_unit, _action))
 				{
 					// unit got fired upon - stop walking
-					_unit->setCache(0);
-					_parent->getMap()->cacheUnit(_unit);
-					_pf->abortPath();
-					_parent->popState();
-					return;
+					return cancelCurentMove();
 				}
 			}
 		}
@@ -245,25 +264,20 @@ void UnitWalkBState::think()
 				// This is where we fake out the strafe movement direction so the unit "moonwalks"
 				int dirTemp = _unit->getDirection();
 				_unit->setDirection(_unit->getFaceDirection());
-				_parent->getMap()->cacheUnit(_unit);
+				//TODO fix moonwalk
 				_unit->setDirection(dirTemp);
-			}
-			else
-			{
-				_parent->getMap()->cacheUnit(_unit);
 			}
 		}
 	}
 
 	// we are just standing around, shouldn't we be walking?
-	if (_unit->getStatus() == STATUS_STANDING || _unit->getStatus() == STATUS_PANICKING)
+	if (_unit->getStatus() == STATUS_STANDING || _unit->getStatus() == STATUS_PANICKING || _unit->getStatus() == STATUS_BERSERK)
 	{
 		// check if we did spot new units
 		if (unitSpotted && !_action.desperate && _unit->getCharging() == 0 && !_falling)
 		{
 			if (Options::traceAI) { Log(LOG_INFO) << "Uh-oh! Company!"; }
 			_unit->setHiding(false); // clearly we're not hidden now
-			_parent->getMap()->cacheUnit(_unit);
 			postPathProcedures();
 			return;
 		}
@@ -289,38 +303,25 @@ void UnitWalkBState::think()
 				_unit->setFaceDirection(_unit->getDirection());
 			}
 
-			Position destination;
-			int tu = _pf->getTUCost(_unit->getPosition(), dir, &destination, _unit, 0, false); // gets tu cost, but also gets the destination position.
-			if (_unit->getFaction() == FACTION_HOSTILE &&
-				_parent->getSave()->getTile(destination)->getFire() > 0)
+			_pf->setUnit(_unit); //TODO: remove as was done by `getTUCost`
+			auto r = _pf->getTUCost(_unit->getPosition(), dir, _unit, 0, _action.getMoveType());
+
+			auto tu = r.cost.time;
+			int energy = r.cost.energy;
+			auto destination = r.pos;
+
+			if (tu == Pathfinding::INVALID_MOVE_COST)
 			{
-				tu -= 32; // we artificially inflate the TU cost by 32 points in getTUCost under these conditions, so we have to deflate it here.
+				return cancelCurentMove();
 			}
-			if (_falling)
-			{
-				tu = 0;
-			}
-			int energy = tu / 2;
-			if (_action.run)
-			{
-				tu *= 0.75;
-				energy *= 1.5;
-			}
-			if (dir >= Pathfinding::DIR_UP)
-			{
-				energy = 0;
-			}
+
 			if (tu > _unit->getTimeUnits())
 			{
-				if (_parent->getPanicHandled() && tu < 255)
+				if (_parent->getPanicHandled())
 				{
 					_action.result = "STR_NOT_ENOUGH_TIME_UNITS";
 				}
-				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
-				_parent->popState();
-				return;
+				return cancelCurentMove();
 			}
 
 			if (energy > _unit->getEnergy())
@@ -329,19 +330,12 @@ void UnitWalkBState::think()
 				{
 					_action.result = "STR_NOT_ENOUGH_ENERGY";
 				}
-				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
-				_parent->popState();
-				return;
+				return cancelCurentMove();
 			}
 
 			if (_parent->getPanicHandled() && !_falling && _parent->checkReservedTU(_unit, tu, energy) == false)
 			{
-				_pf->abortPath();
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
-				return;
+				return cancelCurentMove();
 			}
 
 			// we are looking in the wrong way, turn first (unless strafing)
@@ -349,8 +343,6 @@ void UnitWalkBState::think()
 			if (dir != _unit->getDirection() && dir < Pathfinding::DIR_UP && !_pf->getStrafeMove())
 			{
 				_unit->lookAt(dir);
-				_unit->setCache(0);
-				_parent->getMap()->cacheUnit(_unit);
 				return;
 			}
 
@@ -364,11 +356,22 @@ void UnitWalkBState::think()
 				}
 				if (door == 0)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // normal door
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // normal door
+					_unit->updateEnemyKnowledge(_parent->getSave()->getTileIndex(_unit->getPosition()));
 				}
 				if (door == 1)
 				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
+					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
+					_unit->updateEnemyKnowledge(_parent->getSave()->getTileIndex(_unit->getPosition()));
+					if (_unit->isBrutal())
+					{
+						if (Options::traceAI)
+						{
+							Log(LOG_INFO) << "I opened a self-closing door. Let's reconsider the situation.";
+						}
+						_pf->abortPath();
+						_parent->popState();
+					}
 					return; // don't start walking yet, wait for the ufo door to open
 				}
 			}
@@ -376,26 +379,12 @@ void UnitWalkBState::think()
 			{
 				for (int y = size; y >= 0; --y)
 				{
-					BattleUnit* unitInMyWay = _parent->getSave()->getTile(destination + Position(x,y,0))->getUnit();
-					BattleUnit* unitBelowMyWay = 0;
-					Tile* belowDest = _parent->getSave()->getTile(destination + Position(x,y,-1));
-					if (belowDest)
-					{
-						unitBelowMyWay = belowDest->getUnit();
-					}
+					BattleUnit* unitInMyWay = _parent->getSave()->getTile(destination + Position(x,y,0))->getOverlappingUnit(_parent->getSave(), TUO_IGNORE_SMALL);  // 2+ voxels poking into the tile above, we don't kick people in the head here at XCom.
 					// can't walk into units in this tile, or on top of other units sticking their head into this tile
-					if (!_falling &&
-						((unitInMyWay && unitInMyWay != _unit)
-						|| (belowDest && unitBelowMyWay && unitBelowMyWay != _unit &&
-						(-belowDest->getTerrainLevel() + unitBelowMyWay->getFloatHeight() + unitBelowMyWay->getHeight())
-						>= 28)))  // 4+ voxels poking into the tile above, we don't kick people in the head here at XCom.
+					if (!_falling && unitInMyWay && unitInMyWay != _unit)
 					{
 						_action.clearTU();
-						_pf->abortPath();
-						_unit->setCache(0);
-						_parent->getMap()->cacheUnit(_unit);
-						_parent->popState();
-						return;
+						return cancelCurentMove();
 					}
 				}
 			}
@@ -410,8 +399,7 @@ void UnitWalkBState::think()
 			{
 				if (_unit->spendEnergy(energy))
 				{
-					Tile *tileBelow = _parent->getSave()->getTile(_unit->getPosition() + Position(0,0,-1));
-					_unit->startWalking(dir, destination, tileBelow, onScreen);
+					_unit->startWalking(dir, destination, _parent->getSave());
 					_beforeFirstStep = false;
 				}
 			}
@@ -425,7 +413,6 @@ void UnitWalkBState::think()
 					_unit->setDirection(_unit->getFaceDirection());
 					_unit->setDirection(dirTemp);
 				}
-				_parent->getMap()->cacheUnit(_unit);
 			}
 		}
 		else
@@ -441,7 +428,14 @@ void UnitWalkBState::think()
 		// except before the first step.
 		if (_beforeFirstStep)
 		{
-			_preMovementCost++;
+			if (_unit->getArmor()->getTurnBeforeFirstStep())
+			{
+				_unit->spendTimeUnits(_unit->getTurnCost());
+			}
+			else
+			{
+				_preMovementCost++;
+			}
 		}
 
 		_unit->turn();
@@ -449,25 +443,30 @@ void UnitWalkBState::think()
 		// calculateFOV is unreliable for setting the unitSpotted bool, as it can be called from various other places
 		// in the code, ie: doors opening, and this messes up the result.
 		_terrain->calculateFOV(_unit);
-		unitSpotted = (!_falling && !_action.desperate && _parent->getPanicHandled() && _numUnitsSpotted != _unit->getUnitsSpottedThisTurn().size());
-
-		// make sure the unit sprites are up to date
-		_unit->setCache(0);
-		_parent->getMap()->cacheUnit(_unit);
+		unitSpotted = (!_action.ignoreSpottedEnemies && !_falling && !_action.desperate && _unit->getStatus() != STATUS_PANICKING && _numUnitsSpotted != _unit->getUnitsSpottedThisTurn().size());
+		if (unitSpotted)
+		{
+			for (BattleUnit *unit : *(_parent->getSave()->getUnits()))
+			{
+				if (unit->isOut())
+					continue;
+				if (!unit->getAIModule() || !unit->isBrutal() || unit->getFaction() != _unit->getFaction())
+					continue;
+				unit->checkForReactivation();
+			}
+		}
 
 		if (unitSpotted && !_action.desperate && !_unit->getCharging() && !_falling)
 		{
 			if (_beforeFirstStep)
 			{
+				_preMovementCost = _preMovementCost * _unit->getTurnCost();
 				_unit->spendTimeUnits(_preMovementCost);
 			}
 			if (Options::traceAI) { Log(LOG_INFO) << "Egads! A turn reveals new units! I must pause!"; }
 			_unit->setHiding(false); // not hidden, are we...
-			_pf->abortPath();
 			_unit->abortTurn(); //revert to a standing state.
-			_unit->setCache(0);
-			_parent->getMap()->cacheUnit(_unit);
-			_parent->popState();
+			return cancelCurentMove();
 		}
 	}
 }
@@ -487,7 +486,7 @@ void UnitWalkBState::cancel()
 void UnitWalkBState::postPathProcedures()
 {
 	_action.clearTU();
-	if (_unit->getFaction() != FACTION_PLAYER)
+	if (_unit->isAIControlled())
 	{
 		int dir = _action.finalFacing;
 		if (_action.finalAction)
@@ -502,7 +501,7 @@ void UnitWalkBState::postPathProcedures()
 				BattleAction action;
 				action.actor = _unit;
 				action.target = _unit->getCharging()->getPosition();
-				action.weapon = _unit->getSpecialWeapon(BT_MELEE);
+				action.weapon = _unit->getUtilityWeapon(BT_MELEE);
 				action.type = BA_HIT;
 				action.targeting = true;
 				action.updateTU();
@@ -533,13 +532,11 @@ void UnitWalkBState::postPathProcedures()
 	else if (!_parent->getPanicHandled())
 	{
 		//todo: set the unit to aggrostate and try to find cover?
-		_unit->setTimeUnits(0);
+		_unit->clearTimeUnits();
 	}
 
-	_unit->setCache(0);
-	_terrain->calculateUnitLighting();
+	_terrain->calculateLighting(LL_UNITS, _unit->getPosition());
 	_terrain->calculateFOV(_unit);
-	_parent->getMap()->cacheUnit(_unit);
 	if (!_falling)
 		_parent->popState();
 }
@@ -564,45 +561,59 @@ void UnitWalkBState::playMovementSound()
 	int size = _unit->getArmor()->getSize() - 1;
 	if ((!_unit->getVisible() && !_parent->getSave()->getDebugMode()) || !_parent->getMap()->getCamera()->isOnScreen(_unit->getPosition(), true, size, false)) return;
 
-	if (_unit->getMoveSound() != -1)
+	Tile *tile = _unit->getTile();
+	int sound = -1;
+	int unitSound = _unit->getMoveSound();
+	int tileSoundOffset = tile->getFootstepSound(_parent->getSave()->getBelowTile(tile));
+	int tileSound = Mod::NO_SOUND;
+	if (tileSoundOffset > -1)
+	{
+		// play footstep sound 1
+		if (_unit->getWalkingPhase() == 3)
+		{
+			tileSound = Mod::WALK_OFFSET + (tileSoundOffset*2);
+		}
+		// play footstep sound 2
+		if (_unit->getWalkingPhase() == 7)
+		{
+			tileSound = Mod::WALK_OFFSET + (tileSoundOffset*2) + 1;
+		}
+	}
+	if (unitSound != Mod::NO_SOUND)
 	{
 		// if a sound is configured in the ruleset, play that one
 		if (_unit->getWalkingPhase() == 0)
 		{
-			_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), _unit->getMoveSound())->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+			sound = unitSound;
 		}
 	}
 	else
 	{
 		if (_unit->getStatus() == STATUS_WALKING)
 		{
-			Tile *tile = _unit->getTile();
-			Tile *tileBelow = _parent->getSave()->getTile(tile->getPosition() + Position(0,0,-1));
-			// play footstep sound 1
-			if (_unit->getWalkingPhase() == 3)
+			if (tileSound > Mod::NO_SOUND) //TODO: it should be `!=` but its possbile that offset could get negative is based on mod data
 			{
-				if (tile->getFootstepSound(tileBelow) > -1)
-				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
-				}
-			}
-			// play footstep sound 2
-			if (_unit->getWalkingPhase() == 7)
-			{
-				if (tile->getFootstepSound(tileBelow) > -1)
-				{
-					_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), 1 + ResourcePack::WALK_OFFSET + (tile->getFootstepSound(tileBelow)*2))->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
-				}
+				sound = tileSound;
 			}
 		}
-		else
+		else if (_unit->getMovementType() == MT_FLY)
 		{
 			// play default flying sound
-			if (_unit->getWalkingPhase() == 1 && !_falling)
+			if (_unit->getWalkingPhase() == 1)
 			{
-				_parent->getResourcePack()->getSoundByDepth(_parent->getDepth(), ResourcePack::FLYING_SOUND)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
+				sound = Mod::FLYING_SOUND;
 			}
 		}
+	}
+
+	sound = ModScript::scriptFunc1<ModScript::SelectMoveSoundUnit>(
+		_unit->getArmor(),
+		sound,
+		_unit, _unit->getWalkingPhase(), unitSound, tileSound, Mod::WALK_OFFSET, tileSoundOffset, Mod::FLYING_SOUND, _action.getMoveType()
+	);
+	if (sound >= 0)
+	{
+		_parent->getMod()->getSoundByDepth(_parent->getDepth(), sound)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition()));
 	}
 }
 

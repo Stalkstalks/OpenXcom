@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,27 +17,26 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "BaseDefenseState.h"
-#include <sstream>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Savegame/SavedGame.h"
+#include "../Savegame/AlienMission.h"
 #include "../Savegame/Base.h"
+#include "../Savegame/ItemContainer.h"
+#include "../Savegame/Region.h"
+#include "../Mod/RuleRegion.h"
 #include "../Savegame/BaseFacility.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Savegame/Ufo.h"
 #include "../Interface/TextList.h"
 #include "GeoscapeState.h"
 #include "../Engine/Action.h"
 #include "../Engine/RNG.h"
-#include "../Battlescape/BriefingState.h"
-#include "../Battlescape/BattlescapeGenerator.h"
 #include "../Engine/Sound.h"
-#include "BaseDestroyedState.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Options.h"
 
@@ -66,12 +65,16 @@ BaseDefenseState::BaseDefenseState(Base *base, Ufo *ufo, GeoscapeState *state) :
 	_txtInit = new Text(300, 10, 16, 24);
 	_lstDefenses = new TextList(300, 128, 16, 40);
 	_btnOk = new TextButton(120, 18, 100, 170);
+	_btnStart = new TextButton(148, 16, 8, 176);
+	_btnAbort = new TextButton(148, 16, 164, 176);
 
 	// Set palette
 	setInterface("baseDefense");
 
 	add(_window, "window", "baseDefense");
 	add(_btnOk, "button", "baseDefense");
+	add(_btnStart, "button", "baseDefense");
+	add(_btnAbort, "button", "baseDefense");
 	add(_txtTitle, "text", "baseDefense");
 	add(_txtInit, "text", "baseDefense");
 	add(_lstDefenses, "text", "baseDefense");
@@ -79,13 +82,19 @@ BaseDefenseState::BaseDefenseState(Base *base, Ufo *ufo, GeoscapeState *state) :
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK04.SCR"));
+	setWindowBackground(_window, "baseDefense");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&BaseDefenseState::btnOkClick);
 	_btnOk->onKeyboardPress((ActionHandler)&BaseDefenseState::btnOkClick, Options::keyOk);
 	_btnOk->onKeyboardPress((ActionHandler)&BaseDefenseState::btnOkClick, Options::keyCancel);
 	_btnOk->setVisible(false);
+
+	_btnStart->setText(tr("STR_START_FIRING"));
+	_btnStart->onMouseClick((ActionHandler)&BaseDefenseState::btnStartClick);
+
+	_btnAbort->setText(tr("STR_SKIP_FIRING"));
+	_btnAbort->onMouseClick((ActionHandler)&BaseDefenseState::btnOkClick);
 
 	_txtTitle->setBig();
 	_txtTitle->setText(tr("STR_BASE_UNDER_ATTACK").arg(_base->getName()));
@@ -94,14 +103,20 @@ BaseDefenseState::BaseDefenseState(Base *base, Ufo *ufo, GeoscapeState *state) :
 	_txtInit->setText(tr("STR_BASE_DEFENSES_INITIATED"));
 
 	_lstDefenses->setColumns(3, 134, 70, 50);
+	_lstDefenses->setFlooding(true);
 	_gravShields = _base->getGravShields();
 	_defenses = _base->getDefenses()->size();
 	_timer = new Timer(250);
 	_timer->onTimer((StateHandler)&BaseDefenseState::nextStep);
-	_timer->start();
 
 	_explosionCount = 0;
+
+	if (_ufo->getRules()->getMissilePower() != 0)
+	{
+		btnStartClick(0);
+	}
 }
+
 /**
  *
  */
@@ -135,14 +150,14 @@ void BaseDefenseState::nextStep()
 		case BDA_DESTROY:
 			if (!_explosionCount)
 			{
-				_lstDefenses->addRow(2, tr("STR_UFO_DESTROYED").c_str(),L" ",L" ");
+				_lstDefenses->addRow(2, tr("STR_UFO_DESTROYED").c_str()," "," ");
 				++_row;
 				if (_row > 14)
 				{
 					_lstDefenses->scrollDown(true);
 				}
 			}
-			_game->getResourcePack()->getSound("GEO.CAT", ResourcePack::UFO_EXPLODE)->play();
+			_game->getMod()->getSound("GEO.CAT", Mod::UFO_EXPLODE)->play();
 			if (++_explosionCount == 3)
 			{
 				_action = BDA_END;
@@ -162,7 +177,7 @@ void BaseDefenseState::nextStep()
 		}
 		else if (_attacks == _defenses && _passes < _gravShields)
 		{
-			_lstDefenses->addRow(3, tr("STR_GRAV_SHIELD_REPELS_UFO").c_str(),L" ",L" ");
+			_lstDefenses->addRow(3, tr("STR_GRAV_SHIELD_REPELS_UFO").c_str()," "," ");
 			if (_row > 14)
 			{
 				_lstDefenses->scrollDown(true);
@@ -176,11 +191,13 @@ void BaseDefenseState::nextStep()
 
 
 		BaseFacility* def = _base->getDefenses()->at(_attacks);
+		const RuleItem* ammo = (def)->getRules()->getAmmoItem();
+		int ammoNeeded = (def)->getRules()->getAmmoNeeded();
 
 		switch (_action)
 		{
 		case  BDA_NONE:
-			_lstDefenses->addRow(3, tr((def)->getRules()->getType()).c_str(),L" ",L" ");
+			_lstDefenses->addRow(3, tr((def)->getRules()->getType()).c_str()," "," ");
 			++_row;
 			_action = BDA_FIRE;
 			if (_row > 14)
@@ -189,22 +206,44 @@ void BaseDefenseState::nextStep()
 			}
 			return;
 		case BDA_FIRE:
-			_lstDefenses->setCellText(_row, 1, tr("STR_FIRING").c_str());
-			_game->getResourcePack()->getSound("GEO.CAT", (def)->getRules()->getFireSound())->play();
+			if (ammo && _base->getStorageItems()->getItem(ammo) < ammoNeeded)
+			{
+				_lstDefenses->setCellText(_row, 1, tr("STR_NO_AMMO"));
+			}
+			else
+			{
+				_lstDefenses->setCellText(_row, 1, tr("STR_FIRING"));
+				_game->getMod()->getSound("GEO.CAT", (def)->getRules()->getFireSound())->play();
+			}
 			_timer->setInterval(333);
 			_action = BDA_RESOLVE;
 			return;
 		case BDA_RESOLVE:
-			if (!RNG::percent((def)->getRules()->getHitRatio()))
+			if (ammo && _base->getStorageItems()->getItem(ammo) < ammoNeeded)
 			{
-				_lstDefenses->setCellText(_row, 2, tr("STR_MISSED").c_str());
+				//_lstDefenses->setCellText(_row, 2, tr("STR_NO_AMMO"));
+			}
+			else if (!RNG::percent((def)->getRules()->getHitRatio()))
+			{
+				_lstDefenses->setCellText(_row, 2, tr("STR_MISSED"));
 			}
 			else
 			{
-				_lstDefenses->setCellText(_row, 2, tr("STR_HIT").c_str());
-				_game->getResourcePack()->getSound("GEO.CAT", (def)->getRules()->getHitSound())->play();
+				if (ammo && ammoNeeded > 0)
+				{
+					_base->getStorageItems()->removeItem(ammo, ammoNeeded);
+				}
+				_lstDefenses->setCellText(_row, 2, tr("STR_HIT"));
+				_game->getMod()->getSound("GEO.CAT", (def)->getRules()->getHitSound())->play();
 				int dmg = (def)->getRules()->getDefenseValue();
-				_ufo->setDamage(_ufo->getDamage() + (dmg / 2 + RNG::generate(0, dmg)));
+				dmg = dmg / 2 + RNG::generate(0, dmg);
+				if (_ufo->getShield() > 0)
+				{
+					int shieldDamage = dmg;
+					dmg = std::max(0, dmg - _ufo->getShield());
+					_ufo->setShield(_ufo->getShield() - shieldDamage);
+				}
+				_ufo->setDamage(_ufo->getDamage() + dmg, _game->getMod());
 			}
 			if (_ufo->getStatus() == Ufo::DESTROYED)
 				_action = BDA_DESTROY;
@@ -218,6 +257,18 @@ void BaseDefenseState::nextStep()
 		}
 	}
 }
+
+/**
+* Starts base defense
+* @param action Pointer to an action.
+*/
+void BaseDefenseState::btnStartClick(Action *)
+{
+	_btnStart->setVisible(false);
+	_btnAbort->setVisible(false);
+	_timer->start();
+}
+
 /**
  * Returns to the previous screen.
  * @param action Pointer to an action.
@@ -233,6 +284,47 @@ void BaseDefenseState::btnOkClick(Action *)
 	else
 	{
 		_base->cleanupDefenses(true);
+
+		// instant retaliation mission only spawns one UFO and then ends
+		if (_ufo->getMission()->getRules().getObjective() == OBJECTIVE_INSTANT_RETALIATION)
+		{
+			_ufo->getMission()->setInterrupted(true);
+		}
+
+		// aliens are not stupid and should stop trying eventually
+		if (_ufo->getMission()->getRules().getObjective() == OBJECTIVE_RETALIATION && RNG::percent(_game->getMod()->getChanceToStopRetaliation()))
+		{
+			// unmark base...
+			_base->setRetaliationTarget(false);
+
+			AlienMission* am = _base->getRetaliationMission();
+			if (!am)
+			{
+				// backwards-compatibility
+				RuleRegion* regionRule = _game->getSavedGame()->getRegions()->front()->getRules(); // wrong, but that's how it is in OXC
+				for (const auto* region : *_game->getSavedGame()->getRegions())
+				{
+					if (region->getRules()->insideRegion(_base->getLongitude(), _base->getLatitude()))
+					{
+						regionRule = region->getRules();
+						break;
+					}
+				}
+				am = _game->getSavedGame()->findAlienMission(regionRule->getType(), OBJECTIVE_RETALIATION);
+			}
+
+			if (am && am->getRules().isMultiUfoRetaliation())
+			{
+				// Remember that more UFOs may be coming
+				am->setMultiUfoRetaliationInProgress(true);
+			}
+			else
+			{
+				// Delete the mission and any live UFOs
+				_game->getSavedGame()->deleteRetaliationMission(am, _base);
+			}
+		}
 	}
 }
+
 }

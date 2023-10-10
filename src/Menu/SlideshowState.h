@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SLIDESHOWSTATE_H
-#define OPENXCOM_SLIDESHOWSTATE_H
-
 #include "../Engine/State.h"
-#include "../Ruleset/RuleVideo.h"
+#include "../Mod/RuleVideo.h"
 
 namespace OpenXcom
 {
@@ -48,7 +46,7 @@ public:
 	/// Cleans up the Slideshow state.
 	~SlideshowState();
 	/// Handle timers.
-	void think();
+	void think() override;
 	/// Handler for waiting the screen.
 	void screenTimer();
 	/// Handler for clicking the screen.
@@ -58,5 +56,3 @@ public:
 };
 
 }
-
-#endif

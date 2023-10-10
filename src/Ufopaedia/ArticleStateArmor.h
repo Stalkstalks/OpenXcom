@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATEARMOR_H
-#define OPENXCOM_ARTICLESTATEARMOR_H
-
 #include "ArticleState.h"
 
 namespace OpenXcom
@@ -38,19 +35,17 @@ namespace OpenXcom
 	class ArticleStateArmor : public ArticleState
 	{
 	public:
-		ArticleStateArmor(ArticleDefinitionArmor *article_defs);
+		ArticleStateArmor(ArticleDefinitionArmor *article_defs, std::shared_ptr<ArticleCommonState> state);
 		virtual ~ArticleStateArmor();
 
 	protected:
 		void addStat(const std::string &label, int stat, bool plus = false);
-		void addStat(const std::string &label, const std::wstring &stat);
+		void addStat(const std::string &label, const std::string &stat);
 
 		int _row;
-		Surface *_image;
 		Text *_txtTitle;
 		TextList *_lstInfo;
 		Text *_txtInfo;
+		Uint8 _buttonColor, _textColor, _textColor2, _listColor1, _listColor2;
 	};
 }
-
-#endif

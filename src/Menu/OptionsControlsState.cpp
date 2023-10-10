@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,17 +18,11 @@
  */
 #include "OptionsControlsState.h"
 #include <SDL.h>
-#include "../Engine/Game.h"
 #include "../Engine/Options.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
-#include "../Interface/TextButton.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/Window.h"
-#include "../Interface/Text.h"
 #include "../Interface/TextList.h"
 #include "../Engine/Action.h"
-#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -43,8 +37,8 @@ OptionsControlsState::OptionsControlsState(OptionsOrigin origin) : OptionsBaseSt
 	setCategory(_btnControls);
 
 	// Create objects
-	_lstControls = new TextList(200, 136, 94, 8);	
-	
+	_lstControls = new TextList(200, 136, 94, 8);
+
 	if (origin != OPT_BATTLESCAPE)
 	{
 		add(_lstControls, "optionLists", "controlsMenu");
@@ -72,22 +66,25 @@ OptionsControlsState::OptionsControlsState(OptionsOrigin origin) : OptionsBaseSt
 	_colorSel = _lstControls->getScrollbarColor();
 	_colorNormal = _lstControls->getColor();
 
-	const std::vector<OptionInfo> &options = Options::getOptionInfo();
-	for (std::vector<OptionInfo>::const_iterator i = options.begin(); i != options.end(); ++i)
+	for (const auto& optionInfo : Options::getOptionInfo())
 	{
-		if (i->type() == OPTION_KEY && !i->description().empty())
+		if (optionInfo.type() == OPTION_KEY && !optionInfo.description().empty())
 		{
-			if (i->category() == "STR_GENERAL")
+			if (optionInfo.category() == "STR_GENERAL")
 			{
-				_controlsGeneral.push_back(*i);
+				_controlsGeneral.push_back(optionInfo);
 			}
-			else if (i->category() == "STR_GEOSCAPE")
+			else if (optionInfo.category() == "STR_GEOSCAPE")
 			{
-				_controlsGeo.push_back(*i);
+				_controlsGeo.push_back(optionInfo);
 			}
-			else if (i->category() == "STR_BATTLESCAPE")
+			else if (optionInfo.category() == "STR_BATTLESCAPE")
 			{
-				_controlsBattle.push_back(*i);
+				_controlsBattle.push_back(optionInfo);
+			}
+			else if (optionInfo.category() == "STR_OXCE")
+			{
+				_controlsOxce.push_back(optionInfo);
 			}
 		}
 	}
@@ -107,17 +104,21 @@ void OptionsControlsState::init()
 {
 	OptionsBaseState::init();
 	_lstControls->clearList();
-	_lstControls->addRow(2, tr("STR_GENERAL").c_str(), L"");
+	_lstControls->addRow(2, tr("STR_GENERAL").c_str(), "");
 	_lstControls->setCellColor(0, 0, _colorGroup);
 	addControls(_controlsGeneral);
-	_lstControls->addRow(2, L"", L"");
-	_lstControls->addRow(2, tr("STR_GEOSCAPE").c_str(), L"");
+	_lstControls->addRow(2, "", "");
+	_lstControls->addRow(2, tr("STR_GEOSCAPE").c_str(), "");
 	_lstControls->setCellColor(_controlsGeneral.size() + 2, 0, _colorGroup);
 	addControls(_controlsGeo);
-	_lstControls->addRow(2, L"", L"");
-	_lstControls->addRow(2, tr("STR_BATTLESCAPE").c_str(), L"");
+	_lstControls->addRow(2, "", "");
+	_lstControls->addRow(2, tr("STR_BATTLESCAPE").c_str(), "");
 	_lstControls->setCellColor(_controlsGeneral.size() + 2 + _controlsGeo.size() + 2, 0, _colorGroup);
 	addControls(_controlsBattle);
+	_lstControls->addRow(2, "", "");
+	_lstControls->addRow(2, tr("STR_OXCE").c_str(), "");
+	_lstControls->setCellColor(_controlsGeneral.size() + 2 + _controlsGeo.size() + 2 + _controlsBattle.size() + 2, 0, _colorGroup);
+	addControls(_controlsOxce);
 }
 
 /**
@@ -147,13 +148,13 @@ std::string OptionsControlsState::ucWords(std::string str)
  */
 void OptionsControlsState::addControls(const std::vector<OptionInfo> &keys)
 {
-	for (std::vector<OptionInfo>::const_iterator i = keys.begin(); i != keys.end(); ++i)
+	for (const auto& optionInfo : keys)
 	{
-		std::wstring name = tr(i->description());
-		SDLKey *key = i->asKey();
-		std::wstring keyName = Language::utf8ToWstr(ucWords(SDL_GetKeyName(*key)));
+		std::string name = tr(optionInfo.description());
+		SDLKey *key = optionInfo.asKey();
+		std::string keyName = ucWords(SDL_GetKeyName(*key));
 		if (*key == SDLK_UNKNOWN)
-			keyName = L"";
+			keyName = "";
 		_lstControls->addRow(2, name.c_str(), keyName.c_str());
 	}
 }
@@ -179,6 +180,11 @@ OptionInfo *OptionsControlsState::getControl(size_t sel)
 			 sel <= _controlsGeneral.size() + 2 + _controlsGeo.size() + 2 + _controlsBattle.size())
 	{
 		return &_controlsBattle[sel - 1 - _controlsGeneral.size() - 2 - _controlsGeo.size() - 2];
+	}
+	else if (sel > _controlsGeneral.size() + 2 + _controlsGeo.size() + 2 + _controlsBattle.size() + 2 &&
+		sel <= _controlsGeneral.size() + 2 + _controlsGeo.size() + 2 + _controlsBattle.size() + 2 + _controlsOxce.size())
+	{
+		return &_controlsOxce[sel - 1 - _controlsGeneral.size() - 2 - _controlsGeo.size() - 2 - _controlsBattle.size() - 2];
 	}
 	else
 	{
@@ -221,7 +227,7 @@ void OptionsControlsState::lstControlsClick(Action *action)
 	}
 	else if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
 	{
-		_lstControls->setCellText(_selected, 1, L"");
+		_lstControls->setCellText(_selected, 1, "");
 		*_selKey->asKey() = SDLK_UNKNOWN;
 		_selected = -1;
 		_selKey = 0;
@@ -237,10 +243,12 @@ void OptionsControlsState::lstControlsKeyPress(Action *action)
 	if (_selected != -1)
 	{
 		SDLKey key = action->getDetails()->key.keysym.sym;
-		if (key != 0)
+		if (key != 0 &&
+			key != SDLK_LSHIFT && key != SDLK_LALT && key != SDLK_LCTRL &&
+			key != SDLK_RSHIFT && key != SDLK_RALT && key != SDLK_RCTRL)
 		{
 			*_selKey->asKey() = key;
-			std::wstring name = Language::utf8ToWstr(ucWords(SDL_GetKeyName(*_selKey->asKey())));
+			std::string name = ucWords(SDL_GetKeyName(*_selKey->asKey()));
 			_lstControls->setCellText(_selected, 1, name);
 		}
 		_lstControls->setCellColor(_selected, 0, _colorNormal);

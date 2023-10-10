@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,8 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "BaseFacility.h"
-#include "../Ruleset/RuleBaseFacility.h"
+#include "../Mod/RuleBaseFacility.h"
+#include "../Engine/GraphSubset.h"
 #include "Base.h"
 
 namespace OpenXcom
@@ -28,7 +29,7 @@ namespace OpenXcom
  * @param rules Pointer to ruleset.
  * @param base Pointer to base of origin.
  */
-BaseFacility::BaseFacility(RuleBaseFacility *rules, Base *base) : _rules(rules), _base(base), _x(-1), _y(-1), _buildTime(0), _craftForDrawing(0)
+BaseFacility::BaseFacility(const RuleBaseFacility *rules, Base *base) : _rules(rules), _base(base), _x(-1), _y(-1), _buildTime(0), _disabled(false), _craftsForDrawing(), _hadPreviousFacility(false)
 {
 }
 
@@ -48,6 +49,8 @@ void BaseFacility::load(const YAML::Node &node)
 	_x = node["x"].as<int>(_x);
 	_y = node["y"].as<int>(_y);
 	_buildTime = node["buildTime"].as<int>(_buildTime);
+	_disabled = node["disabled"].as<bool>(_disabled);
+	_hadPreviousFacility = node["hadPreviousFacility"].as<bool>(_hadPreviousFacility);
 }
 
 /**
@@ -62,6 +65,10 @@ YAML::Node BaseFacility::save() const
 	node["y"] = _y;
 	if (_buildTime != 0)
 		node["buildTime"] = _buildTime;
+	if (_disabled)
+		node["disabled"] = _disabled;
+	if (_hadPreviousFacility)
+		node["hadPreviousFacility"] = _hadPreviousFacility;
 	return node;
 }
 
@@ -69,7 +76,7 @@ YAML::Node BaseFacility::save() const
  * Returns the ruleset for the base facility's type.
  * @return Pointer to ruleset.
  */
-RuleBaseFacility *BaseFacility::getRules() const
+const RuleBaseFacility *BaseFacility::getRules() const
 {
 	return _rules;
 }
@@ -115,12 +122,35 @@ void BaseFacility::setY(int y)
 }
 
 /**
+ * Get placement of facility in base.
+ */
+BaseAreaSubset BaseFacility::getPlacement() const
+{
+	auto size = _rules->getSize();
+	return BaseAreaSubset(size, size).offset(_x, _y);
+}
+
+/**
  * Returns the base facility's remaining time
  * until it's finished building (0 = complete).
  * @return Time left in days.
  */
 int BaseFacility::getBuildTime() const
 {
+	return _buildTime;
+}
+
+/**
+ * Returns the base facility's remaining time
+ * until it's finished building (0 = complete).
+ * Facility upgrades and downgrades are ignored in this calculation.
+ * @return Time left in days.
+ */
+int BaseFacility::getAdjustedBuildTime() const
+{
+	if (_hadPreviousFacility)
+		return 0;
+
 	return _buildTime;
 }
 
@@ -140,6 +170,8 @@ void BaseFacility::setBuildTime(int time)
 void BaseFacility::build()
 {
 	_buildTime--;
+	if (_buildTime == 0)
+		_hadPreviousFacility = false;
 }
 
 /**
@@ -154,42 +186,105 @@ bool BaseFacility::inUse() const
 		return false;
 	}
 
-	const std::set<std::string> &otherBaseFunc = _base->getProvidedBaseFunc(this);
-	const std::set<std::string> &usedBaseFunc = _base->getRequireBaseFunc(this);
-
-	const std::vector<std::string> &thisProve = getRules()->getProvidedBaseFunc();
-	for (std::vector<std::string>::const_iterator i = thisProve.begin(); i != thisProve.end(); ++i)
-	{
-		if (!otherBaseFunc.count(*i) && usedBaseFunc.count(*i)) //we provide something unique and someone else using it.
-			return true;
-	}
-
-	return ((_rules->getPersonnel() > 0 && _base->getAvailableQuarters() - _rules->getPersonnel() < _base->getUsedQuarters()) ||
-			(_rules->getStorage() > 0 && _base->getAvailableStores() - _rules->getStorage() < _base->getUsedStores()) ||
-			(_rules->getLaboratories() > 0 && _base->getAvailableLaboratories() - _rules->getLaboratories() < _base->getUsedLaboratories()) ||
-			(_rules->getWorkshops() > 0 && _base->getAvailableWorkshops() - _rules->getWorkshops() < _base->getUsedWorkshops()) ||
-			(_rules->getCrafts() > 0 && _base->getAvailableHangars() - _rules->getCrafts() < _base->getUsedHangars()) ||
-			(_rules->getPsiLaboratories() > 0 && _base->getAvailablePsiLabs() - _rules->getPsiLaboratories() < _base->getUsedPsiLabs()) ||
-			(_rules->getTrainingFacilities() > 0 && _base->getAvailableTraining() - _rules->getTrainingFacilities() < _base->getUsedTraining()) ||
-			(_rules->getAliens() > 0 && _base->getAvailableContainment() - _rules->getAliens() < _base->getUsedContainment()));
+	return _base->isAreaInUse(getPlacement()) != BPE_None;
 }
 
 /**
- * Gets craft, used for drawing facility.
- * @return craft
+ * Checks if the facility is disabled.
+ * @return True if facility is disabled, False otherwise.
  */
-Craft *BaseFacility::getCraft() const
+bool BaseFacility::getDisabled() const
 {
-	return _craftForDrawing;
+	return _disabled;
 }
 
 /**
- * Sets craft, used for drawing facility.
+ * Sets the facility's disabled flag.
+ * @param disabled flag to set.
+ */
+void BaseFacility::setDisabled(bool disabled)
+{
+	_disabled = disabled;
+}
+
+/**
+* Gets crafts vector, used for drawing facility.
+ * @return crafts vector at the facility
+ */
+std::vector<Craft *> BaseFacility::getCraftsForDrawing()
+{
+	return _craftsForDrawing;
+}
+
+/**
+ * Sets a vector of crafts, used for drawing facility.
+ * @param vector of Crafts to copy to other facility, craftV
+ */
+ void BaseFacility::setCraftsForDrawing(std::vector<Craft*> craftV)
+{
+		_craftsForDrawing = craftV;
+}
+
+/**
+ * Add another craft, used for drawing facility.
  * @param craft for drawing hangar.
  */
-void BaseFacility::setCraft(Craft *craft)
+void BaseFacility::addCraftForDrawing(Craft *craft)
 {
-	_craftForDrawing = craft;
+	_craftsForDrawing.push_back(craft);
+}
+
+/**
+ * Delete an already included craft, used for drawing facility.
+ * @param craft to delete
+ */
+std::vector<Craft*>::iterator BaseFacility::delCraftForDrawing(Craft *craft)
+{
+	std::vector<Craft*>::iterator c;
+	for (c = _craftsForDrawing.begin(); c != _craftsForDrawing.end(); ++c)
+	{
+		if (*c == craft)
+		{
+			return _craftsForDrawing.erase(c);
+		}
+	}
+	return c;
+}
+
+/**
+ * Clear vector of crafts at the facility
+ */
+void BaseFacility::clearCraftsForDrawing()
+{
+	_craftsForDrawing.clear();
+}
+
+/**
+ * Gets whether this facility was placed over another or was placed by removing another
+ * @return true if placed over or by removing another facility
+ */
+bool BaseFacility::getIfHadPreviousFacility() const
+{
+	return _hadPreviousFacility;
+}
+
+/**
+ * Sets whether this facility was placed over another or was placed by removing another
+ * @param was there another facility just here?
+ */
+void BaseFacility::setIfHadPreviousFacility(bool hadPreviousFacility)
+{
+	_hadPreviousFacility = hadPreviousFacility;
+}
+
+/**
+ * Is the facility fully built or being upgraded/downgraded?
+ * Used for determining if this facility should count for base connectivity
+ * @return True, if fully built or being upgraded/downgraded.
+ */
+bool BaseFacility::isBuiltOrHadPreviousFacility() const
+{
+	return _buildTime == 0 || _hadPreviousFacility;
 }
 
 }

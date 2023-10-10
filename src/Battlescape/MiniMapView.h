@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_MINIMAPVIEW_H
-#define OPENXCOM_MINIMAPVIEW_H
-
 #include "../Engine/InteractiveSurface.h"
 #include "Position.h"
 
@@ -40,6 +38,7 @@ class MiniMapView : public InteractiveSurface
 	SavedBattleGame * _battleGame;
 	int _frame;
 	SurfaceSet * _set;
+	int _emptySpaceIndex;
 	// these two are required for right-button scrolling on the minimap
 	bool _isMouseScrolling;
 	bool _isMouseScrolled;
@@ -50,18 +49,18 @@ class MiniMapView : public InteractiveSurface
 	int _totalMouseMoveX, _totalMouseMoveY;
 	bool _mouseMovedOverThreshold;
 	/// Handles pressing on the MiniMap.
-	void mousePress(Action *action, State *state);
+	void mousePress(Action *action, State *state) override;
 	/// Handles clicking on the MiniMap.
-	void mouseClick(Action *action, State *state);
+	void mouseClick(Action *action, State *state) override;
 	/// Handles moving mouse over the MiniMap.
-	void mouseOver(Action *action, State *state);
+	void mouseOver(Action *action, State *state) override;
 	/// Handles moving the mouse into the MiniMap surface.
-	void mouseIn(Action *action, State *state);
+	void mouseIn(Action *action, State *state) override;
 public:
 	/// Creates the MiniMapView.
 	MiniMapView(int w, int h, int x, int y, Game * game, Camera * camera, SavedBattleGame * battleGame);
 	/// Draws the minimap.
-	void draw();
+	void draw() override;
 	/// Changes the displayed minimap level.
 	int up();
 	/// Changes the displayed minimap level.
@@ -72,5 +71,3 @@ public:
 };
 
 }
-
-#endif

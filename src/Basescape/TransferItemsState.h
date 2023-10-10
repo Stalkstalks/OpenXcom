@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_TRANSFERITEMSSTATE_H
-#define OPENXCOM_TRANSFERITEMSSTATE_H
-
 #include "../Engine/State.h"
 #include "../Savegame/Transfer.h"
 #include <vector>
@@ -30,11 +28,13 @@ namespace OpenXcom
 class TextButton;
 class Window;
 class Text;
+class TextEdit;
 class TextList;
+class ComboBox;
 class Timer;
 class Base;
-class Soldier;
-class Craft;
+class DebriefingState;
+class RuleItem;
 
 /**
  * Transfer screen that lets the player pick
@@ -44,40 +44,51 @@ class TransferItemsState : public State
 {
 private:
 	Base *_baseFrom, *_baseTo;
+	DebriefingState *_debriefingState;
 	TextButton *_btnOk, *_btnCancel;
+	TextEdit *_btnQuickSearch;
 	Window *_window;
-	Text *_txtTitle, *_txtItem, *_txtQuantity, *_txtAmountTransfer, *_txtAmountDestination;
+	Text *_txtTitle, *_txtQuantity, *_txtAmountTransfer, *_txtAmountDestination;
+	ComboBox *_cbxCategory;
 	TextList *_lstItems;
-	std::vector<int> _baseQty, _transferQty;
-	std::vector<Soldier*> _soldiers;
-	std::vector<Craft*> _crafts;
-	std::vector<std::string> _items;
-	size_t _sel, _itemOffset;
-	int _total, _pQty, _cQty, _aQty;
+	std::vector<TransferRow> _items;
+	std::vector<int> _rows;
+	std::vector<std::string> _cats;
+	size_t _vanillaCategories;
+	size_t _sel;
+	int _total, _pQty, _aQty;
+	std::map<int,int> _tCQty;	// map of crafts to transfers, as different types must be considered separate
 	double _iQty;
-	int _hasSci, _hasEng;
 	double _distance;
 	Uint8 _ammoColor;
 	Timer *_timerInc, *_timerDec;
-	/// Gets selected cost.
-	int getCost() const;
-	/// Gets selected quantity.
-	int getQuantity() const;
+	TransferSortDirection _previousSort, _currentSort;
+	bool _errorShown;
+
+	/// Gets the category of the current selection.
+	std::string getCategory(int sel) const;
+	/// Determines if the current selection belongs to a given category.
+	bool belongsToCategory(int sel, const std::string &cat) const;
+	/// Gets the row of the current selection.
+	TransferRow &getRow() { return _items[_rows[_sel]]; }
 	/// Gets distance between bases.
 	double getDistance() const;
-	/// Gets type of selected item.
-	enum TransferType getType(size_t selected) const;
-	/// Gets item Index.
-	size_t getItemIndex(size_t selected) const;
 public:
 	/// Creates the Transfer Items state.
-	TransferItemsState(Base *baseFrom, Base *baseTo);
+	TransferItemsState(Base *baseFrom, Base *baseTo, DebriefingState *debriefingState);
 	/// Cleans up the Transfer Items state.
 	~TransferItemsState();
 	/// Runs the timers.
-	void think();
+	void think() override;
+	/// Updates the item list.
+	void updateList();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handlers for Quick Search.
+	void btnQuickSearchToggle(Action *action);
+	void btnQuickSearchApply(Action *action);
+	/// Handler for pressing the "Transfer all" hotkey.
+	void btnTransferAllClick(Action *action);
 	/// Completes the transfer between bases.
 	void completeTransfer();
 	/// Handler for clicking the Cancel button.
@@ -108,8 +119,8 @@ public:
 	void updateItemStrings();
 	/// Gets the total of the transfer.
 	int getTotal() const;
+	/// Handler for changing the category filter.
+	void cbxCategoryChange(Action *action);
 };
 
 }
-
-#endif

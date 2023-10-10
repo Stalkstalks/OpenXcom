@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,9 +18,7 @@
  */
 #include "UfoLostState.h"
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
@@ -34,7 +32,7 @@ namespace OpenXcom
  * @param game Pointer to the core game.
  * @param id Name of the UFO.
  */
-UfoLostState::UfoLostState(const std::wstring &id) : _id(id)
+UfoLostState::UfoLostState(const std::string &id) : _id(id)
 {
 	_screen = false;
 
@@ -44,16 +42,16 @@ UfoLostState::UfoLostState(const std::wstring &id) : _id(id)
 	_txtTitle = new Text(160, 32, 48, 72);
 
 	// Set palette
-	setInterface("UFOInfo");
+	setInterface("UFOLost");
 
-	add(_window, "window", "UFOInfo");
-	add(_btnOk, "button", "UFOInfo");
-	add(_txtTitle, "text", "UFOInfo");
+	add(_window, "window", "UFOLost");
+	add(_btnOk, "button", "UFOLost");
+	add(_txtTitle, "text", "UFOLost");
 
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK15.SCR"));
+	setWindowBackground(_window, "UFOLost");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&UfoLostState::btnOkClick);
@@ -62,8 +60,8 @@ UfoLostState::UfoLostState(const std::wstring &id) : _id(id)
 
 	_txtTitle->setBig();
 	_txtTitle->setAlign(ALIGN_CENTER);
-	std::wstring s = _id;
-	s += L'\n';
+	std::string s = _id;
+	s += '\n';
 	s += tr("STR_TRACKING_LOST");
 	_txtTitle->setText(s);
 }

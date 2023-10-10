@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,7 +19,6 @@
 
 #include "FpsCounter.h"
 #include <cmath>
-#include "../Engine/Palette.h"
 #include "../Engine/Action.h"
 #include "../Engine/Timer.h"
 #include "../Engine/Options.h"
@@ -61,7 +60,7 @@ FpsCounter::~FpsCounter()
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void FpsCounter::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void FpsCounter::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_text->setPalette(colors, firstcolor, ncolors);
@@ -114,11 +113,12 @@ void FpsCounter::update()
 void FpsCounter::draw()
 {
 	Surface::draw();
-	_text->blit(this);
+	_text->blit(this->getSurface());
 }
 
 void FpsCounter::addFrame()
 {
 	_frames++;
 }
+
 }

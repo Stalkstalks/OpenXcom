@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_UNITWALKBSTATE_H
-#define OPENXCOM_UNITWALKBSTATE_H
-
-#include <climits>
 #include "BattleState.h"
 #include "BattlescapeGame.h"
 #include "Position.h"
@@ -41,7 +38,12 @@ private:
 	BattleUnit *_unit;
 	Pathfinding *_pf;
 	TileEngine *_terrain;
-	bool _falling;
+
+	/// Unit will fall down always.
+	bool _falling = false;
+	/// Allow to move over some tiles that normally should fall down.
+	bool _fallingWhenStopped = false;
+
 	bool _beforeFirstStep;
 	/// Handles some calculations when the path is finished.
 	void postPathProcedures();
@@ -56,16 +58,14 @@ public:
 	UnitWalkBState(BattlescapeGame *parent, BattleAction _action);
 	/// Cleans up the UnitWalkBState.
 	~UnitWalkBState();
-	/// Sets the target to walk to.
-	void setTarget(Position target);
 	/// Initializes the state.
-	void init();
+	void init() override;
+	/// Deinitializes the state.
+	void deinit() override;
 	/// Handles a cancels request.
-	void cancel();
+	void cancel() override;
 	/// Runs state functionality every cycle.
-	void think();
+	void think() override;
 };
 
 }
-
-#endif

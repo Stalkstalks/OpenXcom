@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -19,19 +19,14 @@
 #include <sstream>
 #include "PsiTrainingState.h"
 #include "../Engine/Game.h"
-#include "../Engine/Screen.h"
 #include "../Engine/Action.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/Base.h"
-#include "GeoscapeState.h"
 #include "AllocatePsiTrainingState.h"
-#include "TrainingState.h"
 #include "../Engine/Options.h"
 
 namespace OpenXcom
@@ -41,7 +36,7 @@ namespace OpenXcom
  * Initializes all the elements in the Psi Training screen.
  * @param game Pointer to the core game.
  */
-PsiTrainingState::PsiTrainingState() : _training(false)
+PsiTrainingState::PsiTrainingState()
 {
 	// Create objects
 	_window = new Window(this, 320, 200, 0, 0);
@@ -56,7 +51,7 @@ PsiTrainingState::PsiTrainingState() : _training(false)
 	add(_txtTitle, "text", "psiTraining");
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK01.SCR"));
+	setWindowBackground(_window, "psiTraining");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&PsiTrainingState::btnOkClick);
@@ -67,15 +62,15 @@ PsiTrainingState::PsiTrainingState() : _training(false)
 	_txtTitle->setText(tr("STR_PSIONIC_TRAINING"));
 
 	int buttons = 0;
-	for (std::vector<Base*>::const_iterator b = _game->getSavedGame()->getBases()->begin(); b != _game->getSavedGame()->getBases()->end(); ++b)
+	for (auto* xbase : *_game->getSavedGame()->getBases())
 	{
-		if ((*b)->getAvailablePsiLabs())
+		if (xbase->getAvailablePsiLabs())
 		{
 			TextButton *btnBase = new TextButton(160, 14, 80, 40 + 16 * buttons);
 			btnBase->onMouseClick((ActionHandler)&PsiTrainingState::btnBaseXClick);
-			btnBase->setText((*b)->getName());
+			btnBase->setText(xbase->getName());
 			add(btnBase, "button1", "psiTraining");
-			_bases.push_back(*b);
+			_bases.push_back(xbase);
 			_btnBases.push_back(btnBase);
 			++buttons;
 			if (buttons >= 8)
@@ -83,11 +78,11 @@ PsiTrainingState::PsiTrainingState() : _training(false)
 				break;
 			}
 		}
-		_training = _training || (*b)->getAvailableTraining();
 	}
 
 	centerAllSurfaces();
 }
+
 /**
  *
  */
@@ -103,10 +98,6 @@ PsiTrainingState::~PsiTrainingState()
 void PsiTrainingState::btnOkClick(Action *)
 {
 	_game->popState();
-	if (_training)
-	{
-		_game->pushState(new TrainingState);
-	}
 }
 
 /**

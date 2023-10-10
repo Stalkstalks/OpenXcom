@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATETFTDITEM_H
-#define OPENXCOM_ARTICLESTATETFTDITEM_H
-
 #include "ArticleStateTFTD.h"
 
 namespace OpenXcom
@@ -31,7 +28,7 @@ namespace OpenXcom
 	class ArticleStateTFTDItem : public ArticleStateTFTD
 	{
 	public:
-		ArticleStateTFTDItem(ArticleDefinitionTFTD *defs);
+		ArticleStateTFTDItem(ArticleDefinitionTFTD *defs, std::shared_ptr<ArticleCommonState> state);
 		virtual ~ArticleStateTFTDItem();
 
 	protected:
@@ -41,7 +38,6 @@ namespace OpenXcom
 		Text *_txtTuCost;
 		Text *_txtAmmoType[3];
 		Text *_txtAmmoDamage[3];
+		Text *_txtArrows;
 	};
 }
-
-#endif

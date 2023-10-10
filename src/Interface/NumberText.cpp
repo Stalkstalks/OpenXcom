@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -183,11 +183,11 @@ NumberText::NumberText(int width, int height, int x, int y) : Surface(width, hei
 		_borderedChars[i] = new Surface(5, 7);
 		// give it a border
 		// this is the "darker" shade that goes in the corners.
-		for (int x = 0; x <= 2; x += 2)
+		for (int j = 0; j <= 2; j += 2)
 		{
-			for (int y = 0; y <= 2; y += 2)
+			for (int k = 0; k <= 2; k += 2)
 			{
-				_chars[i]->blitNShade(_borderedChars[i], x, y, 11);
+				_chars[i]->blitNShade(_borderedChars[i], j, k, 11);
 			}
 		}
 		// this is the "slightly darker" version that goes in four cardinals.
@@ -257,7 +257,7 @@ Uint8 NumberText::getColor() const
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void NumberText::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void NumberText::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	for (int i = 0; i < 10; ++i)
@@ -281,9 +281,7 @@ void NumberText::draw()
 	{
 		for (std::string::iterator i = s.begin(); i != s.end(); ++i)
 		{
-			_chars[*i - '0']->setX(x);
-			_chars[*i - '0']->setY(0);
-			_chars[*i - '0']->blit(this);
+			_chars[*i - '0']->blitNShade(this, x, 0);
 			x += _chars[*i - '0']->getWidth() + 1;
 		}
 	}
@@ -291,9 +289,7 @@ void NumberText::draw()
 	{
 		for (std::string::iterator i = s.begin(); i != s.end(); ++i)
 		{
-			_borderedChars[*i - '0']->setX(x);
-			_borderedChars[*i - '0']->setY(0);
-			_borderedChars[*i - '0']->blit(this);
+			_borderedChars[*i - '0']->blitNShade(this, x, 0);
 			x += _chars[*i - '0']->getWidth() + 1; // no this isn't a typo, i want to use the same spacing regardless.
 		}
 	}
@@ -305,4 +301,5 @@ void NumberText::setBordered(bool bordered)
 {
 	_bordered = bordered;
 }
+
 }

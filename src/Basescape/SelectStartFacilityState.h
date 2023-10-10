@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SELECTSTARTFACILITYSTATE_H
-#define OPENXCOM_SELECTSTARTFACILITYSTATE_H
-
 #include "BuildFacilitiesState.h"
 
 namespace OpenXcom
@@ -40,15 +38,13 @@ public:
 	/// Cleans up the Build Facilities state.
 	~SelectStartFacilityState();
 	/// Populates the build option list.
-	virtual void populateBuildList();
+	virtual void populateBuildList() override;
 	/// Handler for clicking the Reset button.
 	void btnOkClick(Action *action);
 	/// Handler for clicking the Facilities list.
-	void lstFacilitiesClick(Action *action);
+	void lstFacilitiesClick(Action *action) override;
 	/// Handler for when the facility is actually built.
 	void facilityBuilt();
 };
 
 }
-
-#endif

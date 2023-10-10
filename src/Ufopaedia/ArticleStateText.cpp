@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,28 +17,31 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "Ufopaedia.h"
-#include "../Ruleset/ArticleDefinition.h"
+#include "../Mod/ArticleDefinition.h"
 #include "ArticleStateText.h"
 #include "../Engine/Game.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
 #include "../Engine/Surface.h"
-#include "../Resource/ResourcePack.h"
+#include "../Mod/Mod.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateText::ArticleStateText(ArticleDefinitionText *defs) : ArticleState(defs->id)
+	ArticleStateText::ArticleStateText(ArticleDefinitionText *defs, std::shared_ptr<ArticleCommonState> state) : ArticleState(defs->id, std::move(state))
 	{
 		// add screen elements
 		_txtTitle = new Text(296, 17, 5, 23);
 		_txtInfo = new Text(296, 150, 10, 48);
 
 		// Set palette
-		setPalette("PAL_UFOPAEDIA");
+		setStandardPalette("PAL_UFOPAEDIA");
+
+		_buttonColor = _game->getMod()->getInterface("articleText")->getElement("button")->color;
+		_titleColor = _game->getMod()->getInterface("articleText")->getElement("title")->color;
+		_textColor1 = _game->getMod()->getInterface("articleText")->getElement("text")->color;
+		_textColor2 = _game->getMod()->getInterface("articleText")->getElement("text")->color2;
 
 		ArticleState::initLayout();
 
@@ -49,18 +52,20 @@ namespace OpenXcom
 		centerAllSurfaces();
 
 		// Set up objects
-		_game->getResourcePack()->getSurface("BACK10.SCR")->blit(_bg);
-		_btnOk->setColor(Palette::blockOffset(5));
-		_btnPrev->setColor(Palette::blockOffset(5));
-		_btnNext->setColor(Palette::blockOffset(5));
+		_game->getMod()->getSurface("BACK10.SCR")->blitNShade(_bg, 0, 0);
+		_btnOk->setColor(_buttonColor);
+		_btnPrev->setColor(_buttonColor);
+		_btnNext->setColor(_buttonColor);
 
-		_txtTitle->setColor(Palette::blockOffset(15)+4);
+		_txtTitle->setColor(_titleColor);
 		_txtTitle->setBig();
-		_txtTitle->setText(tr(defs->title));
+		_txtTitle->setText(tr(defs->getTitleForPage(_state->current_page)));
 
-		_txtInfo->setColor(Palette::blockOffset(15)-1);
+		_txtInfo->setColor(_textColor1);
+		_txtInfo->setSecondaryColor(_textColor2);
 		_txtInfo->setWordWrap(true);
-		_txtInfo->setText(tr(defs->text));
+		_txtInfo->setScrollable(true);
+		_txtInfo->setText(tr(defs->getTextForPage(_state->current_page)));
 	}
 
 	ArticleStateText::~ArticleStateText()

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATEITEM_H
-#define OPENXCOM_ARTICLESTATEITEM_H
-
 #include "ArticleState.h"
 
 namespace OpenXcom
@@ -38,13 +35,16 @@ namespace OpenXcom
 	class ArticleStateItem : public ArticleState
 	{
 	public:
-		ArticleStateItem(ArticleDefinitionItem *article_defs);
+		ArticleStateItem(ArticleDefinitionItem *article_defs, std::shared_ptr<ArticleCommonState> state);
 		virtual ~ArticleStateItem();
 
 	protected:
 		Surface *_image;
 		Text *_txtTitle;
+		Text *_txtWeight;
 		Text *_txtInfo;
+		Text *_txtAccuracyModifier;
+		Text *_txtPowerBonus;
 		TextList *_lstInfo;
 		Text *_txtShotType;
 		Text *_txtAccuracy;
@@ -54,7 +54,9 @@ namespace OpenXcom
 		Text *_txtAmmoType[3];
 		Text *_txtAmmoDamage[3];
 		Surface *_imageAmmo[3];
+		Text * _txtArrows;
+		Uint8 _buttonColor, _textColor, _textColor2, _listColor1, _listColor2, _ammoColor, _arrowColor;
+		std::string addRuleStatBonus(const RuleStatBonus &value);
+		int getDamageTypeTextColor(ItemDamageType dt);
 	};
 }
-
-#endif

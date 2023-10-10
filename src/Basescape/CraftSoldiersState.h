@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,9 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_CRAFTSOLDIERSSTATE_H
-#define OPENXCOM_CRAFTSOLDIERSSTATE_H
-
 #include "../Engine/State.h"
+#include <vector>
+#include "SoldierSortUtil.h"
 
 namespace OpenXcom
 {
@@ -28,8 +28,10 @@ class TextButton;
 class Window;
 class Text;
 class TextList;
+class ComboBox;
 class Base;
-class Craft;
+class Soldier;
+struct SortFunctor;
 
 /**
  * Select Squad screen that lets the player
@@ -39,24 +41,33 @@ class CraftSoldiersState : public State
 {
 private:
 	TextButton *_btnOk;
+	TextButton *_btnPreview;
 	Window *_window;
 	Text *_txtTitle, *_txtName, *_txtRank, *_txtCraft, *_txtAvailable, *_txtUsed;
+	ComboBox *_cbxSortBy;
 	TextList *_lstSoldiers;
 
 	Base *_base;
 	size_t _craft;
 	Uint8 _otherCraftColor;
-	///initializes the display list based on the craft soldier's list and the position to display
+	std::vector<Soldier *> _origSoldierOrder;
+	std::vector<SortFunctor *> _sortFunctors;
+	getStatFn_t _dynGetter;
+	/// initializes the display list based on the craft soldier's list and the position to display
 	void initList(size_t scrl);
 public:
 	/// Creates the Craft Soldiers state.
 	CraftSoldiersState(Base *base, size_t craft);
 	/// Cleans up the Craft Soldiers state.
 	~CraftSoldiersState();
+	/// Handler for changing the sort by combobox.
+	void cbxSortByChange(Action *action);
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
+	/// Handler for clicking the Preview button.
+	void btnPreviewClick(Action *action);
 	/// Updates the soldiers list.
-	void init();
+	void init() override;
 	/// Handler for clicking the Soldiers reordering button.
 	void lstItemsLeftArrowClick(Action *action);
 	/// Moves a soldier up.
@@ -69,8 +80,11 @@ public:
 	void lstSoldiersClick(Action *action);
 	/// Handler for pressing-down a mouse-button in the list.
 	void lstSoldiersMousePress(Action *action);
+	/// Handler for clicking the De-assign All Soldiers button.
+	void btnDeassignAllSoldiersClick(Action *action);
+	void btnDeassignCraftSoldiersClick(Action *action);
+	/// Handler for clicking the AI button.
+	void btnAIClick(Action *action);
 };
 
 }
-
-#endif

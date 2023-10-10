@@ -77,16 +77,12 @@ items:
     costSell: 100
     transferTime: 48
     weight: 1
-    bigSprite: -1
-    floorSprite: 12
     hitSound: 13
     hitAnimation: 26
     power: 60
     damageType: 1
     clipSize: 30
     battleType: 2
-    invWidth: 2
-    invHeight: 1
   - type: STR_TANK_ROCKET_LAUNCHER
     size: 6
     costBuy: 480000
@@ -115,16 +111,12 @@ items:
     costSell: 2250
     transferTime: 48
     weight: 1
-    bigSprite: -1
-    floorSprite: 16
     hitSound: 0
     hitAnimation: 0
     power: 85
     damageType: 3
     clipSize: 8
     battleType: 2
-    invWidth: 1
-    invHeight: 3
   - type: STR_TANK_LASER_CANNON
     size: 6
     costSell: 594000
@@ -189,7 +181,7 @@ items:
     tuAimed: 66
     battleType: 1
     fixedWeapon: true
-    waypoint: true
+    waypoints: 9
     invWidth: 2
     invHeight: 3
     turretType: 4
@@ -198,16 +190,12 @@ items:
     costSell: 31500
     transferTime: 48
     weight: 1
-    bigSprite: -1
-    floorSprite: 35
     hitSound: 0
     hitAnimation: 0
     power: 140
     damageType: 3
     clipSize: 8
     battleType: 2
-    invWidth: 1
-    invHeight: 1
     blastRadius: 11
   - type: STR_PISTOL
     size: 0.1
@@ -407,7 +395,7 @@ items:
     floorSprite: 10
     hitSound: 0
     hitAnimation: 0
-    power: 42
+    power: 48
     damageType: 2
     clipSize: 14
     battleType: 2
@@ -672,6 +660,7 @@ items:
     floorSprite: 39
     invWidth: 2
     invHeight: 3
+    battleType: 11
     recover: false
   - type: STR_CORPSE_ARMOR
     name: STR_CORPSE
@@ -681,6 +670,7 @@ items:
     invWidth: 2
     invHeight: 3
     armor: 30
+    battleType: 11
     recover: false
   - type: STR_CORPSE_SUIT
     name: STR_CORPSE
@@ -690,6 +680,7 @@ items:
     invWidth: 2
     invHeight: 3
     armor: 40
+    battleType: 11
     recover: false
   - type: STR_HEAVY_PLASMA
     requires:
@@ -827,7 +818,7 @@ items:
     tuAimed: 66
     battleType: 1
     twoHanded: true
-    waypoint: true
+    waypoints: 9
     invWidth: 2
     invHeight: 3
     recoveryPoints: 5
@@ -908,6 +899,7 @@ items:
     floorSprite: 37
     invWidth: 1
     invHeight: 1
+    recoveryPoints: 5
   - type: STR_MIND_PROBE
     requires:
       - STR_MIND_PROBE
@@ -916,7 +908,7 @@ items:
     weight: 5
     bigSprite: 29
     floorSprite: 28
-    hitSound: 37    
+    hitSound: 37
     battleType: 8
     invWidth: 2
     invHeight: 2
@@ -1104,41 +1096,49 @@ items:
     floorSprite: 64
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: HOVERTANK_CORPSE_2
     floorSprite: 65
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: HOVERTANK_CORPSE_3
     floorSprite: 66
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: HOVERTANK_CORPSE_4
     floorSprite: 67
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: TANK_CORPSE_1
     floorSprite: 68
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: TANK_CORPSE_2
     floorSprite: 69
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: TANK_CORPSE_3
     floorSprite: 70
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: TANK_CORPSE_4
     floorSprite: 71
     invWidth: 0
     invHeight: 0
+    battleType: 11
     recover: false
   - type: CIVM_CORPSE
     name: STR_CORPSE
@@ -1148,6 +1148,7 @@ items:
     invWidth: 2
     invHeight: 3
     armor: 12
+    battleType: 11
     recover: false
   - type: CIVF_CORPSE
     name: STR_CORPSE
@@ -1157,6 +1158,7 @@ items:
     invWidth: 2
     invHeight: 3
     armor: 12
+    battleType: 11
     recover: false
   - type: STR_UFO_POWER_SOURCE
     size: 0.7
@@ -1203,6 +1205,9 @@ items:
     costSell: 6500
     specialType: 10
     recoveryPoints: 1
+    recoveryDividers:
+      STR_UFO: 10
+      STR_OTHER: 150
   - type: STR_ALIEN_HABITAT
     size: 0.1
     costSell: 100
@@ -1219,7 +1224,7 @@ items:
     costSell: 115000
   - type: CYBERDISC_WEAPON
     weight: 3
-    bigSprite: -2
+    bigSprite: 60
     floorSprite: 31
     handSprite: 104
     bulletSprite: 8
@@ -1240,7 +1245,7 @@ items:
     recover: false
   - type: REAPER_WEAPON
     weight: 3
-    bigSprite: -3
+    bigSprite: 59
     floorSprite: 31
     handSprite: 104
     meleeSound: 48
@@ -1257,7 +1262,7 @@ items:
     flatRate: true
   - type: CHRYSSALID_WEAPON
     weight: 3
-    bigSprite: -1
+    bigSprite: 61
     floorSprite: 31
     handSprite: 104
     meleeSound: 49
@@ -1275,7 +1280,7 @@ items:
     flatRate: true
   - type: CELATID_WEAPON
     weight: 3
-    bigSprite: -2
+    bigSprite: 60
     floorSprite: 31
     handSprite: 104
     bulletSprite: 8
@@ -1297,7 +1302,7 @@ items:
     arcingShot: true
   - type: SILACOID_WEAPON
     weight: 3
-    bigSprite: -4
+    bigSprite: 58
     floorSprite: 31
     handSprite: 104
     meleeSound: 50
@@ -1314,7 +1319,7 @@ items:
     flatRate: true
   - type: SECTOPOD_WEAPON
     weight: 3
-    bigSprite: -2
+    bigSprite: 60
     floorSprite: 31
     handSprite: 104
     fireSound: 18
@@ -1337,7 +1342,7 @@ items:
     recover: false
   - type: ZOMBIE_WEAPON
     weight: 3
-    bigSprite: 26
+    bigSprite: 57
     meleeSound: 48
     strengthApplied: true
     damageType: 7
@@ -1345,7 +1350,7 @@ items:
     tuMelee: 15
     battleType: 3
     fixedWeapon: true
-    invWidth: 1
+    invWidth: 2
     invHeight: 3
     clipSize: -1
     recover: false

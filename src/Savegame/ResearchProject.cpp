@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,16 +17,14 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ResearchProject.h"
-#include "../Ruleset/RuleResearch.h"
-#include "../Ruleset/Ruleset.h"
-#include <algorithm>
+#include "../Mod/RuleResearch.h"
 
 namespace OpenXcom
 {
 const float PROGRESS_LIMIT_UNKNOWN = 0.333f;
-const float PROGRESS_LIMIT_POOR = 0.008f;
-const float PROGRESS_LIMIT_AVERAGE = 0.14f;
-const float PROGRESS_LIMIT_GOOD = 0.26f;
+const float PROGRESS_LIMIT_POOR = 0.07f;
+const float PROGRESS_LIMIT_AVERAGE = 0.13f;
+const float PROGRESS_LIMIT_GOOD = 0.25f;
 
 ResearchProject::ResearchProject(RuleResearch * p, int c) : _project(p), _assigned(0), _spent(0), _cost(c)
 {
@@ -35,15 +33,19 @@ ResearchProject::ResearchProject(RuleResearch * p, int c) : _project(p), _assign
 /**
  * Called every day to compute time spent on this ResearchProject
  * @return true if the ResearchProject is finished
-*/
+ */
 bool ResearchProject::step()
 {
 	_spent += _assigned;
-	if (_spent >= getCost())
-	{
-		return true;
-	}
-	return false;
+	return isFinished();
+}
+
+/**
+ * gets state of project.
+ */
+bool ResearchProject::isFinished()
+{
+	return _spent >= getCost();
 }
 
 /**
@@ -133,7 +135,7 @@ YAML::Node ResearchProject::save() const
 /**
  * Return a string describing Research progress.
  * @return a string describing Research progress.
-*/
+ */
 std::string ResearchProject::getResearchProgress() const
 {
 	float progress = (float)getSpent() / getRules()->getCost();
@@ -141,7 +143,7 @@ std::string ResearchProject::getResearchProgress() const
 	{
 		return "STR_NONE";
 	}
-	else if (progress < PROGRESS_LIMIT_UNKNOWN)
+	else if (progress <= PROGRESS_LIMIT_UNKNOWN)
 	{
 		return "STR_UNKNOWN";
 	}
@@ -149,19 +151,20 @@ std::string ResearchProject::getResearchProgress() const
 	{
 		float rating = (float)getAssigned();
 		rating /= getRules()->getCost();
-		if (rating < PROGRESS_LIMIT_POOR)
+		if (rating <= PROGRESS_LIMIT_POOR)
 		{
 			return "STR_POOR";
 		}
-		else if (rating < PROGRESS_LIMIT_AVERAGE)
+		else if (rating <= PROGRESS_LIMIT_AVERAGE)
 		{
 			return "STR_AVERAGE";
 		}
-		else if (rating < PROGRESS_LIMIT_GOOD)
+		else if (rating <= PROGRESS_LIMIT_GOOD)
 		{
 			return "STR_GOOD";
 		}
 		return "STR_EXCELLENT";
 	}
 }
+
 }

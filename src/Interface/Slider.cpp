@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,11 +18,10 @@
  */
 #include "Slider.h"
 #include "../fmath.h"
-#include <algorithm>
 #include "../Engine/Action.h"
-#include "../Interface/TextButton.h"
-#include "../Interface/Text.h"
-#include "../Interface/Frame.h"
+#include "TextButton.h"
+#include "Text.h"
+#include "Frame.h"
 
 namespace OpenXcom
 {
@@ -47,11 +46,11 @@ Slider::Slider(int width, int height, int x, int y) : InteractiveSurface(width, 
 
 	_txtMinus->setAlign(ALIGN_CENTER);
 	_txtMinus->setVerticalAlign(ALIGN_MIDDLE);
-	_txtMinus->setText(L"-");
+	_txtMinus->setText("-");
 
 	_txtPlus->setAlign(ALIGN_CENTER);
 	_txtPlus->setVerticalAlign(ALIGN_MIDDLE);
-	_txtPlus->setText(L"+");
+	_txtPlus->setText("+");
 
 	_minX = _frame->getX();
 	_maxX = _frame->getX() + _frame->getWidth() - _button->getWidth();
@@ -155,7 +154,7 @@ Uint8 Slider::getColor() const
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void Slider::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void Slider::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_txtMinus->setPalette(colors, firstcolor, ncolors);
@@ -177,7 +176,7 @@ void Slider::handle(Action *action, State *state)
 	if (_pressed && (action->getDetails()->type == SDL_MOUSEMOTION || action->getDetails()->type == SDL_MOUSEBUTTONDOWN))
 	{
 		int cursorX = action->getAbsoluteXMouse();
-		double buttonX = std::min(std::max(_minX, cursorX + _offsetX), _maxX);
+		double buttonX = Clamp(cursorX + _offsetX, _minX, _maxX);
 		double pos = (buttonX - _minX) / (_maxX - _minX);
 		int value = _min + (int)Round((_max - _min) * pos);
 		setValue(value);
@@ -218,13 +217,19 @@ void Slider::setRange(int min, int max)
  */
 void Slider::setValue(int value)
 {
-	if (_min < _max)
+	if (_min == _max)
 	{
-		_value = std::min(std::max(_min, value), _max);
+		_value = 0;
+		setPosition(0.0);
+		return;
+	}
+	else if (_min < _max)
+	{
+		_value = Clamp(value, _min, _max);
 	}
 	else
 	{
-		_value = std::min(std::max(_max, value), _min);
+		_value = Clamp(value, _max, _min);
 	}
 	double pos = (double)(_value - _min) / (double)(_max - _min);
 	setPosition(pos);
@@ -243,7 +248,7 @@ int Slider::getValue() const
  * Blits the slider contents
  * @param surface Pointer to surface to blit onto.
  */
-void Slider::blit(Surface *surface)
+void Slider::blit(SDL_Surface *surface)
 {
 	Surface::blit(surface);
 	if (_visible && !_hidden)

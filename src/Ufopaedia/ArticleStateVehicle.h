@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,10 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#ifndef OPENXCOM_ARTICLESTATEVEHICLE_H
-#define OPENXCOM_ARTICLESTATEVEHICLE_H
-
 #include "ArticleState.h"
 
 namespace OpenXcom
@@ -30,13 +27,13 @@ namespace OpenXcom
 	class ArticleDefinitionVehicle;
 
 	/**
-	 * ArticleStateVehicle hasa caption, text and a stats block.
+	 * ArticleStateVehicle has a caption, text and a stats block.
 	 */
 
 	class ArticleStateVehicle : public ArticleState
 	{
 	public:
-		ArticleStateVehicle(ArticleDefinitionVehicle *article_defs);
+		ArticleStateVehicle(ArticleDefinitionVehicle *article_defs, std::shared_ptr<ArticleCommonState> state);
 		virtual ~ArticleStateVehicle();
 
 	protected:
@@ -45,5 +42,3 @@ namespace OpenXcom
 		TextList *_lstStats;
 	};
 }
-
-#endif

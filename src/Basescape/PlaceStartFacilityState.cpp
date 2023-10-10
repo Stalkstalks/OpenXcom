@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -18,16 +18,16 @@
  */
 #include "PlaceStartFacilityState.h"
 #include "../Engine/Game.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Engine/Sound.h"
 #include "../Interface/Text.h"
 #include "BaseView.h"
 #include "../Savegame/Base.h"
 #include "../Savegame/BaseFacility.h"
-#include "../Ruleset/RuleBaseFacility.h"
-#include "../Savegame/SavedGame.h"
+#include "../Mod/RuleBaseFacility.h"
 #include "../Menu/ErrorMessageState.h"
 #include "SelectStartFacilityState.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleInterface.h"
 
 namespace OpenXcom
 {
@@ -39,7 +39,7 @@ namespace OpenXcom
  * @param select Pointer to the selection state.
  * @param rule Pointer to the facility ruleset to build.
  */
-PlaceStartFacilityState::PlaceStartFacilityState(Base *base, SelectStartFacilityState *select, RuleBaseFacility *rule) : PlaceFacilityState(base, rule), _select(select)
+PlaceStartFacilityState::PlaceStartFacilityState(Base *base, SelectStartFacilityState *select, const RuleBaseFacility *rule) : PlaceFacilityState(base, rule), _select(select)
 {
 	_view->onMouseClick((ActionHandler)&PlaceStartFacilityState::viewClick);
 	_numCost->setText(tr("STR_NONE"));
@@ -60,10 +60,10 @@ PlaceStartFacilityState::~PlaceStartFacilityState()
  */
 void PlaceStartFacilityState::viewClick(Action *)
 {
-	if (!_view->isPlaceable(_rule))
+	if (_view->getPlacementError(_rule, nullptr, true))
 	{
 		_game->popState();
-		_game->pushState(new ErrorMessageState(tr("STR_CANNOT_BUILD_HERE"), _palette, _game->getRuleset()->getInterface("basescape")->getElement("errorMessage")->color, "BACK01.SCR", _game->getRuleset()->getInterface("basescape")->getElement("errorPalette")->color));
+		_game->pushState(new ErrorMessageState(tr("STR_CANNOT_BUILD_HERE"), _palette, _game->getMod()->getInterface("basescape")->getElement("errorMessage")->color, "BACK01.SCR", _game->getMod()->getInterface("basescape")->getElement("errorPalette")->color));
 	}
 	else
 	{
@@ -71,6 +71,10 @@ void PlaceStartFacilityState::viewClick(Action *)
 		fac->setX(_view->getGridX());
 		fac->setY(_view->getGridY());
 		_base->getFacilities()->push_back(fac);
+		if (fac->getRules()->getPlaceSound() != Mod::NO_SOUND)
+		{
+			_game->getMod()->getSound("GEO.CAT", fac->getRules()->getPlaceSound())->play();
+		}
 		_game->popState();
 		_select->facilityBuilt();
 	}

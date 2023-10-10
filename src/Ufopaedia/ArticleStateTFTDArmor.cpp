@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,32 +21,37 @@
 #include "../fmath.h"
 #include "ArticleStateTFTD.h"
 #include "ArticleStateTFTDArmor.h"
-#include "../Ruleset/ArticleDefinition.h"
-#include "../Ruleset/Ruleset.h"
-#include "../Ruleset/Armor.h"
+#include "../Mod/ArticleDefinition.h"
+#include "../Mod/Mod.h"
+#include "../Mod/Armor.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Language.h"
+#include "../Engine/LocalizedText.h"
+#include "../Interface/TextButton.h"
+#include "../Engine/Unicode.h"
 #include "../Interface/TextList.h"
 
 namespace OpenXcom
 {
 
-	ArticleStateTFTDArmor::ArticleStateTFTDArmor(ArticleDefinitionTFTD *defs) : ArticleStateTFTD(defs), _row(0)
+	ArticleStateTFTDArmor::ArticleStateTFTDArmor(ArticleDefinitionTFTD *defs, std::shared_ptr<ArticleCommonState> state) : ArticleStateTFTD(defs, std::move(state)), _row(0)
 	{
-		Armor *armor = _game->getRuleset()->getArmor(defs->id);
+		_txtInfo->setHeight(72);
+
+		_btnInfo->setVisible(_game->getMod()->getShowPediaInfoButton());
+
+		Armor *armor = _game->getMod()->getArmor(defs->id, true);
 
 		_lstInfo = new TextList(150, 64, 168, 110);
 		add(_lstInfo);
 
-		_lstInfo->setColor(Palette::blockOffset(0)+2);
+		_lstInfo->setColor(_listColor1);
 		_lstInfo->setColumns(2, 125, 25);
 		_lstInfo->setDot(true);
 
 		// Add armor values
 		addStat("STR_FRONT_ARMOR", armor->getFrontArmor());
-		addStat("STR_LEFT_ARMOR", armor->getSideArmor());
-		addStat("STR_RIGHT_ARMOR", armor->getSideArmor());
+		addStat("STR_LEFT_ARMOR", armor->getLeftSideArmor());
+		addStat("STR_RIGHT_ARMOR", armor->getRightSideArmor());
 		addStat("STR_REAR_ARMOR", armor->getRearArmor());
 		addStat("STR_UNDER_ARMOR", armor->getUnderArmor());
 
@@ -61,7 +66,7 @@ namespace OpenXcom
 			std::string damage = getDamageTypeText(dt);
 			if (percentage != 100 && damage != "STR_UNKNOWN")
 			{
-				addStat(damage, Text::formatPercentage(percentage));
+				addStat(damage, Unicode::formatPercentage(percentage));
 			}
 		}
 
@@ -78,6 +83,7 @@ namespace OpenXcom
 		addStat("STR_THROWING_ACCURACY", armor->getStats()->throwing, true);
 		addStat("STR_MELEE_ACCURACY", armor->getStats()->melee, true);
 		addStat("STR_STRENGTH", armor->getStats()->strength, true);
+		addStat("STR_MANA_POOL", armor->getStats()->mana, true);
 		addStat("STR_PSIONIC_STRENGTH", armor->getStats()->psiStrength, true);
 		addStat("STR_PSIONIC_SKILL", armor->getStats()->psiSkill, true);
 
@@ -91,20 +97,20 @@ namespace OpenXcom
 	{
 		if (stat != 0)
 		{
-			std::wostringstream ss;
+			std::ostringstream ss;
 			if (plus && stat > 0)
-				ss << L"+";
+				ss << "+";
 			ss << stat;
 			_lstInfo->addRow(2, tr(label).c_str(), ss.str().c_str());
-			_lstInfo->setCellColor(_row, 1, Palette::blockOffset(15)+4);
+			_lstInfo->setCellColor(_row, 1, _listColor2);
 			++_row;
 		}
 	}
 
-	void ArticleStateTFTDArmor::addStat(const std::string &label, const std::wstring &stat)
+	void ArticleStateTFTDArmor::addStat(const std::string &label, const std::string &stat)
 	{
 		_lstInfo->addRow(2, tr(label).c_str(), stat.c_str());
-		_lstInfo->setCellColor(_row, 1, Palette::blockOffset(15)+4);
+		_lstInfo->setCellColor(_row, 1, _listColor2);
 		++_row;
 	}
 }

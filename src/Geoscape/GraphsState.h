@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,11 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_GRAPHSSTATE_H
-#define OPENXCOM_GRAPHSSTATE_H
-
 #include "../Engine/State.h"
-#include <string>
 
 namespace OpenXcom
 {
@@ -60,6 +57,7 @@ private:
 	static const size_t GRAPH_MAX_BUTTONS=16;
 	//will be only between 0 and size()
 	size_t _butRegionsOffset, _butCountriesOffset;
+	int _zoom;
 	//scroll and repaint buttons functions
 	void scrollButtons(std::vector<GraphButInfo *> &toggles, std::vector<ToggleTextButton *> &buttons, size_t &offset, int step);
 	void updateButton(GraphButInfo *from,ToggleTextButton *to);
@@ -68,6 +66,9 @@ public:
 	GraphsState();
 	/// Cleans up the Graphs state.
 	~GraphsState();
+	/// Handler for using zoom in/out hotkeys.
+	void btnZoomInClick(Action *action);
+	void btnZoomOutClick(Action *action);
 	/// Handler for clicking the Geoscape icon.
 	void btnGeoscapeClick(Action *action);
 	/// Handler for clicking the ufo region icon.
@@ -92,7 +93,7 @@ public:
 	void shiftButtons(Action *action);
 	/// Reset all the elements on screen.
 	void resetScreen();
-	/// Update the scale 
+	/// Update the scale
 	void updateScale(double lowerLimit, double upperLimit);
 	/// Decide which lines to draw
 	void drawLines();
@@ -106,5 +107,3 @@ public:
 };
 
 }
-
-#endif

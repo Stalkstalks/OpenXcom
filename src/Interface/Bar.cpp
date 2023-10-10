@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,7 +17,6 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Bar.h"
-#include <cmath>
 #include <SDL.h>
 
 namespace OpenXcom
@@ -215,4 +214,5 @@ void Bar::setBorderColor(Uint8 bc)
 {
 	_borderColor = bc;
 }
+
 }

@@ -1,31 +1,29 @@
 /*
-* Copyright 2010-2015 OpenXcom Developers.
-*
-* This file is part of OpenXcom.
-*
-* OpenXcom is free software: you can redistribute it and/or modify
-* it under the terms of the GNU General Public License as published by
-* the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* OpenXcom is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright 2010-2016 OpenXcom Developers.
+ *
+ * This file is part of OpenXcom.
+ *
+ * OpenXcom is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * OpenXcom is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include "ResearchRequiredState.h"
 #include "../Engine/Game.h"
-#include "../Engine/Palette.h"
-#include "../Engine/Language.h"
-#include "../Resource/ResourcePack.h"
+#include "../Engine/LocalizedText.h"
+#include "../Mod/Mod.h"
 #include "../Interface/TextButton.h"
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Savegame/SavedGame.h"
+#include "../Mod/RuleItem.h"
 #include "../Engine/Options.h"
 
 namespace OpenXcom
@@ -45,19 +43,19 @@ ResearchRequiredState::ResearchRequiredState(RuleItem *item)
 	_txtTitle = new Text(288, 80, 16, 50);
 
 	// Set palette
-	setInterface("geoResearch");
+	setInterface("geoResearchRequired");
 
-	add(_window, "window", "geoResearch");
-	add(_btnOk, "button", "geoResearch");
-	add(_txtTitle, "text1", "geoResearch");
+	add(_window, "window", "geoResearchRequired");
+	add(_btnOk, "button", "geoResearchRequired");
+	add(_txtTitle, "text1", "geoResearchRequired");
 
 	centerAllSurfaces();
 
 	std::string weapon = item->getType();
-	std::string clip = item->getCompatibleAmmo()->front();
+	std::string clip = item->getPrimaryCompatibleAmmo()->front()->getType();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK05.SCR"));
+	setWindowBackground(_window, "geoResearchRequired");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ResearchRequiredState::btnOkClick);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,28 +17,22 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ItemsArrivingState.h"
-#include <sstream>
-#include <algorithm>
-#include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
-#include "../Interface/TextButton.h"
-#include "../Interface/Window.h"
-#include "../Interface/Text.h"
-#include "../Interface/TextList.h"
-#include "../Savegame/SavedGame.h"
-#include "../Savegame/Base.h"
-#include "../Savegame/ItemContainer.h"
-#include "../Savegame/Transfer.h"
-#include "../Savegame/Craft.h"
-#include "../Savegame/CraftWeapon.h"
-#include "../Savegame/Vehicle.h"
-#include "../Ruleset/RuleItem.h"
-#include "../Ruleset/RuleCraftWeapon.h"
-#include "GeoscapeState.h"
-#include "../Engine/Options.h"
 #include "../Basescape/BasescapeState.h"
+#include "../Engine/Game.h"
+#include "../Engine/Options.h"
+#include "../Interface/Text.h"
+#include "../Interface/TextButton.h"
+#include "../Interface/TextList.h"
+#include "../Interface/Window.h"
+#include "../Mod/Mod.h"
+#include "../Mod/RuleItem.h"
+#include "../Savegame/Base.h"
+#include "../Savegame/Craft.h"
+#include "../Savegame/SavedGame.h"
+#include "../Savegame/Transfer.h"
+#include "GeoscapeState.h"
+#include <algorithm>
+#include <sstream>
 
 namespace OpenXcom
 {
@@ -77,7 +71,7 @@ ItemsArrivingState::ItemsArrivingState(GeoscapeState *state) : _state(state), _b
 	centerAllSurfaces();
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK13.SCR"));
+	setWindowBackground(_window, "itemsArriving");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&ItemsArrivingState::btnOkClick);
@@ -102,57 +96,38 @@ ItemsArrivingState::ItemsArrivingState(GeoscapeState *state) : _state(state), _b
 	_lstTransfers->setBackground(_window);
 	_lstTransfers->setMargin(2);
 
-	for (std::vector<Base*>::iterator i = _game->getSavedGame()->getBases()->begin(); i != _game->getSavedGame()->getBases()->end(); ++i)
+	for (auto *xbase : *_game->getSavedGame()->getBases())
 	{
-		for (std::vector<Transfer*>::iterator j = (*i)->getTransfers()->begin(); j != (*i)->getTransfers()->end();)
+		for (auto transferIt = xbase->getTransfers()->begin(); transferIt != xbase->getTransfers()->end();)
 		{
-			if ((*j)->getHours() == 0)
+			Transfer *transfer = (*transferIt);
+			if (transfer->getHours() == 0)
 			{
-				_base = (*i);
+				_base = xbase;
 
 				// Check if we have an automated use for an item
-				if ((*j)->getType() == TRANSFER_ITEM)
+				if (transfer->getType() == TRANSFER_ITEM)
 				{
-					RuleItem *item = _game->getRuleset()->getItem((*j)->getItems());
-					for (std::vector<Craft*>::iterator c = (*i)->getCrafts()->begin(); c != (*i)->getCrafts()->end(); ++c)
+					RuleItem *item = _game->getMod()->getItem(transfer->getItems(), true);
+					if (item->getBattleType() == BT_NONE)
 					{
-						// Check if it's ammo to reload a craft
-						if ((*c)->getStatus() == "STR_READY")
+						for (auto *xcraft : *xbase->getCrafts())
 						{
-							for (std::vector<CraftWeapon*>::iterator w = (*c)->getWeapons()->begin(); w != (*c)->getWeapons()->end(); ++w)
-							{
-								if ((*w) != 0 && (*w)->getRules()->getClipItem() == item->getType() && (*w)->getAmmo() < (*w)->getRules()->getAmmoMax())
-								{
-									(*w)->setRearming(true);
-									(*c)->setStatus("STR_REARMING");
-								}
-							}
-						}
-						// Check if it's ammo to reload a vehicle
-						for (std::vector<Vehicle*>::iterator v = (*c)->getVehicles()->begin(); v != (*c)->getVehicles()->end(); ++v)
-						{
-							std::vector<std::string>::iterator ammo = std::find((*v)->getRules()->getCompatibleAmmo()->begin(), (*v)->getRules()->getCompatibleAmmo()->end(), item->getType());
-							if (ammo != (*v)->getRules()->getCompatibleAmmo()->end() && (*v)->getAmmo() < item->getClipSize())
-							{
-								int used = std::min((*j)->getQuantity(), item->getClipSize() - (*v)->getAmmo());
-								(*v)->setAmmo((*v)->getAmmo() + used);
-								// Note that the items have already been delivered, so we remove them from the base, not the transfer
-								_base->getItems()->removeItem(item->getType(), used);
-							}
+							xcraft->reuseItem(item);
 						}
 					}
 				}
 
 				// Remove transfer
-				std::wostringstream ss;
-				ss << (*j)->getQuantity();
-				_lstTransfers->addRow(3, (*j)->getName(_game->getLanguage()).c_str(), ss.str().c_str(), (*i)->getName().c_str());
-				delete *j;
-				j = (*i)->getTransfers()->erase(j);
+				std::ostringstream ss;
+				ss << transfer->getQuantity();
+				_lstTransfers->addRow(3, transfer->getName(_game->getLanguage()).c_str(), ss.str().c_str(), xbase->getName().c_str());
+				delete transfer;
+				transferIt = xbase->getTransfers()->erase(transferIt);
 			}
 			else
 			{
-				++j;
+				++transferIt;
 			}
 		}
 	}
@@ -163,7 +138,6 @@ ItemsArrivingState::ItemsArrivingState(GeoscapeState *state) : _state(state), _b
  */
 ItemsArrivingState::~ItemsArrivingState()
 {
-
 }
 
 /**

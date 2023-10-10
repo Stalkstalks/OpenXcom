@@ -1,39 +1,40 @@
 /*
-* Copyright 2010-2015 OpenXcom Developers.
-*
-* This file is part of OpenXcom.
-*
-* OpenXcom is free software: you can redistribute it and/or modify
-* it under the terms of the GNU General Public License as published by
-* the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* OpenXcom is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright 2010-2016 OpenXcom Developers.
+ *
+ * This file is part of OpenXcom.
+ *
+ * OpenXcom is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * OpenXcom is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 /*
-* Based on http://www.libsdl.org/projects/flxplay/
-*/
-
+ * Based on http://www.libsdl.org/projects/flxplay/
+ * See also https://github.com/aseprite/flic
+ */
+#ifdef _MSC_VER
+#ifndef _SCL_SECURE_NO_WARNINGS
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+#endif
 #include "FlcPlayer.h"
+#include <algorithm>
+#include <cassert>
 #include <string.h>
-#include <math.h>
 #include <SDL_mixer.h>
-#include <fstream>
-
+#include "FileMap.h"
 #include "Logger.h"
-#include "Exception.h"
-#include "Zoom.h"
 #include "Screen.h"
-#include "Surface.h"
 #include "Options.h"
-#include "../fmath.h"
 #include "Game.h"
 
 namespace OpenXcom
@@ -89,14 +90,14 @@ FlcPlayer::~FlcPlayer()
 }
 
 /**
-* Initialize data structures needed buy the player and read the whole file into memory
-* @param filename Video file name
-* @param frameCallback Function to call each video frame
-* @param game Pointer to the Game instance
-* @param dx An offset on the x axis for the video to be rendered
-* @param dy An offset on the y axis for the video to be rendered
-*/
-bool FlcPlayer::init(const char *filename, void(*frameCallBack)(), Game *game, int dx, int dy)
+ * Initialize data structures needed buy the player and read the whole file into memory
+ * @param filename Video file name
+ * @param frameCallback Function to call each video frame
+ * @param game Pointer to the Game instance
+ * @param dx An offset on the x axis for the video to be rendered
+ * @param dy An offset on the y axis for the video to be rendered
+ */
+bool FlcPlayer::init(const char *filename, void(*frameCallBack)(), Game *game, bool useInternalAudio, int dx, int dy)
 {
 	if (_fileBuf != 0)
 	{
@@ -108,9 +109,10 @@ bool FlcPlayer::init(const char *filename, void(*frameCallBack)(), Game *game, i
 	_realScreen = game->getScreen();
 	_realScreen->clear();
 	_game = game;
+	_useInternalAudio = useInternalAudio;
 	_dx = dx;
 	_dy = dy;
-	
+
 	_fileSize = 0;
 	_frameCount = 0;
 	_audioFrameData = 0;
@@ -118,22 +120,13 @@ bool FlcPlayer::init(const char *filename, void(*frameCallBack)(), Game *game, i
 	_audioData.loadingBuffer = 0;
 	_audioData.playingBuffer = 0;
 
-	std::ifstream file;
-	file.open(filename, std::ifstream::in | std::ifstream::binary | std::ifstream::ate);
-	if (!file.is_open())
-	{
-		Log(LOG_ERROR) << "Could not open FLI/FLC file: " << filename;
-		return false;
-	}
-
-	std::streamoff size = file.tellg();
-	file.seekg(0, std::ifstream::beg);
-
-	// TODO: substitute with a cross-platform memory mapped file?
+	auto file = FileMap::getIStream(filename);
+	file->seekg(0, std::istream::end);
+	auto size = file->tellg();
+	file->seekg(0, std::istream::beg);
 	_fileBuf = new Uint8[size];
 	_fileSize = size;
-	file.read((char *)_fileBuf, size);
-	file.close();
+	file->read((char *)_fileBuf, size);
 
 	_audioFrameData = _fileBuf + 128;
 
@@ -154,18 +147,24 @@ bool FlcPlayer::init(const char *filename, void(*frameCallBack)(), Game *game, i
 		Log(LOG_ERROR) << "Flx file failed header check.";
 		return false;
 	}
-
-	// If the current surface used is at 8bpp use it
-	if (_realScreen->getSurface()->getSurface()->format->BitsPerPixel == 8)
+	if (_screenWidth > _realScreen->getSurface()->w && Options::displayWidth >= _screenWidth)
 	{
-		_mainScreen = _realScreen->getSurface()->getSurface();
+		// base resolution of video is higher than our surface width
+		// and our display resolution allows a hi-res video
+		// set base resolution to video resolution
+		Options::baseXResolution = _screenWidth;
+		Options::baseYResolution = _screenHeight;
+		_realScreen->resetDisplay();
+	}
+	// If the current surface used is at 8bpp use it
+	if (_realScreen->getSurface()->format->BitsPerPixel == 8)
+	{
+		_mainScreen = _realScreen->getSurface();
 	}
 	else // Otherwise create a new one
 	{
-		_mainScreen = SDL_AllocSurface(SDL_SWSURFACE, _screenWidth, _screenHeight, 8, 0, 0, 0, 0);
+		_mainScreen = SDL_AllocSurface(SDL_SWSURFACE, _realScreen->getSurface()->w, _realScreen->getSurface()->h, 8, 0, 0, 0, 0);
 	}
-
-	
 
 	return true;
 }
@@ -174,21 +173,24 @@ void FlcPlayer::deInit()
 {
 	if (_mainScreen != 0 && _realScreen != 0)
 	{
-		if (_mainScreen != _realScreen->getSurface()->getSurface())
+		if (_mainScreen != _realScreen->getSurface())
 			SDL_FreeSurface(_mainScreen);
 
 		_mainScreen = 0;
 	}
 
-	delete[] _fileBuf;
-	_fileBuf = 0;
+	if (_fileBuf != 0)
+	{
+		delete[] _fileBuf;
+		_fileBuf = 0;
 
-	deInitAudio();
+		deInitAudio();
+	}
 }
 
 /**
-* Starts decoding and playing the FLI/FLC file
-*/
+ * Starts decoding and playing the FLI/FLC file
+ */
 void FlcPlayer::play(bool skipLastFrame)
 {
 	_playingState = PLAYING;
@@ -215,7 +217,7 @@ void FlcPlayer::play(bool skipLastFrame)
 		if(!shouldQuit())
 			SDLPolling();
 	}
-	
+
 }
 
 void FlcPlayer::delay(Uint32 milliseconds)
@@ -242,14 +244,14 @@ void FlcPlayer::SDLPolling()
 			{
 				Options::newDisplayWidth = Options::displayWidth = std::max(Screen::ORIGINAL_WIDTH, event.resize.w);
 				Options::newDisplayHeight = Options::displayHeight = std::max(Screen::ORIGINAL_HEIGHT, event.resize.h);
-				if (_mainScreen != _realScreen->getSurface()->getSurface())
+				if (_mainScreen != _realScreen->getSurface())
 				{
 					_realScreen->resetDisplay();
 				}
 				else
 				{
 					_realScreen->resetDisplay();
-					_mainScreen = _realScreen->getSurface()->getSurface();
+					_mainScreen = _realScreen->getSurface();
 				}
 			}
 			break;
@@ -283,10 +285,11 @@ bool FlcPlayer::isValidFrame(Uint8 *frameHeader, Uint32 &frameSize, Uint16 &fram
 	readU16(frameType, frameHeader + 4);
 
 	return (frameType == FRAME_TYPE || frameType == AUDIO_CHUNK || frameType == PREFIX_CHUNK);
-} 
+}
 
 void FlcPlayer::decodeAudio(int frames)
 {
+
 	int audioFramesFound = 0;
 
 	while (audioFramesFound < frames && !isEndOfFile(_audioFrameData))
@@ -317,14 +320,14 @@ void FlcPlayer::decodeAudio(int frames)
 				++audioFramesFound;
 
 				break;
-		}	
+		}
 	}
 }
 
 void FlcPlayer::decodeVideo(bool skipLastFrame)
 {
 	bool videoFrameFound = false;
-	
+
 	while (!videoFrameFound)
 	{
 		if (!isValidFrame(_videoFrameData, _videoFrameSize, _videoFrameType))
@@ -346,9 +349,13 @@ void FlcPlayer::decodeVideo(bool skipLastFrame)
 			{
 				delay = _delayOverride > 0 ? _delayOverride : _headerSpeed * (1000.0 / 70.0);
 			}
-			else
+			else if (_useInternalAudio && !_frameCallBack) // this means TFTD videos are playing
 			{
 				delay = _videoDelay;
+			}
+			else
+			{
+				delay = _headerSpeed;
 			}
 
 			waitForNextFrame(delay);
@@ -428,8 +435,8 @@ void FlcPlayer::playVideoFrame()
 
 	/* TODO: Track which rectangles have really changed */
 	//SDL_UpdateRect(_mainScreen, 0, 0, 0, 0);
-	if (_mainScreen != _realScreen->getSurface()->getSurface())
-		SDL_BlitSurface(_mainScreen, 0, _realScreen->getSurface()->getSurface(), 0);
+	if (_mainScreen != _realScreen->getSurface())
+		SDL_BlitSurface(_mainScreen, 0, _realScreen->getSurface(), 0);
 
 	_realScreen->flip();
 }
@@ -444,37 +451,44 @@ void FlcPlayer::playAudioFrame(Uint16 sampleRate)
 	* Uint16 unknown4 - always 0
 	* Uint8[] unsigned 1-byte 1-channel PCM data of length _chunkSize_ (so the total chunk is _chunkSize_ + 6-byte flc header + 10 byte audio header */
 
-	if (!_hasAudio)
+	if (_useInternalAudio)
 	{
-		_audioData.sampleRate = sampleRate;
-		_hasAudio = true;
-		initAudio(AUDIO_S16SYS, 1);
+		if (!_hasAudio)
+		{
+			_audioData.sampleRate = sampleRate;
+			_hasAudio = true;
+			initAudio(AUDIO_S16SYS, 1);
+		}
+		else
+		{
+			/* Cannot change sample rate mid-video */
+			assert(sampleRate == _audioData.sampleRate);
+		}
+
+		SDL_SemWait(_audioData.sharedLock);
+		AudioBuffer *loadingBuff = _audioData.loadingBuffer;
+		assert(loadingBuff->currSamplePos == 0);
+		int newSize = (_audioFrameSize + loadingBuff->sampleCount )*2;
+		if (newSize > loadingBuff->sampleBufSize)
+		{
+			/* If the sample count has changed, we need to reallocate (Handles initial state
+			* of '0' sample count too, as realloc(NULL, size) == malloc(size) */
+			loadingBuff->samples = (Sint16*)realloc(loadingBuff->samples, newSize);
+			loadingBuff->sampleBufSize = newSize;
+		}
+
+		for (unsigned int i = 0; i < _audioFrameSize; i++)
+		{
+			loadingBuff->samples[loadingBuff->sampleCount + i] = (float)((_chunkData[i]) -128) * 240 * _volume;
+		}
+		loadingBuff->sampleCount += _audioFrameSize;
+
+		SDL_SemPost(_audioData.sharedLock);
 	}
 	else
 	{
-		/* Cannot change sample rate mid-video */
-		assert(sampleRate == _audioData.sampleRate);
+		_audioData.sampleRate = sampleRate; // this is used to keep the framerate correct
 	}
-
-	SDL_SemWait(_audioData.sharedLock);
-	AudioBuffer *loadingBuff = _audioData.loadingBuffer;
-	assert(loadingBuff->currSamplePos == 0);
-	int newSize = (_audioFrameSize + loadingBuff->sampleCount )*2;
-	if (newSize > loadingBuff->sampleBufSize)
-	{
-		/* If the sample count has changed, we need to reallocate (Handles initial state
-		* of '0' sample count too, as realloc(NULL, size) == malloc(size) */
-		loadingBuff->samples = (Sint16*)realloc(loadingBuff->samples, newSize);
-		loadingBuff->sampleBufSize = newSize;
-	}
-
-	for (unsigned int i = 0; i < _audioFrameSize; i++)
-	{
-		loadingBuff->samples[loadingBuff->sampleCount + i] = (float)((_chunkData[i]) -128) * 240 * _volume;
-	}
-	loadingBuff->sampleCount += _audioFrameSize;
-
-	SDL_SemPost(_audioData.sharedLock);
 }
 
 void FlcPlayer::color256()
@@ -488,7 +502,7 @@ void FlcPlayer::color256()
 	readU16(numColorPackets, pSrc);
 	pSrc += 2;
 
-	while (numColorPackets--) 
+	while (numColorPackets--)
 	{
 		numColorsSkip = *(pSrc++) + numColors;
 		numColors = *(pSrc++);
@@ -504,6 +518,8 @@ void FlcPlayer::color256()
 			_colors[i].b = *(pSrc++);
 		}
 
+		if (_mainScreen != _realScreen->getSurface())
+			SDL_SetColors(_mainScreen, _colors, numColorsSkip, numColors);
 		_realScreen->setPalette(_colors, numColorsSkip, numColors, true);
 
 		if (numColorPackets >= 1)
@@ -529,20 +545,20 @@ void FlcPlayer::fliSS2()
 
 	pSrc += 2;
 
-	while (lines--) 
+	while (lines--)
 	{
 		readS16(count, (Sint8 *)pSrc);
 		pSrc += 2;
 
-		if ((count & MASK) == SKIP_LINES) 
-		{  
+		if ((count & MASK) == SKIP_LINES)
+		{
 			pDst += (-count)*_mainScreen->pitch;
 			++lines;
 			continue;
 		}
-			
+
 		else if ((count & MASK) == LAST_PIXEL)
-		{  
+		{
 			setLastByte = true;
 			lastByte = (count & 0x00FF);
 			readS16(count, (Sint8 *)pSrc);
@@ -550,24 +566,24 @@ void FlcPlayer::fliSS2()
 		}
 
 		if ((count & MASK) == PACKETS_COUNT)
-		{      
+		{
 			pTmpDst = pDst;
-			while (count--) 
+			while (count--)
 			{
 				columSkip = *(pSrc++);
 				pTmpDst += columSkip;
 				countData = *(pSrc++);
 
-				if (countData > 0) 
+				if (countData > 0)
 				{
 					std::copy(pSrc, pSrc + (2 * countData), pTmpDst);
 					pTmpDst += (2 * countData);
 					pSrc += (2 * countData);
 
 				}
-				else 
+				else
 				{
-					if (countData < 0) 
+					if (countData < 0)
 					{
 						countData = -countData;
 
@@ -602,7 +618,7 @@ void FlcPlayer::fliBRun()
 	pSrc = _chunkData + 6; // Skip chunk header
 	pDst = (Uint8*)_mainScreen->pixels + _offset;
 
-	while (heightCount--) 
+	while (heightCount--)
 	{
 		pTmpDst = pDst;
 		++pSrc; // Read and skip the packet count value
@@ -611,7 +627,7 @@ void FlcPlayer::fliBRun()
 		while (pixels != _headerWidth)
 		{
 			countData = *(pSrc++);
-			if (countData > 0) 
+			if (countData > 0)
 			{
 				fill = *(pSrc++);
 
@@ -619,9 +635,9 @@ void FlcPlayer::fliBRun()
 				pTmpDst += countData;
 				pixels += countData;
 			}
-			else 
+			else
 			{
-				if (countData < 0) 
+				if (countData < 0)
 				{
 					countData = -countData;
 
@@ -655,31 +671,31 @@ void FlcPlayer::fliLC()
 	readU16(lines, pSrc);
 	pSrc += 2;
 
-	while (lines--) 
+	while (lines--)
 	{
 		pTmpDst = pDst;
 		packetsCount = *(pSrc++);
 
-		while (packetsCount--) 
+		while (packetsCount--)
 		{
 			countSkip = *(pSrc++);
 			pTmpDst += countSkip;
 			countData = *(pSrc++);
-			if (countData > 0) 
+			if (countData > 0)
 			{
-				while (countData--) 
+				while (countData--)
 				{
 					*(pTmpDst++) = *(pSrc++);
 				}
 			}
-			else 
+			else
 			{
-				if (countData < 0) 
+				if (countData < 0)
 				{
 					countData = -countData;
 
 					fill = *(pSrc++);
-					while (countData--) 
+					while (countData--)
 					{
 						*(pTmpDst++) = fill;
 					}
@@ -700,7 +716,7 @@ void FlcPlayer::color64()
 	readU16(NumColorPackets, pSrc);
 	pSrc += 2;
 
-	while (NumColorPackets--) 
+	while (NumColorPackets--)
 	{
 		NumColorsSkip = *(pSrc++);
 		NumColors = *(pSrc++);
@@ -717,6 +733,8 @@ void FlcPlayer::color64()
 			_colors[i].b = *(pSrc++) << 2;
 		}
 
+		if (_mainScreen != _realScreen->getSurface())
+			SDL_SetColors(_mainScreen, _colors, NumColorsSkip, NumColors);
 		_realScreen->setPalette(_colors, NumColorsSkip, NumColors, true);
 	}
 }
@@ -728,7 +746,7 @@ void FlcPlayer::fliCopy()
 	pSrc = _chunkData + 6;
 	pDst = (Uint8*)_mainScreen->pixels + _offset;
 
-	while (Lines--) 
+	while (Lines--)
 	{
 		memcpy(pDst, pSrc, _screenWidth);
 		pSrc += _screenWidth;
@@ -742,7 +760,7 @@ void FlcPlayer::black()
 	int Lines = _screenHeight;
 	pDst = (Uint8*)_mainScreen->pixels + _offset;
 
-	while (Lines-- > 0) 
+	while (Lines-- > 0)
 	{
 		memset(pDst, 0, _screenHeight);
 		pDst += _mainScreen->pitch;
@@ -787,44 +805,53 @@ void FlcPlayer::audioCallback(void *userData, Uint8 *stream, int len)
 
 void FlcPlayer::initAudio(Uint16 format, Uint8 channels)
 {
-	int err;
-
-	err = Mix_OpenAudio(_audioData.sampleRate, format, channels, _audioFrameSize *2);
 	_videoDelay = 1000 / (_audioData.sampleRate / _audioFrameSize );
-
-	if (err)
+	if (_useInternalAudio)
 	{
-		printf("Failed to open audio (%d)\n", err);
-		return;
+		if (!Options::mute)
+		{
+			if (Mix_OpenAudio(_audioData.sampleRate, format, channels, _audioFrameSize * 2) != 0)
+			{
+				Log(LOG_ERROR) << Mix_GetError();
+				Log(LOG_WARNING) << "Failed to init cutscene audio";
+				Options::mute = true;
+			}
+		}
+
+		/* Start runnable */
+		_audioData.sharedLock = SDL_CreateSemaphore(1);
+
+		_audioData.loadingBuffer = new AudioBuffer();
+		_audioData.loadingBuffer->currSamplePos = 0;
+		_audioData.loadingBuffer->sampleCount = 0;
+		_audioData.loadingBuffer->samples = (Sint16 *)malloc(_audioFrameSize * 2);
+		_audioData.loadingBuffer->sampleBufSize = _audioFrameSize * 2;
+
+		_audioData.playingBuffer = new AudioBuffer();
+		_audioData.playingBuffer->currSamplePos = 0;
+		_audioData.playingBuffer->sampleCount = 0;
+		_audioData.playingBuffer->samples = (Sint16 *)malloc(_audioFrameSize * 2);
+		_audioData.playingBuffer->sampleBufSize = _audioFrameSize * 2;
+
+		if (!Options::mute)
+		{
+			Mix_HookMusic(FlcPlayer::audioCallback, &_audioData);
+		}
 	}
-
-	/* Start runnable */
-	_audioData.sharedLock = SDL_CreateSemaphore(1);
-
-	_audioData.loadingBuffer = new AudioBuffer();
-	_audioData.loadingBuffer->currSamplePos = 0;
-	_audioData.loadingBuffer->sampleCount = 0;
-	_audioData.loadingBuffer->samples = (Sint16 *)malloc(_audioFrameSize * 2);
-	_audioData.loadingBuffer->sampleBufSize = _audioFrameSize * 2;
-
-	_audioData.playingBuffer = new AudioBuffer();
-	_audioData.playingBuffer->currSamplePos = 0;
-	_audioData.playingBuffer->sampleCount = 0;
-	_audioData.playingBuffer->samples = (Sint16 *)malloc(_audioFrameSize * 2);
-	_audioData.playingBuffer->sampleBufSize = _audioFrameSize * 2;
-
-	Mix_HookMusic(FlcPlayer::audioCallback, &_audioData);
 }
 
 void FlcPlayer::deInitAudio()
 {
 	if (_game)
 	{
-		Mix_HookMusic(NULL, NULL);
-		Mix_CloseAudio();
-		_game->initAudio();
+		if (!Options::mute)
+		{
+			Mix_HookMusic(NULL, NULL);
+			Mix_CloseAudio();
+			_game->initAudio();
+		}
 	}
-  else if(_audioData.sharedLock)
+	else if (_audioData.sharedLock)
 		SDL_DestroySemaphore(_audioData.sharedLock);
 
 	if (_audioData.loadingBuffer)
@@ -840,7 +867,7 @@ void FlcPlayer::deInitAudio()
 		delete _audioData.playingBuffer;
 		_audioData.playingBuffer = 0;
 	}
-	
+
 }
 
 void FlcPlayer::stop()
@@ -905,7 +932,7 @@ void FlcPlayer::waitForNextFrame(Uint32 delay)
 		}
 	}
 	oldTick = SDL_GetTicks();
-} 
+}
 
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
 inline void FlcPlayer::readU16(Uint16 &dst, const Uint8 * const src)

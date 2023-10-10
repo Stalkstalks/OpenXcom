@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http:///www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_BUILDNEWBASESTATE_H
-#define OPENXCOM_BUILDNEWBASESTATE_H
-
 #include "../Engine/State.h"
 
 namespace OpenXcom
@@ -56,11 +54,11 @@ public:
 	/// Cleans up the Build New Base state.
 	~BuildNewBaseState();
 	/// Resets globe.
-	void init();
+	void init() override;
 	/// Runs the timer.
-	void think();
+	void think() override;
 	/// Handles actions.
-	void handle(Action *action);
+	void handle(Action *action) override;
 	/// Handler for clicking the globe.
 	void globeClick(Action *action);
 	/// Handler for mouse hovering the globe.
@@ -94,9 +92,7 @@ public:
 	/// Handler for clicking the Cancel button.
 	void btnCancelClick(Action *action);
 	/// Let the state know the window has been resized.
-	void resize(int &dX, int &dY);
+	void resize(int &dX, int &dY) override;
 };
 
 }
-
-#endif

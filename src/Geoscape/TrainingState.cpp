@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2014 OpenXcom Developers.
+ * Copyright 2010-2015 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -21,7 +21,6 @@
 #include "../Engine/Game.h"
 #include "../Engine/Screen.h"
 #include "../Engine/Action.h"
-#include "../Resource/ResourcePack.h"
 #include "../Engine/Language.h"
 #include "../Engine/Palette.h"
 #include "../Interface/TextButton.h"
@@ -32,6 +31,7 @@
 #include "GeoscapeState.h"
 #include "AllocateTrainingState.h"
 #include "../Engine/Options.h"
+#include "../Mod/Mod.h"
 
 namespace OpenXcom
 {
@@ -48,14 +48,14 @@ TrainingState::TrainingState()
 	_btnOk = new TextButton(160, 14, 80, 174);
 
 	// Set palette
-	setPalette("PAL_BASESCAPE", _game->getRuleset()->getInterface("psiTraining")->getElement("palette")->color);
+	setInterface("martialTraining");
 
-	add(_window, "window", "psiTraining");
-	add(_btnOk, "button2", "psiTraining");
-	add(_txtTitle, "text", "psiTraining");
+	add(_window, "window", "martialTraining");
+	add(_btnOk, "button2", "martialTraining");
+	add(_txtTitle, "text", "martialTraining");
 
 	// Set up objects
-	_window->setBackground(_game->getResourcePack()->getSurface("BACK02.SCR"));
+	setWindowBackground(_window, "martialTraining");
 
 	_btnOk->setText(tr("STR_OK"));
 	_btnOk->onMouseClick((ActionHandler)&TrainingState::btnOkClick);
@@ -66,16 +66,16 @@ TrainingState::TrainingState()
 	_txtTitle->setText(tr("STR_PHYSICAL_TRAINING"));
 
 	int buttons = 0;
-	for (std::vector<Base*>::const_iterator b = _game->getSavedGame()->getBases()->begin(); b != _game->getSavedGame()->getBases()->end(); ++b)
+	for (auto* xbase : *_game->getSavedGame()->getBases())
 	{
-		if ((*b)->getAvailableTraining())
+		if (xbase->getAvailableTraining())
 		{
 			TextButton *btnBase = new TextButton(160, 14, 80, 40 + 16 * buttons);
 			btnBase->setColor(Palette::blockOffset(15) + 6);
 			btnBase->onMouseClick((ActionHandler)&TrainingState::btnBaseXClick);
-			btnBase->setText((*b)->getName());
-			add(btnBase, "button1", "psiTraining");
-			_bases.push_back(*b);
+			btnBase->setText(xbase->getName());
+			add(btnBase, "button1", "martialTraining");
+			_bases.push_back(xbase);
 			_btnBases.push_back(btnBase);
 			++buttons;
 			if (buttons >= 8)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,6 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ComboBox.h"
+#include <algorithm>
 #include "TextButton.h"
 #include "Window.h"
 #include "TextList.h"
@@ -25,6 +26,7 @@
 #include "../Engine/Font.h"
 #include "../Engine/Action.h"
 #include "../Engine/Options.h"
+#include "../Engine/Screen.h"
 
 namespace OpenXcom
 {
@@ -35,6 +37,17 @@ const int ComboBox::MAX_ITEMS = 10;
 const int ComboBox::BUTTON_WIDTH = 14;
 const int ComboBox::TEXT_HEIGHT = 8;
 
+static int getPopupWindowY(int buttonHeight, int buttonY, int popupHeight, bool popupAboveButton)
+{
+	int belowButtonY = buttonY + buttonHeight;
+	if (popupAboveButton)
+	{
+		// used when popup list won't fit below the button; display it above
+		return buttonY - popupHeight;
+	}
+	return belowButtonY;
+}
+
 /**
  * Sets up a combobox with the specified size and position.
  * @param state Pointer to state the combobox belongs to.
@@ -43,20 +56,22 @@ const int ComboBox::TEXT_HEIGHT = 8;
  * @param x X position in pixels.
  * @param y Y position in pixels.
  */
-ComboBox::ComboBox(State *state, int width, int height, int x, int y) : InteractiveSurface(width, height, x, y), _change(0), _sel(0), _state(state), _lang(0), _toggled(false)
+ComboBox::ComboBox(State *state, int width, int height, int x, int y, bool popupAboveButton) : InteractiveSurface(width, height, x, y), _change(0), _sel(0), _state(state), _lang(0), _toggled(false), _popupAboveButton(popupAboveButton)
 {
 	_button = new TextButton(width, height, x, y);
 	_button->setComboBox(this);
 
 	_arrow = new Surface(11, 8, x + width - BUTTON_WIDTH, y + 4);
 
-	_window = new Window(state, width, MAX_ITEMS * 8 + VERTICAL_MARGIN * 2, x, y + height);
+	int popupHeight = MAX_ITEMS * TEXT_HEIGHT + VERTICAL_MARGIN * 2;
+	int popupY = getPopupWindowY(height, y, popupHeight, popupAboveButton);
+	_window = new Window(state, width, popupHeight, x, popupY);
 	_window->setThinBorder();
 
 	_list = new TextList(width - HORIZONTAL_MARGIN * 2 - BUTTON_WIDTH + 1,
-						MAX_ITEMS * TEXT_HEIGHT - 2,
+						popupHeight - (VERTICAL_MARGIN * 2 + 2),
 						x + HORIZONTAL_MARGIN,
-						y + height + VERTICAL_MARGIN);
+						popupY + VERTICAL_MARGIN);
 	_list->setComboBox(this);
 	_list->setColumns(1, _list->getWidth());
 	_list->setSelectable(true);
@@ -64,7 +79,7 @@ ComboBox::ComboBox(State *state, int width, int height, int x, int y) : Interact
 	_list->setAlign(ALIGN_CENTER);
 	_list->setScrolling(true, 0);
 
-	toggle(true);
+	toggle(true, false);
 }
 
 /**
@@ -79,9 +94,9 @@ ComboBox::~ComboBox()
 }
 
 /**
-* Changes the position of the surface in the X axis.
-* @param x X position in pixels.
-*/
+ * Changes the position of the surface in the X axis.
+ * @param x X position in pixels.
+ */
 void ComboBox::setX(int x)
 {
 	Surface::setX(x);
@@ -92,16 +107,19 @@ void ComboBox::setX(int x)
 }
 
 /**
-* Changes the position of the surface in the Y axis.
-* @param y Y position in pixels.
-*/
+ * Changes the position of the surface in the Y axis.
+ * @param y Y position in pixels.
+ */
 void ComboBox::setY(int y)
 {
 	Surface::setY(y);
 	_button->setY(y);
 	_arrow->setY(y + 4);
-	_window->setY(y + getHeight());
-	_list->setY(y + getHeight() + VERTICAL_MARGIN);
+
+	int popupHeight = _window->getHeight();
+	int popupY = getPopupWindowY(getHeight(), y, popupHeight, _popupAboveButton);
+	_window->setY(popupY);
+	_list->setY(popupY + VERTICAL_MARGIN);
 }
 
 /**
@@ -111,7 +129,7 @@ void ComboBox::setY(int y)
  * @param firstcolor Offset of the first color to replace.
  * @param ncolors Amount of colors to replace.
  */
-void ComboBox::setPalette(SDL_Color *colors, int firstcolor, int ncolors)
+void ComboBox::setPalette(const SDL_Color *colors, int firstcolor, int ncolors)
 {
 	Surface::setPalette(colors, firstcolor, ncolors);
 	_button->setPalette(colors, firstcolor, ncolors);
@@ -250,6 +268,15 @@ size_t ComboBox::getHoveredListIdx() const
 }
 
 /**
+ * sets the button text independent of the currently selected option.
+ * @param text the text to display
+ */
+void ComboBox::setText(const std::string &text)
+{
+	_button->setText(text);
+}
+
+/**
  * Changes the currently selected option.
  * @param sel Selected row.
  */
@@ -276,37 +303,30 @@ void ComboBox::setDropdown(int options)
 	{
 		items--;
 	}
-	_window->setHeight(items * h + VERTICAL_MARGIN * 2);
+
+	int popupHeight = items * h + VERTICAL_MARGIN * 2;
+	int popupY = getPopupWindowY(getHeight(), getY(), popupHeight, _popupAboveButton);
+	_window->setY(popupY);
+	_window->setHeight(popupHeight);
+	_list->setY(popupY + VERTICAL_MARGIN);
 	_list->setHeight(items * h);
 }
 
 /**
  * Changes the list of available options to choose from.
- * @param options List of string IDs.
+ * @param options List of strings.
+ * @param translate True for a list of string IDs, false for a list of raw strings.
  */
-void ComboBox::setOptions(const std::vector<std::string> &options)
+void ComboBox::setOptions(const std::vector<std::string> &options, bool translate)
 {
 	setDropdown(options.size());
 	_list->clearList();
-	for (std::vector<std::string>::const_iterator i = options.begin(); i != options.end(); ++i)
+	for (const auto& option : options)
 	{
-		_list->addRow(1, _lang->getString(*i).c_str());
-	}
-	setSelected(_sel);
-	_list->draw();
-}
-
-/**
- * Changes the list of available options to choose from.
- * @param options List of localized strings.
- */
-void ComboBox::setOptions(const std::vector<std::wstring> &options)
-{
-	setDropdown(options.size());
-	_list->clearList();
-	for (std::vector<std::wstring>::const_iterator i = options.begin(); i != options.end(); ++i)
-	{
-		_list->addRow(1, i->c_str());
+		if (translate)
+			_list->addRow(1, _lang->getString(option).c_str());
+		else
+			_list->addRow(1, option.c_str());
 	}
 	setSelected(_sel);
 }
@@ -315,7 +335,7 @@ void ComboBox::setOptions(const std::vector<std::wstring> &options)
  * Blits the combo box components.
  * @param surface Pointer to surface to blit onto.
  */
-void ComboBox::blit(Surface *surface)
+void ComboBox::blit(SDL_Surface *surface)
 {
 	Surface::blit(surface);
 	_list->invalidate();
@@ -335,14 +355,18 @@ void ComboBox::blit(Surface *surface)
  */
 void ComboBox::handle(Action *action, State *state)
 {
+	if (!_visible || _hidden)
+		return;
+
 	_button->handle(action, state);
 	_list->handle(action, state);
 	InteractiveSurface::handle(action, state);
+	int topY = std::min(getY(), _window->getY());
 	if (_window->getVisible() && action->getDetails()->type == SDL_MOUSEBUTTONDOWN &&
 		(action->getAbsoluteXMouse() < getX() || action->getAbsoluteXMouse() >= getX() + getWidth() ||
-		 action->getAbsoluteYMouse() < getY() || action->getAbsoluteYMouse() >= getY() + getHeight() + _window->getHeight()))
+		 action->getAbsoluteYMouse() < topY || action->getAbsoluteYMouse() >= topY + getHeight() + _window->getHeight()))
 	{
-		toggle();
+		toggle(false, false);
 	}
 	if (_toggled)
 	{
@@ -369,19 +393,20 @@ void ComboBox::think()
 /**
  * Opens/closes the combo box list.
  * @param first Is it the initialization toggle?
+ * @param listClick Should the change handler be triggered? (Yes = list click; No = button click or click anywhere else)
  */
-void ComboBox::toggle(bool first)
+void ComboBox::toggle(bool first, bool listClick)
 {
 	_window->setVisible(!_window->getVisible());
 	_list->setVisible(!_list->getVisible());
 	_state->setModal(_window->getVisible() ? this : 0);
 	if (!first && !_window->getVisible())
 	{
-		_toggled = true;
+		_toggled = listClick;
 	}
 	if (_list->getVisible())
 	{
-		if (_sel < _list->getVisibleRows()/2)
+		if (_sel < _list->getVisibleRows()/2 || _sel == (size_t)-1)
 		{
 			_list->scrollTo(0);
 		}

@@ -1,5 +1,6 @@
+#pragma once
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -16,9 +17,6 @@
  * You should have received a copy of the GNU General Public License
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef OPENXCOM_SOLDIERINFOSTATE_H
-#define OPENXCOM_SOLDIERINFOSTATE_H
-
 #include "../Engine/State.h"
 #include <vector>
 
@@ -45,21 +43,27 @@ private:
 	Soldier *_soldier;
 	std::vector<Soldier*> *_list;
 
-	Surface *_bg, *_rank;
-	TextButton *_btnOk, *_btnPrev, *_btnNext, *_btnArmor, *_btnSack;
-	Text *_txtRank, *_txtMissions, *_txtKills, *_txtCraft, *_txtRecovery, *_txtPsionic;
+	Surface *_bg;
+	InteractiveSurface *_rank;
+	InteractiveSurface *_flag;
+	TextButton *_btnOk, *_btnPrev, *_btnNext, *_btnArmor, *_btnSack, *_btnDiary, *_btnBonuses;
+	Text *_txtRank, *_txtMissions, *_txtKills, *_txtCraft, *_txtRecovery, *_txtPsionic, *_txtDead;
+	Text *_txtStuns;
 	TextEdit *_edtSoldier;
 
-	Text *_txtTimeUnits, *_txtStamina, *_txtHealth, *_txtBravery, *_txtReactions, *_txtFiring, *_txtThrowing, *_txtMelee, *_txtStrength, *_txtPsiStrength, *_txtPsiSkill;
-	Text *_numTimeUnits, *_numStamina, *_numHealth, *_numBravery, *_numReactions, *_numFiring, *_numThrowing, *_numMelee, *_numStrength, *_numPsiStrength, *_numPsiSkill;
-	Bar *_barTimeUnits, *_barStamina, *_barHealth, *_barBravery, *_barReactions, *_barFiring, *_barThrowing, *_barMelee, *_barStrength, *_barPsiStrength, *_barPsiSkill;
+	Text *_txtTimeUnits, *_txtStamina, *_txtHealth, *_txtBravery, *_txtReactions, *_txtFiring, *_txtThrowing, *_txtMelee, *_txtStrength, *_txtPsiStrength, *_txtPsiSkill, *_txtMana;
+	Text *_numTimeUnits, *_numStamina, *_numHealth, *_numBravery, *_numReactions, *_numFiring, *_numThrowing, *_numMelee, *_numStrength, *_numPsiStrength, *_numPsiSkill, *_numMana;
+	Bar *_barTimeUnits, *_barStamina, *_barHealth, *_barBravery, *_barReactions, *_barFiring, *_barThrowing, *_barMelee, *_barStrength, *_barPsiStrength, *_barPsiSkill, *_barMana;
+
 public:
 	/// Creates the Soldier Info state.
 	SoldierInfoState(Base *base, size_t soldierId);
 	/// Cleans up the Soldier Info state.
 	~SoldierInfoState();
 	/// Updates the soldier info.
-	void init();
+	void init() override;
+	/// Set the soldier Id.
+	void setSoldierId(size_t soldier);
 	/// Handler for pressing on the Name edit.
 	void edtSoldierPress(Action *action);
 	/// Handler for changing text on the Name edit.
@@ -72,10 +76,16 @@ public:
 	void btnNextClick(Action *action);
 	/// Handler for clicking the Armor button.
 	void btnArmorClick(Action *action);
+	/// Handler for clicking the Bonuses button.
+	void btnBonusesClick(Action *action);
 	/// Handler for clicking the Sack button.
 	void btnSackClick(Action *action);
+	/// Handler for clicking the Diary button.
+	void btnDiaryClick(Action *action);
+	/// Handler for clicking the flag.
+	void btnFlagClick(Action *action);
+	/// Handler for clicking the rank.
+	void btnRankClick(Action *action);
 };
 
 }
-
-#endif

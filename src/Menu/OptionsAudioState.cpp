@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 OpenXcom Developers.
+ * Copyright 2010-2016 OpenXcom Developers.
  *
  * This file is part of OpenXcom.
  *
@@ -17,16 +17,14 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "OptionsAudioState.h"
-#include <sstream>
 #include <SDL_mixer.h>
 #include "../Engine/Game.h"
-#include "../Resource/ResourcePack.h"
-#include "../Engine/Language.h"
-#include "../Engine/Palette.h"
+#include "../Mod/Mod.h"
+#include "../Engine/LocalizedText.h"
 #include "../Interface/ComboBox.h"
-#include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Interface/TextButton.h"
+#include "../Interface/ToggleTextButton.h"
 #include "../Interface/Slider.h"
 #include "../Engine/Action.h"
 #include "../Engine/Options.h"
@@ -35,8 +33,8 @@
 namespace OpenXcom
 {
 /* MUS_NONE, MUS_CMD, MUS_WAV, MUS_MOD, MUS_MID, MUS_OGG, MUS_MP3, MUS_MP3_MAD, MUS_FLAC, MUS_MODPLUG */
-const std::wstring OptionsAudioState::musFormats[] = {L"Adlib", L"?", L"WAV", L"MOD", L"MIDI", L"OGG", L"MP3", L"MP3", L"FLAC", L"MOD"};
-const std::wstring OptionsAudioState::sndFormats[] = {L"?", L"1.4", L"1.0"};
+const std::string OptionsAudioState::musFormats[] = {"Adlib", "?", "WAV", "MOD", "MIDI", "OGG", "MP3", "MP3", "FLAC", "MOD"};
+const std::string OptionsAudioState::sndFormats[] = {"?", "1.4", "1.0"};
 
 /**
  * Initializes all the elements in the Audio Options screen.
@@ -47,26 +45,29 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 {
 	setCategory(_btnAudio);
 
-	// Create objects
+	// Create object
 	_txtMusicVolume = new Text(114, 9, 94, 8);
 	_slrMusicVolume = new Slider(104, 16, 94, 18);
 
-	_txtSoundVolume = new Text(114, 9, 206, 8);
-	_slrSoundVolume = new Slider(104, 16, 206, 18);
+	_txtSoundVolume = new Text(114, 9, 94, 40);
+	_slrSoundVolume = new Slider(104, 16, 94, 50);
 
-	_txtUiVolume = new Text(114, 9, 94, 40);
-	_slrUiVolume = new Slider(104, 16, 94, 50);
+	_txtUiVolume = new Text(114, 9, 94, 72);
+	_slrUiVolume = new Slider(104, 16, 94, 82);
 
-	_txtSampleRate = new Text(114, 9, 206, 40);
-	_cbxSampleRate = new ComboBox(this, 104, 16, 206, 50);
+	_txtMusicFormat = new Text(114, 9, 206, 40);
+	_cbxMusicFormat = new ComboBox(this, 104, 16, 206, 50);
+	_txtCurrentMusic = new Text(114, 9, 206, 68);
 
-	_txtMusicFormat = new Text(114, 9, 94, 72);
-	_cbxMusicFormat = new ComboBox(this, 104, 16, 94, 82);
-	_txtCurrentMusic = new Text(114, 9, 94, 100);
+	_txtSoundFormat = new Text(114, 9, 206, 82);
+	_cbxSoundFormat = new ComboBox(this, 104, 16, 206, 92);
+	_txtCurrentSound = new Text(114, 9, 206, 110);
 
-	_txtSoundFormat = new Text(114, 9, 206, 72);
-	_cbxSoundFormat = new ComboBox(this, 104, 16, 206, 82);
-	_txtCurrentSound = new Text(114, 9, 206, 100);
+	_txtVideoFormat = new Text(114, 9, 206, 8);
+	_cbxVideoFormat = new ComboBox(this, 104, 16, 206, 18);
+
+	_txtOptions = new Text(114, 9, 94, 104);
+	_btnBackgroundMute = new ToggleTextButton(104, 16, 94, 114);
 
 	add(_txtMusicVolume, "text", "audioMenu");
 	add(_slrMusicVolume, "button", "audioMenu");
@@ -77,21 +78,22 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 	add(_txtUiVolume, "text", "audioMenu");
 	add(_slrUiVolume, "button", "audioMenu");
 
-	add(_txtSampleRate, "text", "audioMenu");
-
+	add(_txtVideoFormat, "text", "audioMenu");
 	add(_txtMusicFormat, "text", "audioMenu");
 	add(_txtCurrentMusic, "text", "audioMenu");
 	add(_txtSoundFormat, "text", "audioMenu");
 	add(_txtCurrentSound, "text", "audioMenu");
 
-	add(_cbxMusicFormat, "button", "audioMenu");
 	add(_cbxSoundFormat, "button", "audioMenu");
+	add(_cbxMusicFormat, "button", "audioMenu");
+	add(_cbxVideoFormat, "button", "audioMenu");
 
-	add(_cbxSampleRate, "button", "audioMenu");
+	add(_txtOptions, "text", "audioMenu");
+	add(_btnBackgroundMute, "button", "audioMenu");
 
 	centerAllSurfaces();
 
-	// Set up objects
+	// Set up object
 	_txtMusicVolume->setText(tr("STR_MUSIC_VOLUME"));
 
 	_slrMusicVolume->setRange(0, SDL_MIX_MAXVOLUME);
@@ -121,44 +123,24 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 	_slrUiVolume->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
 	_slrUiVolume->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
 
-	std::wostringstream ss;
-	std::vector<std::wstring> samplesText;
-
-	int samples[] = {8000, 11025, 16000, 22050, 32000, 44100, 48000};
-	for (unsigned int i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i)
-	{
-		_sampleRates.push_back(samples[i]);
-		ss << samples[i] << L" Hz";
-		samplesText.push_back(ss.str());
-		ss.str(L"");
-		if (Options::audioSampleRate == samples[i])
-		{
-			_cbxSampleRate->setSelected(i);
-		}
-	}
-
-	_txtSampleRate->setText(tr("STR_AUDIO_SAMPLE_RATE"));
-
-	_cbxSampleRate->setOptions(samplesText);
-	_cbxSampleRate->setTooltip("STR_AUDIO_SAMPLE_RATE_DESC");
-	_cbxSampleRate->onChange((ActionHandler)&OptionsAudioState::cbxSampleRateChange);
-	_cbxSampleRate->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
-	_cbxSampleRate->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
-
-	std::vector<std::wstring> musicText, soundText;
-	/* MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_MIDI */
+	std::vector<std::string> musicText, soundText, videoText;
+	/* MUSIC_AUTO, MUSIC_FLAC, MUSIC_OGG, MUSIC_MP3, MUSIC_MOD, MUSIC_WAV, MUSIC_ADLIB, MUSIC_GM, MUSIC_MIDI */
 	musicText.push_back(tr("STR_PREFERRED_FORMAT_AUTO"));
-	musicText.push_back(L"FLAC");
-	musicText.push_back(L"OGG");
-	musicText.push_back(L"MP3");
-	musicText.push_back(L"MOD");
-	musicText.push_back(L"WAV");
-	musicText.push_back(L"Adlib");
-	musicText.push_back(L"MIDI");
+	musicText.push_back("FLAC");
+	musicText.push_back("OGG");
+	musicText.push_back("MP3");
+	musicText.push_back("MOD");
+	musicText.push_back("WAV");
+	musicText.push_back("Adlib");
+	musicText.push_back("GM");
+	musicText.push_back("MIDI");
 
 	soundText.push_back(tr("STR_PREFERRED_FORMAT_AUTO"));
-	soundText.push_back(L"1.4");
-	soundText.push_back(L"1.0");
+	soundText.push_back("1.4");
+	soundText.push_back("1.0");
+
+	videoText.push_back(tr("STR_PREFERRED_VIDEO_ANIMATION"));
+	videoText.push_back(tr("STR_PREFERRED_VIDEO_SLIDESHOW"));
 
 	_txtMusicFormat->setText(tr("STR_PREFERRED_MUSIC_FORMAT"));
 
@@ -169,7 +151,8 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 	_cbxMusicFormat->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
 	_cbxMusicFormat->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
 
-	std::wstring curMusic = musFormats[Mix_GetMusicType(0)];
+	std::string curMusic = musFormats[Mix_GetMusicType(0)]; // this is confusing
+	// since  both GM (GM.CAT) and MIDI (*.mid) are the same from SDL_mixer POV.
 	_txtCurrentMusic->setText(tr("STR_CURRENT_FORMAT").arg(curMusic));
 
 	_txtSoundFormat->setText(tr("STR_PREFERRED_SFX_FORMAT"));
@@ -181,18 +164,36 @@ OptionsAudioState::OptionsAudioState(OptionsOrigin origin) : OptionsBaseState(or
 	_cbxSoundFormat->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
 	_cbxSoundFormat->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
 
-	std::wstring curSound = sndFormats[Options::currentSound];
+	std::string curSound = sndFormats[Options::currentSound];
 	_txtCurrentSound->setText(tr("STR_CURRENT_FORMAT").arg(curSound));
 
+	_txtVideoFormat->setText(tr("STR_PREFERRED_VIDEO_FORMAT"));
+
+	_cbxVideoFormat->setOptions(videoText);
+	_cbxVideoFormat->setSelected(Options::preferredVideo);
+	_cbxVideoFormat->setTooltip("STR_PREFERRED_VIDEO_FORMAT_DESC");
+	_cbxVideoFormat->onChange((ActionHandler)&OptionsAudioState::cbxVideoFormatChange);
+	_cbxVideoFormat->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
+	_cbxVideoFormat->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
+
 	// These options require a restart, so don't enable them in-game
-	_txtSampleRate->setVisible(_origin == OPT_MENU);
-	_cbxSampleRate->setVisible(_origin == OPT_MENU);
 	_txtMusicFormat->setVisible(_origin == OPT_MENU);
 	_cbxMusicFormat->setVisible(_origin == OPT_MENU);
 	_txtCurrentMusic->setVisible(_origin == OPT_MENU);
-	_txtSoundFormat->setVisible(_origin == OPT_MENU);
-	_cbxSoundFormat->setVisible(_origin == OPT_MENU);
-	_txtCurrentSound->setVisible(_origin == OPT_MENU);
+
+	// These options only apply to UFO
+	_txtSoundFormat->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
+	_cbxSoundFormat->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
+	_txtCurrentSound->setVisible(_origin == OPT_MENU && _game->getMod()->getSoundDefinitions()->empty());
+
+	_txtOptions->setText(tr("STR_SOUND_OPTIONS"));
+
+	_btnBackgroundMute->setText(tr("STR_BACKGROUND_MUTE"));
+	_btnBackgroundMute->setPressed(Options::backgroundMute);
+	_btnBackgroundMute->onMouseClick((ActionHandler)&OptionsAudioState::btnBackgroundMuteClick);
+	_btnBackgroundMute->setTooltip("STR_BACKGROUND_MUTE_DESC");
+	_btnBackgroundMute->onMouseIn((ActionHandler)&OptionsAudioState::txtTooltipIn);
+	_btnBackgroundMute->onMouseOut((ActionHandler)&OptionsAudioState::txtTooltipOut);
 }
 
 /**
@@ -229,7 +230,7 @@ void OptionsAudioState::slrSoundVolumeChange(Action *)
  */
 void OptionsAudioState::slrSoundVolumeRelease(Action *)
 {
-	_game->getResourcePack()->getSound("GEO.CAT", ResourcePack::UFO_FIRE)->play();
+	_game->getMod()->getSound("GEO.CAT", Mod::UFO_FIRE)->play();
 }
 
 /**
@@ -252,13 +253,12 @@ void OptionsAudioState::slrUiVolumeRelease(Action *)
 }
 
 /**
- * Changes the Audio Sample Rate option.
+ * Changes the Video Format option.
  * @param action Pointer to an action.
  */
-void OptionsAudioState::cbxSampleRateChange(Action *)
+void OptionsAudioState::cbxVideoFormatChange(Action *)
 {
-	Options::audioSampleRate = _sampleRates[_cbxSampleRate->getSelected()];
-	Options::reload = true;
+	Options::preferredVideo = (VideoFormat)_cbxVideoFormat->getSelected();
 }
 
 /**
@@ -279,6 +279,15 @@ void OptionsAudioState::cbxSoundFormatChange(Action *)
 {
 	Options::preferredSound = (SoundFormat)_cbxSoundFormat->getSelected();
 	Options::reload = true;
+}
+
+/**
+ * Updates the Background Mute option.
+ * @param action Pointer to an action.
+ */
+void OptionsAudioState::btnBackgroundMuteClick(Action*)
+{
+	Options::backgroundMute = _btnBackgroundMute->getPressed();
 }
 
 }
