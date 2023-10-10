@@ -3946,6 +3946,29 @@ void BattleUnit::updateGeoscapeStats(Soldier *soldier) const
 }
 
 /**
+* Calculates stat increase based solely on difference between current
+* and maximum values
+* @param iterations, starting stat, maximum stat
+* @return Stat increase.
+*/
+inline int improveStatAlternate(int iterations, int starting, int max)
+{
+	int difference;
+	int current = starting;
+	for (int i = 0; i < iterations; i++)
+	{
+		difference = max - current;
+		if (difference > 0)
+		{
+			current += 1 + (difference / 10);
+		}
+		else
+			break;
+	}
+	return (current - starting);
+}
+
+/**
  * Check if unit eligible for squaddie promotion. If yes, promote the unit.
  * Increase the mission counter. Calculate the experience increases.
  * @param geoscape Pointer to geoscape save.
@@ -3967,46 +3990,63 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 	statsOld.statGrowth = (*stats);
 	statsDiff.statGrowth = -(*stats);        // subtract old stat
 	const UnitStats caps = s->getRules()->getStatCaps();
+
 	int manaLossOriginal = _stats.mana - _mana;
 	int healthLossOriginal = _stats.health - _health;
 	int manaLoss = mod->getReplenishManaAfterMission() ? 0 : manaLossOriginal;
 	int healthLoss = mod->getReplenishHealthAfterMission() ? 0 : healthLossOriginal;
+  healthLoss *= 21;
+	healthLoss /= _stats.health;
+ 	if (healthLoss < 0)
+  	auto recovery = (int)RNG::generate((healthLossOriginal*0.5),(healthLossOriginal*1.5));
 
-	auto recovery = (int)RNG::generate((healthLossOriginal*0.5),(healthLossOriginal*1.5));
+  //  Additional code to make leveling less grindy in tactical
+//  and also allow some units to grow very quickly
+	int iterations;
+	switch (s->getRank())
+	{
+	  case RANK_SERGEANT:	 iterations = 2; break;
+	  case RANK_CAPTAIN:	 iterations = 3; break;
+	  case RANK_COLONEL:	 iterations = 4; break;
+	  case RANK_COMMANDER: iterations = 5; break;
+	  default:			 iterations = 1; break;
+	}
+//  additional code ends, altered code follows	
+  
 
 	if (_exp.bravery && stats->bravery < caps.bravery)
 	{
-		if (_exp.bravery > RNG::generate(0,10)) stats->bravery += 10;
+		if (_expBravery > 1) stats->bravery += 10;
 	}
 	if (_exp.reactions && stats->reactions < caps.reactions)
 	{
-		stats->reactions += improveStat(_exp.reactions);
+		stats->reactions += improveStatAlternate(iterations, stats->reactions, caps.reactions);
 	}
 	if (_exp.firing && stats->firing < caps.firing)
 	{
-		stats->firing += improveStat(_exp.firing);
+		stats->firing += improveStatAlternate(iterations, stats->firing, caps.firing);
 	}
 	if (_exp.melee && stats->melee < caps.melee)
 	{
-		stats->melee += improveStat(_exp.melee);
+		stats->melee += improveStatAlternate(iterations, stats->melee, caps.melee);
 	}
 	if (_exp.throwing && stats->throwing < caps.throwing)
 	{
-		stats->throwing += improveStat(_exp.throwing);
+		stats->throwing += improveStatAlternate(iterations, stats->throwing, caps.throwing);
 	}
 	if (_exp.psiSkill && stats->psiSkill < caps.psiSkill)
 	{
-		stats->psiSkill += improveStat(_exp.psiSkill);
+		stats->psiSkill += improveStatAlternate(iterations, stats->psiSkill, caps.psiSkill);
 	}
 	if (_exp.psiStrength && stats->psiStrength < caps.psiStrength)
 	{
-		stats->psiStrength += improveStat(_exp.psiStrength);
+		stats->psiStrength += improveStatAlternate(iterations, stats->psiStrength, caps.psiStrength);
 	}
 	if (mod->isManaTrainingPrimary())
 	{
 		if (_exp.mana && stats->mana < caps.mana)
 		{
-			stats->mana += improveStat(_exp.mana);
+			stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana);
 		}
 	}
 
@@ -4018,18 +4058,18 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 			s->promoteRank();
 		int v;
 		v = caps.tu - stats->tu;
-		if (v > 0) stats->tu += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->tu += improveStatAlternate(iterations, stats->tu, caps.tu);
 		v = caps.health - stats->health;
-		if (v > 0) stats->health += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->health += improveStatAlternate(iterations, stats->health, caps.health);
 		if (mod->isManaTrainingSecondary())
 		{
 			v = caps.mana - stats->mana;
-			if (v > 0) stats->mana += RNG::generate(0, v/10 + 2);
+			if (v > 0) stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana);
 		}
 		v = caps.strength - stats->strength;
-		if (v > 0) stats->strength += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->strength += improveStatAlternate(iterations, stats->strength, caps.strength);
 		v = caps.stamina - stats->stamina;
-		if (v > 0) stats->stamina += RNG::generate(0, v/10 + 2);
+		if (v > 0) stats->stamina += improveStatAlternate(iterations, stats->stamina, caps.stamina);
 	}
 
 	statsDiff.statGrowth += *stats; // add new stat
@@ -4073,8 +4113,8 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 			s->setTraining(false);
 		}
 	}
-
 	return hasImproved;
+
 }
 
 /**
