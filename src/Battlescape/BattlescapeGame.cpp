@@ -213,8 +213,9 @@ BattlescapeGame::~BattlescapeGame()
 /**
  * Checks for units panicking or falling and so on.
  */
-void BattlescapeGame::think()
+int BattlescapeGame::think()
 {
+	int ret = -1;
 	// nothing is happening - see if we need some alien AI or units panicking or what have you
 	if (_states.empty())
 	{
@@ -222,19 +223,36 @@ void BattlescapeGame::think()
 		{
 			statePushFront(new UnitFallBState(this));
 			_save->setUnitsFalling(false);
-			return;
+			return ret;
 		}
 		// it's a non player side (ALIENS or CIVILIANS)
 		// Note by Xilmi: "|| (!_save->getSelectedUnit() && Options::autoCombat)" is necessary because otherwise the case where a unit dies by reaction-fire during autoplay isn't handled and waits for the player to select something
 		if (_save->getSide() != FACTION_PLAYER || (_save->getSelectedUnit() && _save->getSelectedUnit()->isAIControlled() && _playerPanicHandled) || (!_save->getSelectedUnit() && Options::autoCombat))
 		{
+			auto sideBackup = _save->getSide();
 			_save->resetUnitHitStates();
 			if (!_debugPlay)
 			{
 				if (_save->getSelectedUnit())
 				{
 					if (!handlePanickingUnit(_save->getSelectedUnit()))
+					{
 						handleAI(_save->getSelectedUnit());
+
+						// calculate AI progress
+						int units = 0;
+						int total = 0;
+						for (auto* bu : *_save->getUnits())
+						{
+							if (bu->getFaction() == sideBackup && !bu->isOut())
+							{
+								units++;
+								total += bu->reselectAllowed() ? bu->getTimeUnits() * 100 / bu->getBaseStats()->tu : 0;
+							}
+						}
+						ret = units > 0 ? total / units : 0;
+						//Log(LOG_INFO) << "units: " << units << " total: " << total << " ret: " << ret;
+					}
 				}
 				else
 				{
@@ -264,6 +282,8 @@ void BattlescapeGame::think()
 			}
 		}
 	}
+
+	return ret;
 }
 
 /**
@@ -359,11 +379,11 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 	}
 	action.tuBefore = action.actor->getTimeUnits();
 	_AIActionCounter = action.number;
-	BattleItem *weapon = unit->getMainHandWeapon();
+	BattleItem *weapon = unit->getMainHandWeapon(true, false);
 	bool pickUpWeaponsMoreActively = unit->getPickUpWeaponsMoreActively() || unit->isBrutal();
 	bool weaponPickedUp = false;
 	bool walkToItem = false;
-	if (!weapon || !weapon->haveAnyAmmo() || !weapon->canBeUsedInCurrentEnvironment(getDepth()))
+	if (!weapon || (!weapon->haveAnyAmmo() && !unit->reloadAmmo(true)) || !weapon->canBeUsedInCurrentEnvironment(getDepth()))
 	{
 		if (Options::traceAI)
 		{
@@ -1710,6 +1730,7 @@ bool BattlescapeGame::cancelCurrentAction(bool bForce)
 				_currentAction.targeting = false;
 				_currentAction.type = BA_NONE;
 				_currentAction.skillRules = nullptr;
+				_currentAction.result = ""; // TODO
 				setupCursor();
 				_parentState->getGame()->getCursor()->setVisible(true);
 				return true;
@@ -1739,6 +1760,7 @@ void BattlescapeGame::cancelAllActions()
 	_currentAction.targeting = false;
 	_currentAction.type = BA_NONE;
 	_currentAction.skillRules = nullptr;
+	_currentAction.result = ""; // TODO
 	setupCursor();
 	_parentState->getGame()->getCursor()->setVisible(true);
 }
@@ -2121,7 +2143,12 @@ void BattlescapeGame::psiAttackMessage(BattleActionAttack attack, BattleUnit *vi
 			if (attack.type == BA_PANIC)
 				game->pushState(new InfoboxState(game->getLanguage()->getString("STR_MORALE_ATTACK_SUCCESSFUL")));
 			else if (attack.type == BA_MINDCONTROL)
-				game->pushState(new InfoboxState(game->getLanguage()->getString("STR_MIND_CONTROL_SUCCESSFUL")));
+			{
+				if (attack.weapon_item->getRules()->convertToCivilian() && victim->getOriginalFaction() == FACTION_HOSTILE)
+					game->pushState(new InfoboxState(game->getLanguage()->getString("STR_MIND_CONTROL_SUCCESSFUL_ALT")));
+				else
+					game->pushState(new InfoboxState(game->getLanguage()->getString("STR_MIND_CONTROL_SUCCESSFUL")));
+			}
 			getSave()->getBattleState()->updateSoldierInfo();
 		}
 	}
@@ -2636,6 +2663,8 @@ bool BattlescapeGame::findItem(BattleAction *action, bool pickUpWeaponsMoreActiv
 				// try to pick it up
 				if (takeItemFromGround(targetItem, action) == 0)
 				{
+					// since we overrule what the AI wanted, we must allow more turns
+					action->actor->setWantToEndTurn(false);
 					// if it isn't loaded or it is ammo
 					if (!targetItem->haveAnyAmmo())
 					{
@@ -2656,6 +2685,8 @@ bool BattlescapeGame::findItem(BattleAction *action, bool pickUpWeaponsMoreActiv
 				action->target = targetItem->getTile()->getPosition();
 				action->type = BA_WALK;
 				walkToItem = true;
+				// since we overrule what the AI wanted, we must allow more turns
+				action->actor->setWantToEndTurn(false);
 				if (pickUpWeaponsMoreActively)
 				{
 					// don't end the turn after walking 1-2 tiles... pick up a weapon and shoot!
@@ -2687,7 +2718,7 @@ BattleItem *BattlescapeGame::surveyItems(BattleAction *action, bool pickUpWeapon
 			continue;
 		}
 
-		if (action->actor->getAIModule()->getItemPickUpScore(bi))
+		if (action->actor->getAIModule()->getItemPickUpScore(bi) > 0)
 		{
 			if (bi->getTurnFlag() || pickUpWeaponsMoreActively)
 			{
@@ -2707,20 +2738,23 @@ BattleItem *BattlescapeGame::surveyItems(BattleAction *action, bool pickUpWeapon
 	// (are we still talking about items?)
 	for (auto* bi : droppedItems)
 	{
-		if (bi->getTile()->getDangerous())
+		Tile* itemTile = bi->getTile();
+		if (itemTile->getUnit() != nullptr && itemTile->getUnit() != action->actor)
+			continue;
+		if (itemTile->getDangerous())
 		{
 			continue;
 		}
-		int tuCost = action->actor->getAIModule()->tuCostToReachPosition(bi->getTile()->getPosition(), targetNodes);
+		int tuCost = action->actor->getAIModule()->tuCostToReachPosition(itemTile->getPosition(), targetNodes);
 		float currentWorth = 0;
 		if (tuCost < 10000)
 			currentWorth = action->actor->getAIModule()->getItemPickUpScore(bi) / (tuCost + 1);
 		if (currentWorth > maxWorth)
 		{
-			if (bi->getTile()->getTUCost(O_OBJECT, action->actor->getMovementType()) == 255)
+			if (itemTile->getTUCost(O_OBJECT, action->actor->getMovementType()) == 255)
 			{
 				// Note: full pathfinding check will be done later, this is just a small optimisation
-				bi->getTile()->setDangerous(true);
+				itemTile->setDangerous(true);
 				continue;
 			}
 			maxWorth = currentWorth;

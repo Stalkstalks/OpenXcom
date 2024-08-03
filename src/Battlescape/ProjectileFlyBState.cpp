@@ -323,7 +323,11 @@ void ProjectileFlyBState::init()
 			}
 			else
 			{
-				// _action.relativeOrigin = BattleActionOrigin::CENTER; <--- COMMENTED AS TEMPORARY SOLUTION !!!
+				if ((Options::battleRealisticAccuracy && !Options::oxceEnableOffCentreShooting)
+					|| !Options::battleRealisticAccuracy)
+						_action.relativeOrigin = BattleActionOrigin::CENTRE;
+
+				// TEMPORARY SOLUTION !!!
 				// Temporarily, _action.relativeOrigin is set inside Map::drawTerrain()
 				// so canTargetUnit() here starts to look for LoF from already selected origin (left, right or center)
 				// It prevents the bug where checkVoxelExposure selects best direction but canTargetUnit() here uses its own
@@ -363,41 +367,9 @@ void ProjectileFlyBState::init()
 				}
 			}
 		}
-		else if (targetTile->getMapData(O_OBJECT) != 0)
-		{
-			if (!_parent->getTileEngine()->canTargetTile(&originVoxel, targetTile, O_OBJECT, &_targetVoxel, _unit, isPlayer))
-			{
-				_targetVoxel = _action.target.toVoxel() + Position(8, 8, 10);
-			}
-		}
-		else if (targetTile->getMapData(O_NORTHWALL) != 0)
-		{
-			if (!_parent->getTileEngine()->canTargetTile(&originVoxel, targetTile, O_NORTHWALL, &_targetVoxel, _unit, isPlayer))
-			{
-				_targetVoxel = _action.target.toVoxel() + Position(8, 0, 9);
-			}
-		}
-		else if (targetTile->getMapData(O_WESTWALL) != 0)
-		{
-			if (!_parent->getTileEngine()->canTargetTile(&originVoxel, targetTile, O_WESTWALL, &_targetVoxel, _unit, isPlayer))
-			{
-				_targetVoxel = _action.target.toVoxel() + Position(0, 8, 9);
-			}
-		}
-		else if (targetTile->getMapData(O_FLOOR) != 0)
-		{
-			if (!_parent->getTileEngine()->canTargetTile(&originVoxel, targetTile, O_FLOOR, &_targetVoxel, _unit, isPlayer))
-			{
-				_targetVoxel = _action.target.toVoxel() + Position(8, 8, 2);
-			}
-		}
 		else
 		{
-			// dummy attempt (only to highlight obstacles)
-			_parent->getTileEngine()->canTargetTile(&originVoxel, targetTile, MapData::O_DUMMY, &_targetVoxel, _unit, isPlayer);
-
-			// target nothing, targets the middle of the tile
-			_targetVoxel = _action.target.toVoxel() + TileEngine::voxelTileCenter;
+			_targetVoxel = _parent->getTileEngine()->adjustTargetVoxelFromTileType(&originVoxel, targetTile, _unit, isPlayer);
 		}
 	}
 
@@ -413,7 +385,7 @@ void ProjectileFlyBState::init()
 		_parent->getMap()->setCursorType(CT_NONE);
 		_parent->getMap()->getCamera()->stopMouseScrolling();
 		_parent->getMap()->disableObstacles();
-		_unit->updateEnemyKnowledge(_parent->getSave()->getTileIndex(_unit->getPosition()));
+		_unit->updateEnemyKnowledge(_parent->getSave()->getTileIndex(_unit->getPosition()), true);
 	}
 	else if (isPlayer && (_targetVoxel.z >= 0 || forceEnableObstacles))
 	{
@@ -482,7 +454,7 @@ bool ProjectileFlyBState::createNewProjectile()
 	{
 		_projectileImpact = projectile->calculateThrow(BattleUnit::getFiringAccuracy(attack, _parent->getMod()) / accuracyDivider);
 		const RuleItem *ruleItem = _action.weapon->getRules();
-		if (_projectileImpact == V_FLOOR || _projectileImpact == V_UNIT || _projectileImpact == V_OBJECT || _projectileImpact == V_WESTWALL || _projectileImpact == V_NORTHWALL)
+		if (_projectileImpact == V_FLOOR || _projectileImpact == V_UNIT || _projectileImpact == V_OBJECT || _projectileImpact == V_WESTWALL || _projectileImpact == V_NORTHWALL || _projectileImpact == V_EMPTY)
 		{
 			if (_unit->getFaction() != FACTION_PLAYER && ruleItem->getBattleType() == BT_GRENADE)
 			{
@@ -1038,6 +1010,7 @@ void ProjectileFlyBState::projectileHitUnit(Position pos)
 				_unit->setTurnsLeftSpottedForSnipers(std::max(victim->getSpotterDuration(), _unit->getTurnsLeftSpottedForSnipers()));
 			}
 		}
+		victim->updateEnemyKnowledge(_parent->getSave()->getTileIndex(victim->getPosition()), true);
 		for (BattleUnit *unit : *(_parent->getSave()->getUnits()))
 		{
 			if (unit->isOut())

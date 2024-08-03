@@ -91,13 +91,13 @@ BaseInfoState::BaseInfoState(Base *base, BasescapeState *state) : _base(base), _
 	_barHangars = new Bar(150, 5, 166, Options::storageLimitsEnforced ? 135 : 125);
 
 	_txtDefense = new Text(114, 9, 8, Options::storageLimitsEnforced ? 147 : 138);
-	_numDefense = new Text(40, 9, 126, Options::storageLimitsEnforced ? 147 : 138);
+	_numDefense = new Text(36, 9, 126, Options::storageLimitsEnforced ? 147 : 138);
 	_barDefense = new Bar(150, 5, 166, Options::storageLimitsEnforced ? 149 : 140);
 	_txtShortRange = new Text(114, 9, 8, Options::storageLimitsEnforced ? 157 : 153);
-	_numShortRange = new Text(40, 9, 126, Options::storageLimitsEnforced ? 157 : 153);
+	_numShortRange = new Text(36, 9, 126, Options::storageLimitsEnforced ? 157 : 153);
 	_barShortRange = new Bar(150, 5, 166, Options::storageLimitsEnforced ? 159 : 155);
 	_txtLongRange = new Text(114, 9, 8, Options::storageLimitsEnforced ? 167 : 163);
-	_numLongRange = new Text(40, 9, 126, Options::storageLimitsEnforced ? 167 : 163);
+	_numLongRange = new Text(36, 9, 126, Options::storageLimitsEnforced ? 167 : 163);
 	_barLongRange = new Bar(150, 5, 166, Options::storageLimitsEnforced ? 169 : 165);
 
 	// Set palette
@@ -273,51 +273,122 @@ void BaseInfoState::init()
 	ss << _base->getAvailableSoldiers() << ":" << _base->getTotalSoldiers();
 	_numSoldiers->setText(ss.str());
 
-	_barSoldiers->setMax(_base->getTotalSoldiers());
-	_barSoldiers->setValue(_base->getAvailableSoldiers());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getTotalSoldiers() * _barSoldiers->getScale() < MAX_BAR_WIDTH)
+	{
+		_barSoldiers->setMax(_base->getTotalSoldiers());
+		_barSoldiers->setValue(_base->getAvailableSoldiers());
+	}
+	else
+	{
+		_barSoldiers->setMax(MAX_BAR_WIDTH);
+		_barSoldiers->setValue(_base->getAvailableSoldiers() * MAX_BAR_WIDTH / _base->getTotalSoldiers());
+	}
 
 	std::ostringstream ss2;
 	ss2 << _base->getAvailableEngineers() << ":" << _base->getTotalEngineers();
 	_numEngineers->setText(ss2.str());
 
-	_barEngineers->setMax(_base->getTotalEngineers());
-	_barEngineers->setValue(_base->getAvailableEngineers());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getTotalEngineers() * _barEngineers->getScale() < MAX_BAR_WIDTH)
+	{
+		_barEngineers->setMax(_base->getTotalEngineers());
+		_barEngineers->setValue(_base->getAvailableEngineers());
+	}
+	else
+	{
+		_barEngineers->setMax(MAX_BAR_WIDTH);
+		_barEngineers->setValue(_base->getAvailableEngineers() * MAX_BAR_WIDTH / _base->getTotalEngineers());
+	}
 
 	std::ostringstream ss3;
 	ss3 << _base->getAvailableScientists() << ":" << _base->getTotalScientists();
 	_numScientists->setText(ss3.str());
 
-	_barScientists->setMax(_base->getTotalScientists());
-	_barScientists->setValue(_base->getAvailableScientists());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getTotalScientists() * _barScientists->getScale() < MAX_BAR_WIDTH)
+	{
+		_barScientists->setMax(_base->getTotalScientists());
+		_barScientists->setValue(_base->getAvailableScientists());
+	}
+	else
+	{
+		_barScientists->setMax(MAX_BAR_WIDTH);
+		_barScientists->setValue(_base->getAvailableScientists() * MAX_BAR_WIDTH / _base->getTotalScientists());
+	}
 
+	if (_base->getTotalScientists() * _barScientists->getScale() < MAX_BAR_WIDTH)
+	{
+		_barScientists->setMax(_base->getTotalScientists());
+		_barScientists->setValue(_base->getAvailableScientists());
+	}
+	else
+	{
+		_barScientists->setMax(MAX_BAR_WIDTH);
+		_barScientists->setValue(_base->getAvailableScientists() * MAX_BAR_WIDTH / _base->getTotalScientists());
+		_barScientists->setScale(1.0);
+	}
 
 	std::ostringstream ss4;
 	ss4 << _base->getUsedQuarters() << ":" << _base->getAvailableQuarters();
 	_numQuarters->setText(ss4.str());
 
-	_barQuarters->setMax(_base->getAvailableQuarters());
-	_barQuarters->setValue(_base->getUsedQuarters());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getAvailableQuarters() * _barQuarters->getScale() < MAX_BAR_WIDTH)
+	{
+		_barQuarters->setMax(_base->getAvailableQuarters());
+		_barQuarters->setValue(_base->getUsedQuarters());
+	}
+	else
+	{
+		_barQuarters->setMax(MAX_BAR_WIDTH);
+		_barQuarters->setValue(_base->getUsedQuarters() * MAX_BAR_WIDTH / _base->getAvailableQuarters());
+		_barQuarters->setScale(1.0);
+	}
 
 	std::ostringstream ss5;
 	ss5 << (int)floor(_base->getUsedStores() + 0.05) << ":" << _base->getAvailableStores();
 	_numStores->setText(ss5.str());
 
-	_barStores->setMax(_base->getAvailableStores());
-	_barStores->setValue((int)floor(_base->getUsedStores() + 0.05));
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getAvailableStores() * _barStores->getScale() < MAX_BAR_WIDTH)
+	{
+		_barStores->setMax(_base->getAvailableStores());
+		_barStores->setValue((int)floor(_base->getUsedStores() + 0.05));
+	}
+	else
+	{
+		_barStores->setMax(MAX_BAR_WIDTH);
+		_barStores->setValue(((int)floor(_base->getUsedStores() + 0.05)) * MAX_BAR_WIDTH / _base->getAvailableStores());
+		_barStores->setScale(1.0);
+	}
 
 	std::ostringstream ss6;
 	ss6 << _base->getUsedLaboratories() << ":" << _base->getAvailableLaboratories();
 	_numLaboratories->setText(ss6.str());
 
-	_barLaboratories->setMax(_base->getAvailableLaboratories());
-	_barLaboratories->setValue(_base->getUsedLaboratories());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getAvailableLaboratories() * _barLaboratories->getScale() < MAX_BAR_WIDTH)
+	{
+		_barLaboratories->setMax(_base->getAvailableLaboratories());
+		_barLaboratories->setValue(_base->getUsedLaboratories());
+	}
+	else
+	{
+		_barLaboratories->setMax(MAX_BAR_WIDTH);
+		_barLaboratories->setValue(_base->getUsedLaboratories() * MAX_BAR_WIDTH / _base->getAvailableLaboratories());
+		_barLaboratories->setScale(1.0);
+	}
 
 	std::ostringstream ss7;
 	ss7 << _base->getUsedWorkshops() << ":" << _base->getAvailableWorkshops();
 	_numWorkshops->setText(ss7.str());
 
-	_barWorkshops->setMax(_base->getAvailableWorkshops());
-	_barWorkshops->setValue(_base->getUsedWorkshops());
+	if (!Options::oxceBaseInfoScaleEnabled || _base->getAvailableWorkshops() * _barWorkshops->getScale() < MAX_BAR_WIDTH)
+	{
+		_barWorkshops->setMax(_base->getAvailableWorkshops());
+		_barWorkshops->setValue(_base->getUsedWorkshops());
+	}
+	else
+	{
+		_barWorkshops->setMax(MAX_BAR_WIDTH);
+		_barWorkshops->setValue(_base->getUsedWorkshops() * MAX_BAR_WIDTH / _base->getAvailableWorkshops());
+		_barWorkshops->setScale(1.0);
+	}
 
 	if (Options::storageLimitsEnforced)
 	{
@@ -333,32 +404,104 @@ void BaseInfoState::init()
 	ss8 << _base->getUsedHangars() << ":" << _base->getAvailableHangars();
 	_numHangars->setText(ss8.str());
 
-	_barHangars->setMax(_base->getAvailableHangars());
-	_barHangars->setValue(_base->getUsedHangars());
+	// bar dynamic scale
 
+	if (_base->getAvailableHangars() * _barHangars->getScale() < MAX_BAR_WIDTH)
+	{
+		_barHangars->setMax(_base->getAvailableHangars());
+		_barHangars->setValue(_base->getUsedHangars());
+	}
+	else
+	{
+		_barHangars->setMax(MAX_BAR_WIDTH);
+		_barHangars->setValue(_base->getUsedHangars() * MAX_BAR_WIDTH / _base->getAvailableHangars());
+		_barHangars->setScale(1.0);
+	}
 
-	std::ostringstream ss9;
-	ss9 << _base->getDefenseValue();
-	_numDefense->setText(ss9.str());
+	if (Options::baseDefenseProbability)
+	{
+		// display base defense percentage
+		int defenseProbabilityPercentage = _base->getDefenseProbabilityPercentage();
+		_barDefense->setMax(_base->getDefenseValue());
+		_barDefense->setValue(_base->getDefenseValue());
+		if (Options::oxceBaseInfoDefenseScaleMultiplier != 100)
+		{
+			_barDefense->setScale(0.125 * Options::oxceBaseInfoDefenseScaleMultiplier / 100.0);
+		}
 
-	_barDefense->setMax(_base->getDefenseValue());
-	_barDefense->setValue(_base->getDefenseValue());
+		std::ostringstream ss9;
+		ss9 << defenseProbabilityPercentage;
+		ss9 << " %";
+		_numDefense->setText(ss9.str());
+		_numDefense->setAlign(ALIGN_RIGHT);
 
-	std::ostringstream ss10;
-	int shortRangeDetection = _base->getShortRangeDetection();
-	ss10 << shortRangeDetection;
-	_numShortRange->setText(ss10.str());
+		_barDefense->setScale(1.0);
+		_barDefense->setMax(100);
+		_barDefense->setValue(defenseProbabilityPercentage);
 
-	_barShortRange->setMax(shortRangeDetection);
-	_barShortRange->setValue(shortRangeDetection);
+	}
+	else
+	{
+		// display base defense strength (vanilla)
 
-	std::ostringstream ss11;
-	int longRangeDetection = _base->getLongRangeDetection();
-	ss11 << longRangeDetection;
-	_numLongRange->setText(ss11.str());
+		std::ostringstream ss9;
+		ss9 << _base->getDefenseValue();
+		_numDefense->setText(ss9.str());
 
-	_barLongRange->setMax(longRangeDetection);
-	_barLongRange->setValue(longRangeDetection);
+		_barDefense->setMax(_base->getDefenseValue());
+		_barDefense->setValue(_base->getDefenseValue());
+
+	}
+
+	if (Options::baseDetectionProbability)
+	{
+		// display base detection probability percentage
+
+		std::ostringstream ss10;
+		int shortRangeDetectionProbabilityPercentage = _base->getShortRangeDetectionProbabilityPercentage();
+		ss10 << shortRangeDetectionProbabilityPercentage;
+		ss10 << " %";
+		_numShortRange->setText(ss10.str());
+		_numShortRange->setAlign(ALIGN_RIGHT);
+
+		_barShortRange->setScale(1.0);
+		_barShortRange->setMax(100);
+		_barShortRange->setValue(shortRangeDetectionProbabilityPercentage);
+
+		std::ostringstream ss11;
+		int longRangeDetectionProbabilityPercentage = _base->getLongRangeDetectionProbabilityPercentage();
+		ss11 << longRangeDetectionProbabilityPercentage;
+		ss11 << " %";
+		_numLongRange->setText(ss11.str());
+		_numLongRange->setAlign(ALIGN_RIGHT);
+
+		_barLongRange->setScale(1.0);
+		_barLongRange->setMax(100);
+		_barLongRange->setValue(longRangeDetectionProbabilityPercentage);
+
+	}
+	else
+	{
+		// display base detection count (vanilla)
+
+		std::ostringstream ss10;
+		int shortRangeDetection = _base->getShortRangeDetection();
+		ss10 << shortRangeDetection;
+		_numShortRange->setText(ss10.str());
+
+		_barShortRange->setMax(shortRangeDetection);
+		_barShortRange->setValue(shortRangeDetection);
+
+		std::ostringstream ss11;
+		int longRangeDetection = _base->getLongRangeDetection();
+		ss11 << longRangeDetection;
+		_numLongRange->setText(ss11.str());
+
+		_barLongRange->setMax(longRangeDetection);
+		_barLongRange->setValue(longRangeDetection);
+
+	}
+
 }
 
 /**

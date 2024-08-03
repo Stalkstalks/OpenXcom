@@ -47,6 +47,10 @@
 #include "../Engine/Collections.h"
 #include "WeightedOptions.h"
 #include "AlienMission.h"
+#include "Country.h"
+#include "../Mod/RuleCountry.h"
+#include "Region.h"
+#include "../Mod/RuleRegion.h"
 
 namespace OpenXcom
 {
@@ -166,20 +170,7 @@ void Base::load(const YAML::Node &node, SavedGame *save, bool newGame, bool newB
 		}
 	}
 
-	_items->load(node["items"]);
-	// Some old saves have bad items, better get rid of them to avoid further bugs
-	for (auto iter = _items->getContents()->begin(); iter != _items->getContents()->end();)
-	{
-		if (_mod->getItem(iter->first) == 0)
-		{
-			Log(LOG_ERROR) << "Failed to load item " << iter->first;
-			_items->getContents()->erase(iter++);
-		}
-		else
-		{
-			++iter;
-		}
-	}
+	_items->load(node["items"], _mod);
 
 	_scientists = node["scientists"].as<int>(_scientists);
 	_engineers = node["engineers"].as<int>(_engineers);
@@ -277,6 +268,32 @@ void Base::finishLoading(const YAML::Node &node, SavedGame *save)
 			Log(LOG_ERROR) << "Failed to load craft " << type;
 		}
 	}
+	calculateServices(save);
+}
+
+/**
+ * Pre-calculates base services provided by region and country.
+ */
+void Base::calculateServices(SavedGame* save)
+{
+	for (const auto* country : *save->getCountries())
+	{
+		if (country->getRules()->insideCountry(_lon, _lat))
+		{
+			_provideBaseFunc |= country->getRules()->getProvidedBaseFunc();
+			_forbiddenBaseFunc |= country->getRules()->getForbiddenBaseFunc();
+			break;
+		}
+	}
+	for (const auto* region : *save->getRegions())
+	{
+		if (region->getRules()->insideRegion(_lon, _lat))
+		{
+			_provideBaseFunc |= region->getRules()->getProvidedBaseFunc();
+			_forbiddenBaseFunc |= region->getRules()->getForbiddenBaseFunc();
+			break;
+		}
+	}
 }
 
 /**
@@ -302,23 +319,32 @@ bool Base::isOverlappingOrOverflowing()
 		const RuleBaseFacility *rules = fac->getRules();
 		int facilityX = fac->getX();
 		int facilityY = fac->getY();
-		int facilitySize = rules->getSize();
+		int facilitySizeX = rules->getSizeX();
+		int facilitySizeY = rules->getSizeY();
 
-		if (facilityX < 0 || facilityY < 0 || facilityX + (facilitySize - 1) >= BASE_SIZE || facilityY + (facilitySize - 1) >= BASE_SIZE)
+		if (facilityX < 0 || facilityY < 0 || facilityX + (facilitySizeX - 1) >= BASE_SIZE || facilityY + (facilitySizeY - 1) >= BASE_SIZE)
 		{
-			Log(LOG_ERROR) << "Facility " << rules->getType() << " at [" << facilityX << ", " << facilityY << "] (size " << facilitySize << ") is outside of base boundaries.";
+			Log(LOG_ERROR) << "Facility " << rules->getType()
+				<< " at [" << facilityX << ", " << facilityY
+				<< "] (size [" << facilitySizeX << ", " << facilitySizeY
+				<< "]) is outside of base boundaries.";
 			result = true;
 			continue;
 		}
 
-		for (int x = facilityX; x < facilityX + facilitySize; ++x)
+		for (int x = facilityX; x < facilityX + facilitySizeX; ++x)
 		{
-			for (int y = facilityY; y < facilityY + facilitySize; ++y)
+			for (int y = facilityY; y < facilityY + facilitySizeY; ++y)
 			{
 				if (grid[x][y] != 0)
 				{
-					Log(LOG_ERROR) << "Facility " << rules->getType() << " at [" << facilityX << ", " << facilityY << "] (size " << facilitySize
-						<< ") overlaps with " << grid[x][y]->getRules()->getType() << " at [" << x << ", " << y << "] (size " << grid[x][y]->getRules()->getSize() << ")";
+					Log(LOG_ERROR) << "Facility " << rules->getType()
+						<< " at [" << facilityX << ", " << facilityY
+						<< "] (size [" << facilitySizeX << ", " << facilitySizeY
+						<< "]) overlaps with " << grid[x][y]->getRules()->getType()
+						<< " at [" << x << ", " << y
+						<< "] (size [" << grid[x][y]->getRules()->getSizeX() << ", " << grid[x][y]->getRules()->getSizeY()
+						<< ")";
 					result = true;
 				}
 				grid[x][y] = fac;
@@ -678,7 +704,7 @@ int Base::getTotalOtherStaffAndInventoryCost(int& staffCount, int& inventoryCoun
 	{
 		if (transfer->getType() == TRANSFER_ITEM)
 		{
-			auto ruleItem = _mod->getItem(transfer->getItems(), true);
+			const auto* ruleItem = transfer->getItems();
 			if (ruleItem->getMonthlySalary() != 0)
 			{
 				staffCount += transfer->getQuantity();
@@ -707,7 +733,7 @@ int Base::getTotalOtherStaffAndInventoryCost(int& staffCount, int& inventoryCoun
 	}
 	for (const auto& storeItem : *_items->getContents())
 	{
-		auto ruleItem = _mod->getItem(storeItem.first, true);
+		auto* ruleItem = storeItem.first;
 		if (ruleItem->getMonthlySalary() != 0)
 		{
 			staffCount += storeItem.second;
@@ -723,7 +749,7 @@ int Base::getTotalOtherStaffAndInventoryCost(int& staffCount, int& inventoryCoun
 	{
 		for (const auto& craftItem : *xcraft->getItems()->getContents())
 		{
-			auto ruleItem = _mod->getItem(craftItem.first, true);
+			auto* ruleItem = craftItem.first;
 			if (ruleItem->getMonthlySalary() != 0)
 			{
 				staffCount += craftItem.second;
@@ -821,7 +847,7 @@ double Base::getUsedStores(bool excludeNormalItems) const
 	{
 		if (transfer->getType() == TRANSFER_ITEM)
 		{
-			total += transfer->getQuantity() * _mod->getItem(transfer->getItems(), true)->getSize();
+			total += transfer->getQuantity() * transfer->getItems()->getSize();
 		}
 		else if (transfer->getType() == TRANSFER_CRAFT)
 		{
@@ -919,10 +945,13 @@ int Base::getUsedWorkshops() const
 	int usedWorkShop = 0;
 	for (const auto* prod : _productions)
 	{
-		int spaceFromProd = 0;
-		if (prod->getAssignedEngineers() > 0 || prod->getTimeSpent() > 0)
-			spaceFromProd = prod->getRules()->getRequiredSpace();
-		usedWorkShop += (prod->getAssignedEngineers() + spaceFromProd);
+		usedWorkShop += prod->getAssignedEngineers();
+
+		// don't count the workshop space yet if the production is only queued (for future)
+		if (!prod->isQueuedOnly())
+		{
+			usedWorkShop += prod->getRules()->getRequiredSpace();
+		}
 	}
 	return usedWorkShop;
 }
@@ -1122,6 +1151,107 @@ int Base::getDefenseValue() const
 }
 
 /**
+ * Computes defense probability percentage.
+ * @return Defense probability percentage.
+ */
+int Base::getDefenseProbabilityPercentage() const
+{
+	// get biggest base assaulting UFO damage capacity
+
+	int maxUfoDamageCapacity = 0;
+
+	for (std::string alienMissionType : _mod->getAlienMissionList())
+	{
+		const RuleAlienMission* ruleAlienMission = _mod->getAlienMission(alienMissionType);
+
+		// retaliation
+
+		if (!(ruleAlienMission->getObjective() == OBJECTIVE_RETALIATION || ruleAlienMission->getObjective() == OBJECTIVE_INSTANT_RETALIATION))
+			continue;
+
+		// not ignoring base defenses
+
+		if (ruleAlienMission->ignoreBaseDefenses())
+			continue;
+
+		// get spawned UFO
+
+		std::string spawnUfo = ruleAlienMission->getSpawnUfo();
+
+		if (spawnUfo.empty())
+			continue;
+
+		// get UFO damage capacity
+
+		const RuleUfoStats ufoStats = _mod->getUfo(spawnUfo, true)->getStats();
+		int ufoDamageCapacity = ufoStats.damageMax + ufoStats.shieldCapacity;
+
+		// update max damage capacity
+
+		maxUfoDamageCapacity = std::max(maxUfoDamageCapacity, ufoDamageCapacity);
+
+	}
+
+	// no base assaulting UFO => no defense failure
+
+	if (maxUfoDamageCapacity == 0)
+		return 100;
+
+	// compute base defense probability in percents
+
+	double combinedMean = 0.0;
+	double combinedVariance = 0.0;
+
+	for (const auto* fac : _facilities)
+	{
+		if (fac->getBuildTime() != 0)
+			continue;
+
+		int defenseValue = std::max(0, fac->getRules()->getDefenseValue());
+		int defenseHitRatio = std::max(0, std::min(100, fac->getRules()->getHitRatio()));
+
+		if (defenseValue == 0 || defenseHitRatio == 0)
+			continue;
+
+		double defenseHitProbability = (double)defenseHitRatio / 100.0;
+		double defenseMean = defenseHitProbability * (double)defenseValue;
+		double defenseVariance =
+			+ (1.0 - defenseHitProbability) * defenseMean * defenseMean
+			+ defenseHitProbability * ((double)defenseValue - defenseMean) * ((double)defenseValue - defenseMean)
+			+ defenseHitProbability * (double)defenseValue * (double)defenseValue / 12.0
+		;
+
+		combinedMean += defenseMean;
+		combinedVariance += defenseVariance;
+
+	}
+
+	if (combinedMean == 0)
+		return 0;
+
+	double combinedStd = sqrt(combinedVariance);
+
+	double x = ((double)maxUfoDamageCapacity - combinedMean) / combinedStd;
+	double defenseWinProbability = 1.0 - std::erfc(-x / std::sqrt(2)) / 2;
+
+	int defenseProbabilityPercentage = (int)round(defenseWinProbability * 100);
+
+	// polish rough edges
+
+	if (defenseProbabilityPercentage <= 1)
+	{
+		defenseProbabilityPercentage = 0;
+	}
+	if (defenseProbabilityPercentage >= 99)
+	{
+		defenseProbabilityPercentage = 100;
+	}
+
+	return defenseProbabilityPercentage;
+
+}
+
+/**
  * Returns the total amount of short range
  * detection facilities in the base.
  * @return Defense value.
@@ -1160,6 +1290,68 @@ int Base::getLongRangeDetection() const
 		}
 	}
 	return total;
+}
+
+/**
+ * Computes base short range detection probability.
+ * Short range detection probability includes all radars short and long range.
+ * @return Short range detection probability percentage.
+ */
+int Base::getShortRangeDetectionProbabilityPercentage() const
+{
+	int minRadarRange = _mod->getShortRadarRange();
+
+	if (minRadarRange == 0)
+		return 0;
+
+	double combinedDetectionFailureProbability = 1.0;
+
+	for (const OpenXcom::BaseFacility* facility : _facilities)
+	{
+		if (facility->getBuildTime() == 0 && facility->getRules()->getRadarRange() > 0)
+		{
+			int radarChance = std::min(100, std::max(0, facility->getRules()->getRadarChance()));
+			double radarDetectionProbability = (double)radarChance / 100.0;
+			double radarDetectionFailureProbability = 1.0 - radarDetectionProbability;
+			combinedDetectionFailureProbability *= radarDetectionFailureProbability;
+		}
+	}
+
+	double combinedDetectionProbability = 1.0 - combinedDetectionFailureProbability;
+	int combinedDetectionProbabilityPercentage = (int)round(combinedDetectionProbability * 100);
+
+	return combinedDetectionProbabilityPercentage;
+
+}
+
+/**
+ * Computes base long range detection probability.
+ * @return Long range detection probability percentage.
+ */
+int Base::getLongRangeDetectionProbabilityPercentage() const
+{
+	int minRadarRange = _mod->getShortRadarRange();
+
+	if (minRadarRange == 0)
+		return 0;
+
+	double combinedDetectionFailureProbability = 1.0;
+
+	for (const OpenXcom::BaseFacility* facility : _facilities)
+	{
+		if (facility->getBuildTime() == 0 && facility->getRules()->getRadarRange() > 0 && facility->getRules()->getRadarRange() > minRadarRange)
+		{
+			int radarChance = std::min(100, std::max(0, facility->getRules()->getRadarChance()));
+			double radarDetectionProbability = (double)radarChance / 100.0;
+			double radarDetectionFailureProbability = 1.0 - radarDetectionProbability;
+			combinedDetectionFailureProbability *= radarDetectionFailureProbability;
+		}
+	}
+
+	double combinedDetectionProbability = 1.0 - combinedDetectionFailureProbability;
+	int combinedDetectionProbabilityPercentage = (int)round(combinedDetectionProbability * 100);
+
+	return combinedDetectionProbabilityPercentage;
 }
 
 /**
@@ -1348,7 +1540,7 @@ void Base::removeResearch(ResearchProject * project)
 	{
 		if (ruleResearch->needItem() && ruleResearch->destroyItem())
 		{
-			getStorageItems()->addItem(ruleResearch->getName(), 1);
+			getStorageItems()->addItem(ruleResearch->getNeededItem(), 1);
 		}
 	}
 
@@ -1485,12 +1677,12 @@ int Base::getFreeTrainingSpace() const
 int Base::getUsedContainment(int prisonType, bool onlyExternal) const
 {
 	int total = 0;
-	RuleItem *rule = 0;
+	const RuleItem *rule = 0;
 	for (const auto* transfer : _transfers)
 	{
 		if (transfer->getType() == TRANSFER_ITEM)
 		{
-			rule = _mod->getItem(transfer->getItems(), true);
+			rule = transfer->getItems();
 			if (rule->isAlien() && rule->getPrisonType() == prisonType)
 			{
 				total += transfer->getQuantity();
@@ -1502,7 +1694,7 @@ int Base::getUsedContainment(int prisonType, bool onlyExternal) const
 		const RuleResearch *projRules = proj->getRules();
 		if (projRules->needItem() && projRules->destroyItem())
 		{
-			rule = _mod->getItem(projRules->getName());
+			rule = _mod->getItem(projRules->getName()); // don't use getNeededItem()
 			if (rule->isAlien() && rule->getPrisonType() == prisonType)
 			{
 				++total;
@@ -1516,7 +1708,7 @@ int Base::getUsedContainment(int prisonType, bool onlyExternal) const
 
 	for (const auto& pair : *_items->getContents())
 	{
-		rule = _mod->getItem(pair.first, true);
+		rule = pair.first;
 		if (rule->isAlien() && rule->getPrisonType() == prisonType)
 		{
 			total += pair.second;
@@ -1593,7 +1785,7 @@ size_t Base::getDetectionChance() const
 	{
 		if (fac->getBuildTime() == 0)
 		{
-			completedFacilities += fac->getRules()->getSize() * fac->getRules()->getSize();
+			completedFacilities += fac->getRules()->getSizeX() * fac->getRules()->getSizeY();
 			if (fac->getRules()->isMindShield() && !fac->getDisabled())
 			{
 				mindShields += fac->getRules()->getMindShieldPower();
@@ -1651,9 +1843,8 @@ void Base::setupDefenses(AlienMission* am)
 	// add vehicles left on the base
 	for (auto iter = _items->getContents()->begin(); iter != _items->getContents()->end(); )
 	{
-		const auto& itemId = iter->first;
 		int itemQty = iter->second;
-		RuleItem *rule = _mod->getItem(itemId, true);
+		const RuleItem *rule = iter->first;
 		if (rule->getVehicleUnit())
 		{
 			int size = rule->getVehicleUnit()->getArmor()->getTotalSize();
@@ -1665,7 +1856,7 @@ void Base::setupDefenses(AlienMission* am)
 					_vehicles.push_back(vehicle);
 					_vehiclesFromBase.push_back(vehicle);
 				}
-				_items->removeItem(itemId, itemQty);
+				_items->removeItem(rule, itemQty);
 			}
 			else // so this vehicle needs ammo
 			{
@@ -1686,7 +1877,7 @@ void Base::setupDefenses(AlienMission* am)
 					_vehiclesFromBase.push_back(vehicle);
 					_items->removeItem(ammo, ammoPerVehicle);
 				}
-				_items->removeItem(itemId, canBeAdded);
+				_items->removeItem(rule, canBeAdded);
 			}
 
 			iter = _items->getContents()->begin(); // we have to start over because iterator is broken because of the removeItem
@@ -1777,9 +1968,9 @@ int Base::damageFacility(BaseFacility *toBeDamaged)
 	}
 	else if (_mod->getDestroyedFacility())
 	{
-		for (int x = 0; x < toBeDamaged->getRules()->getSize(); ++x)
+		for (int x = 0; x < toBeDamaged->getRules()->getSizeX(); ++x)
 		{
-			for (int y = 0; y < toBeDamaged->getRules()->getSize(); ++y)
+			for (int y = 0; y < toBeDamaged->getRules()->getSizeY(); ++y)
 			{
 				BaseFacility *fac = new BaseFacility(_mod->getDestroyedFacility(), this);
 				fac->setX(toBeDamaged->getX() + x);
@@ -1796,7 +1987,7 @@ int Base::damageFacility(BaseFacility *toBeDamaged)
 		if ((*iter) == toBeDamaged)
 		{
 			// bigger facilities spend more missile power
-			result = toBeDamaged->getRules()->getSize() * toBeDamaged->getRules()->getSize();
+			result = toBeDamaged->getRules()->getSizeX() * toBeDamaged->getRules()->getSizeY();
 			destroyFacility(iter);
 			break;
 		}
@@ -1854,9 +2045,9 @@ std::list<BASEFACILITIESITERATOR> Base::getDisconnectedFacilities(BaseFacility *
 		if (fac != remove)
 		{
 			if (fac->getRules()->isLift()) lift = fac;
-			for (int x = 0; x != fac->getRules()->getSize(); ++x)
+			for (int x = 0; x != fac->getRules()->getSizeX(); ++x)
 			{
-				for (int y = 0; y != fac->getRules()->getSize(); ++y)
+				for (int y = 0; y != fac->getRules()->getSizeY(); ++y)
 				{
 					std::pair<BASEFACILITIESITERATOR, bool> *p = new std::pair<BASEFACILITIESITERATOR, bool>(iter,false);
 					facilitiesConnStates.push_back(p);
@@ -2109,12 +2300,12 @@ void Base::cleanupPrisons(int prisonType)
 			const RuleResearch* projRules = project->getRules();
 			if (projRules->needItem() && projRules->destroyItem())
 			{
-				RuleItem* rule = _mod->getItem(projRules->getName());
+				RuleItem* rule = _mod->getItem(projRules->getName()); // don't use getNeededItem()
 				if (rule->isAlien() && rule->getPrisonType() == prisonType)
 				{
 					_scientists += project->getAssigned();
 					project->setAssigned(0);
-					getStorageItems()->addItem(projRules->getName(), 1);
+					getStorageItems()->addItem(projRules->getNeededItem(), 1);
 					return true;
 				}
 			}
@@ -2128,10 +2319,10 @@ void Base::cleanupPrisons(int prisonType)
 		{
 			if (transfer->getType() == TRANSFER_ITEM)
 			{
-				RuleItem* rule = _mod->getItem(transfer->getItems(), true);
+				const auto* rule = transfer->getItems();
 				if (rule->isAlien() && rule->getPrisonType() == prisonType)
 				{
-					getStorageItems()->addItem(transfer->getItems(), transfer->getQuantity());
+					getStorageItems()->addItem(rule, transfer->getQuantity());
 					return true;
 				}
 			}
@@ -2152,8 +2343,8 @@ void Base::cleanupDefenses(bool reclaimItems)
 	{
 		for (auto* vehicle : _vehiclesFromBase)
 		{
-			RuleItem *rule = vehicle->getRules();
-			_items->addItem(rule->getType());
+			const RuleItem *rule = vehicle->getRules();
+			_items->addItem(rule);
 			if (rule->getVehicleClipAmmo())
 			{
 				_items->addItem(rule->getVehicleClipAmmo(), rule->getVehicleClipsLoaded());
@@ -2233,7 +2424,7 @@ BasePlacementErrors Base::isAreaInUse(BaseAreaSubset area, const RuleBaseFacilit
 					//too many prison types, give up
 					if (prisonCurr == prisonEnd)
 					{
-						return BPE_Used;
+						return BPE_Used_AlienContainment;
 					}
 					*prisonCurr = type;
 					++prisonCurr;
@@ -2248,7 +2439,7 @@ BasePlacementErrors Base::isAreaInUse(BaseAreaSubset area, const RuleBaseFacilit
 					//too many hangar types, give up
 					if (hangarCurr == hangarEnd)
 					{
-						return BPE_Used;
+						return BPE_Used_Hangars;
 					}
 					*hangarCurr = type;
 					++hangarCurr;
@@ -2377,7 +2568,7 @@ BasePlacementErrors Base::isAreaInUse(BaseAreaSubset area, const RuleBaseFacilit
 		{
 			if (typeSize.second < getUsedContainment(typeSize.first))
 			{
-				return BPE_Used;
+				return BPE_Used_AlienContainment;
 			}
 		}
 	}
@@ -2413,22 +2604,42 @@ BasePlacementErrors Base::isAreaInUse(BaseAreaSubset area, const RuleBaseFacilit
 		{
 			if (typeSize.second < getUsedHangars(typeSize.first))
 			{
-				return BPE_Used;
+				return BPE_Used_Hangars;
 			}
 		}			
 	}
 
 	// only check space for things that are removed
-	return (
-		(removed.quarters > 0 && available.quarters < getUsedQuarters()) ||
-		(removed.stores > 0 && available.stores < getUsedStores()) ||
-		(removed.laboratories > 0 && available.laboratories < getUsedLaboratories()) ||
-		(removed.workshops > 0 && available.workshops < getUsedWorkshops()) ||
-		(removed.hangars > 0 && available.hangars < getUsedHangars()) ||
-		(removed.psiLaboratories > 0 && available.psiLaboratories < getUsedPsiLabs()) ||
-		(removed.training > 0 && available.training < getUsedTraining()) ||
-		false
-	) ? BPE_Used : BPE_None;
+	if (removed.stores > 0 && available.stores < getUsedStores())
+	{
+		return BPE_Used_Stores;
+	}
+	else if (removed.quarters > 0 && available.quarters < getUsedQuarters())
+	{
+		return BPE_Used_Quarters;
+	}
+	else if (removed.laboratories > 0 && available.laboratories < getUsedLaboratories())
+	{
+		return BPE_Used_Laboratories;
+	}
+	else if (removed.workshops > 0 && available.workshops < getUsedWorkshops())
+	{
+		return BPE_Used_Workshops;
+	}
+	else if (removed.hangars > 0 && available.hangars < getUsedHangars())
+	{
+		return BPE_Used_Hangars;
+	}
+	else if (removed.psiLaboratories > 0 && available.psiLaboratories < getUsedPsiLabs())
+	{
+		return BPE_Used_PsiLabs;
+	}
+	else if (removed.training > 0 && available.training < getUsedTraining())
+	{
+		return BPE_Used_Gyms;
+	}
+
+	return BPE_None;
 }
 
 /**
@@ -2452,6 +2663,8 @@ RuleBaseFacilityFunctions Base::getProvidedBaseFunc(BaseAreaSubset skip) const
 		}
 		ret |= bf->getRules()->getProvidedBaseFunc();
 	}
+
+	ret |= _provideBaseFunc;
 
 	return ret;
 }
@@ -2504,6 +2717,8 @@ RuleBaseFacilityFunctions Base::getForbiddenBaseFunc(BaseAreaSubset skip) const
 		ret |= bf->getRules()->getForbiddenBaseFunc();
 	}
 
+	ret |= _forbiddenBaseFunc;
+
 	return ret;
 }
 
@@ -2523,6 +2738,8 @@ RuleBaseFacilityFunctions Base::getFutureBaseFunc(BaseAreaSubset skip) const
 		}
 		ret |= bf->getRules()->getProvidedBaseFunc();
 	}
+
+	ret |= _provideBaseFunc;
 
 	return ret;
 }
@@ -2601,17 +2818,20 @@ std::vector<Craft*>::iterator Base::removeCraft(Craft *craft, bool unload)
 	}
 
 	// Clear slots in hangar containing craft
+	bool breakOuterLoop = false;
 	for (auto* fac : _facilities)
 	{
 		for(Craft *fCraft : fac->getCraftsForDrawing()) // Now, we consider a vector of crafts at the hangar facility
 		{ 
 			if (fCraft == craft) 
 			{
-				fac->delCraftForDrawing(fCraft); // If craft is at the hangar, it is deleted 
-				fac=*(_facilities.end()); // Craft has been found; no more search at facilities
+				fac->delCraftForDrawing(fCraft); // If craft is at the hangar, it is deleted
+				breakOuterLoop = true;
 				break;
 			}
 		}
+		if (breakOuterLoop)
+			break;
 	}
 
 	// Remove craft from base vector

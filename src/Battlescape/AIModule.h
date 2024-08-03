@@ -60,7 +60,9 @@ private:
 	int _tuCostToReachClosestPositionToBreakLos;
 	int _energyCostToReachClosestPositionToBreakLos;
 	int _tuWhenChecking;
-	bool _reposition;
+	bool _lookToEnemy = false;
+	bool _lookAround = false;
+	bool _reposition = false;
 	BattleActionType _reserve;
 	UnitFaction _targetFaction;
 	UnitFaction _myFaction;
@@ -76,6 +78,8 @@ public:
 	AIModule(SavedBattleGame *save, BattleUnit *unit, Node *node);
 	/// Cleans up the AIModule.
 	~AIModule();
+	/// Sets the target faction.
+	void setTargetFaction(UnitFaction f);
 	/// Resets the unsaved AI state.
 	void reset();
 	/// Loads the AI Module from YAML.
@@ -158,7 +162,7 @@ public:
 	/// Like selectSpottedUnitForSniper but works for everyone
 	bool brutalSelectSpottedUnitForSniper();
 	/// look up in _allPathFindingNodes how many time-units we need to get to a specific position
-	int tuCostToReachPosition(Position pos, const std::vector<PathfindingNode *> nodeVector, BattleUnit* actor = NULL, bool forceExactPosition = false);
+	int tuCostToReachPosition(Position pos, const std::vector<PathfindingNode *> nodeVector, BattleUnit* actor = NULL, bool forceExactPosition = false, bool energyInsteadOfTU = false);
 	/// find the cloest Position to our target we can reach while reserving for a BattleAction
 	Position furthestToGoTowards(Position target, BattleActionCost reserve, const std::vector<PathfindingNode *> nodeVector, bool encircleTileMode = false, Tile *encircleTile = NULL);
 	/// find the closest Position that isn't our current position which is on the way to a target
@@ -250,7 +254,15 @@ public:
 	/// Pointer to save so that unit can access it
 	SavedBattleGame* getSave() { return _save; };
 	/// Determine a good position for indirect peeking
-	Position getPeakPosition();
+	Position getPeakPosition(bool oneStep = false);
+	/// Gives an estimate of a unit's power-level
+	float getUnitPower(BattleUnit* unit);
+	/// returns a vector of Tiles next to doors
+	std::vector<Tile*> getDoorTiles(const std::vector<PathfindingNode*> nodeVector);
+	/// tries to pick up weapon and ammo from current tile if it's an upgrade
+	bool improveItemization(float currentItemScore, BattleAction* action);
+	/// prepares a grenade-action to use with validateArcingShot
+	BattleAction* grenadeThrowAction(Position pos);
 };
 
 }

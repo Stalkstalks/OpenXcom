@@ -88,7 +88,9 @@ GlobalResearchState::GlobalResearchState(bool openedFromBasescape) : _openedFrom
 
 	_txtProgress->setText(tr("STR_PROGRESS"));
 
-	_lstResearch->setColumns(3, 158, 58, 70);
+//	_lstResearch->setColumns(3, 158, 58, 70);
+	_lstResearch->setColumns(4, 148, 20, 40, 98);
+	_lstResearch->setAlign(ALIGN_RIGHT, 1);
 	_lstResearch->setSelectable(true);
 	_lstResearch->setBackground(_window);
 	_lstResearch->setMargin(2);
@@ -177,10 +179,10 @@ void GlobalResearchState::fillProjectList()
 	for (Base *xbase : *_game->getSavedGame()->getBases())
 	{
 		auto& baseProjects = xbase->getResearch();
-		if (!baseProjects.empty())
+		if (!baseProjects.empty() || xbase->getScientists() > 0)
 		{
 			std::string baseName = xbase->getName(_game->getLanguage());
-			_lstResearch->addRow(3, baseName.c_str(), "", "");
+			_lstResearch->addRow(4, baseName.c_str(), "", "", "");
 			_lstResearch->setRowColor(_lstResearch->getLastRowIndex(), _lstResearch->getSecondaryColor());
 
 			// dummy
@@ -194,10 +196,17 @@ void GlobalResearchState::fillProjectList()
 			const RuleResearch *r = proj->getRules();
 
 			std::string wstr = tr(r->getName());
-			_lstResearch->addRow(3, wstr.c_str(), sstr.str().c_str(), tr(proj->getResearchProgress()).c_str());
+			_lstResearch->addRow(4, wstr.c_str(), sstr.str().c_str(), "", tr(proj->getResearchProgress()).c_str());
 
 			_bases.push_back(xbase);
 			_topics.push_back(r);
+		}
+		if (baseProjects.empty() && xbase->getScientists() > 0)
+		{
+			_lstResearch->addRow(3, tr("STR_NONE").c_str(), "", "");
+
+			_bases.push_back(xbase);
+			_topics.push_back(0);
 		}
 
 		availableScientists += xbase->getAvailableScientists();

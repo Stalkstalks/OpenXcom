@@ -19,6 +19,7 @@
  */
 #include "../Engine/State.h"
 #include "Position.h"
+#include "../Mod/RuleItem.h"
 
 #include <vector>
 #include <string>
@@ -104,7 +105,7 @@ private:
 	/// Shifts the red colors of the visible unit buttons backgrounds.
 	void blinkVisibleUnitButtons();
 	/// Draw hand item with ammo number.
-	void drawItem(BattleItem *item, Surface *hand, std::vector<NumberText*> &ammoText, std::vector<NumberText*> &medikitText, NumberText *twoHandedText, bool drawReactionIndicator);
+	void drawItem(BattleItem *item, Surface *hand, std::vector<NumberText*> &ammoText, std::vector<NumberText*> &medikitText, NumberText *twoHandedText, bool drawReactionIndicator, bool drawNoReactionIndicator);
 	/// Draw both hands sprites.
 	void drawHandsItems();
 	/// Shifts the colors of the health bar when unit has fatal wounds.
@@ -226,7 +227,7 @@ public:
 	/// Gets map.
 	Map *getMap() const;
 	/// Show debug message.
-	void debug(const std::string &message);
+	void debug(const std::string &message, bool override = false);
 	/// Show bug hunt message.
 	void bugHuntMessage();
 	/// Show warning message.
@@ -291,6 +292,21 @@ public:
 	
 	/// Handler for clicking the AI button.
 	void btnAIClick(Action *action);
+
+	/// Ready grenades
+	void readyLightGrenade(Action* action);
+	void readyHeavyGrenade(Action* action);
+	void readyProximityGrenade(Action* action);
+	void readySmokeGrenade(Action* action);
+	void readyFlare(Action* action);
+	void readyScanner(Action* action);
+	void readyMedikit(Action* action);
+	void clearLeftHand(Action* action);
+	void readyItem(BattleType battleType, ItemDamageType itemDamageType = DT_NONE, int minSelectWeight = 0, int maxSelectWeight = 0);
+	void takeItem(BattleItem* selectedItem);
+	void putItem();
+	void primeItem();
+
 };
 
 }

@@ -84,9 +84,11 @@ private:
 	int _cacheActiveWeaponUfopediaArticleUnlocked; // -1 = unknown, 0 = locked, 1 = unlocked
 	bool _cacheIsCtrlPressed;
 	bool _cacheIsKneeled = false;
+	bool _cacheTargetSelf = false;
 	Position _cacheCursorPosition;
 	int _cacheHasLOS; // -1 = unknown, 0 = no LOS, 1 = has LOS
 	int _cacheAccuracy; // -1 = unknown
+	int _cacheAccuracyTextColor = -1;
 	int _animFrame;
 	Projectile *_projectile;
 	bool _followProjectile;
@@ -110,6 +112,7 @@ private:
 	int getTerrainLevel(const Position& pos, int size) const;
 	int getWallShade(TilePart part, Tile* tileFrot);
 	int _iconHeight, _iconWidth, _messageColor;
+	int _hostileBarColor, _neutralBarColor, _borderBarColor;
 	const std::vector<Uint8> *_transparencies;
 	bool _showObstacles;
 public:
@@ -123,6 +126,7 @@ public:
 	void think() override;
 	/// Draws the surface.
 	void draw() override;
+	void refreshAIProgress(int progress);
 	/// Sets the palette.
 	void setPalette(const SDL_Color *colors, int firstcolor = 0, int ncolors = 256) override;
 	void refreshHiddenMovementBackground();

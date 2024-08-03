@@ -421,10 +421,14 @@ public:
 	static std::string DEBRIEF_MUSIC_BAD;
 	static int DIFFICULTY_COEFFICIENT[5];
 	static int SELL_PRICE_COEFFICIENT[5];
+	static int BUY_PRICE_COEFFICIENT[5];
 	static int DIFFICULTY_BASED_RETAL_DELAY[5];
 	static int UNIT_RESPONSE_SOUNDS_FREQUENCY[4];
+	static int PEDIA_FACILITY_RENDER_PARAMETERS[4];
 	static bool EXTENDED_ITEM_RELOAD_COST;
+	static bool EXTENDED_INVENTORY_SLOT_SORTING;
 	static bool EXTENDED_RUNNING_COST;
+	static int EXTENDED_MOVEMENT_COST_ROUNDING;
 	static bool EXTENDED_HWP_LOAD_ORDER;
 	static int EXTENDED_MELEE_REACTIONS;
 	static int EXTENDED_TERRAIN_MELEE;
@@ -479,6 +483,10 @@ public:
 	Sound *getSoundByDepth(unsigned int depth, unsigned int sound) const;
 	/// Gets list of LUT data.
 	const std::vector<std::vector<Uint8> > *getLUTs() const;
+
+
+	/// Check for obsolete error based on year.
+	bool checkForObsoleteErrorByYear(const std::string &parent, const YAML::Node &node, const std::string &error,int year) const;
 
 	/// Check for error that we can ignore by user request.
 	bool checkForSoftError(bool check, const std::string &parent, const YAML::Node &node, const std::string &error, SeverityLevel level = LOG_WARNING) const
@@ -867,7 +875,7 @@ public:
 	int getCloseQuartersEnergyCostGlobal() const { return _closeQuartersEnergyCostGlobal; }
 	/// Gets the percentage for successfully avoiding CQC when sneaking up on the enemy (default = 0% = turned off).
 	int getCloseQuartersSneakUpGlobal() const { return _closeQuartersSneakUpGlobal; }
-	/// Gets the default accuracy penalty for having no LOS to the target (default = 0 is no penalty)
+	/// Gets the default accuracy penalty for having no LOS to the target (default = -1 is no penalty)
 	int getNoLOSAccuracyPenaltyGlobal() const { return _noLOSAccuracyPenaltyGlobal; }
 	/// Gets the surrender mode (default = 0).
 	int getSurrenderMode() const { return _surrenderMode; }

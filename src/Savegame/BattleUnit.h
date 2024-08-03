@@ -73,7 +73,7 @@ public:
 class BattleUnit
 {
 private:
-	static const int SPEC_WEAPON_MAX = 3;
+	static const int SPEC_WEAPON_MAX = 4;
 
 	UnitFaction _faction, _originalFaction;
 	UnitFaction _killedBy;
@@ -125,6 +125,8 @@ private:
 	const Unit *_spawnUnit = nullptr;
 	std::string _activeHand;
 	std::string _preferredHandForReactions;
+	bool _reactionsDisabledForLeftHand = false;
+	bool _reactionsDisabledForRightHand = false;
 	BattleUnitStatistics* _statistics;
 	int _murdererId;	// used to credit the murderer with the kills that this unit got by blowing up on death
 	int _mindControllerID;	// used to credit the mind controller with the kills of the mind controllee
@@ -146,6 +148,8 @@ private:
 	int _intelligence, _aggression;
 	int _maxViewDistanceAtDark, _maxViewDistanceAtDay;
 	int _maxViewDistanceAtDarkSquared;
+	int _psiVision = 0;
+	int _heatVision = 0;
 	SpecialAbility _specab;
 	Armor *_armor;
 	SoldierGender _gender;
@@ -172,6 +176,7 @@ private:
 	std::vector<std::pair<Uint8, Uint8> > _recolor;
 	std::map<Position, int, PositionComparator> _reachablePositions;
 	Position _positionWhenReachableWasUpdated = Position(-1, -1, -1);
+	bool _maxTUsWhenReachableWasUpdated;
 	bool _capturable;
 	bool _vip;
 	bool _bannedInNextStage;
@@ -233,6 +238,8 @@ public:
 	int getId() const;
 	/// Calculates the distance squared between the unit and a given position.
 	int distance3dToPositionSq(const Position& pos) const;
+	/// Calculates precise distance between the unit and a given position.
+	int distance3dToPositionPrecise(const Position& pos) const;
 	/// Calculates the distance squared between the unit and a given other unit.
 	int distance3dToUnitSq(BattleUnit* otherUnit) const;
 	/// Sets the unit's position
@@ -434,9 +441,9 @@ public:
 	/// Get the list of items in the inventory.
 	std::vector<BattleItem*> *getInventory();
 	/// Fit item into inventory slot.
-	bool fitItemToInventory(RuleInventory *slot, BattleItem *item);
+	bool fitItemToInventory(const RuleInventory *slot, BattleItem *item, bool testMode = false);
 	/// Add item to unit.
-	bool addItem(BattleItem *item, const Mod *mod, bool allowSecondClip = false, bool allowAutoLoadout = false, bool allowUnloadedWeapons = false);
+	bool addItem(BattleItem *item, const Mod *mod, bool allowSecondClip = false, bool allowAutoLoadout = false, bool allowUnloadedWeapons = false, bool allowInfinite = false);
 
 	/// Let AI do their thing.
 	void think(BattleAction *action);
@@ -476,9 +483,9 @@ public:
 	void setPreviousOwner(BattleUnit *owner);
 
 	/// Gets the item in the specified slot.
-	BattleItem *getItem(RuleInventory *slot, int x = 0, int y = 0) const;
+	BattleItem *getItem(const RuleInventory *slot, int x = 0, int y = 0) const;
 	/// Gets the item in the main hand.
-	BattleItem *getMainHandWeapon(bool quickest = true, bool needammo = true) const;
+	BattleItem *getMainHandWeapon(bool quickest = true, bool needammo = true, bool reactions = false) const;
 	/// Gets a grenade from the belt, if any.
 	BattleItem *getGrenadeFromBelt() const;
 	/// Gets the item from right hand.
@@ -492,18 +499,23 @@ public:
 	/// Choose what weapon was last use by unit.
 	const BattleItem *getActiveHand(const BattleItem *left, const BattleItem *right) const;
 	/// Reloads a weapon if needed.
-	bool reloadAmmo();
+	bool reloadAmmo(bool justCheckIfICould = false);
 
 	/// Toggle the right hand as main hand for reactions.
-	void toggleRightHandForReactions();
+	void toggleRightHandForReactions(bool isCtrl);
 	/// Toggle the left hand as main hand for reactions.
-	void toggleLeftHandForReactions();
+	void toggleLeftHandForReactions(bool isCtrl);
 	/// Is right hand preferred for reactions?
 	bool isRightHandPreferredForReactions() const;
 	/// Is left hand preferred for reactions?
 	bool isLeftHandPreferredForReactions() const;
 	/// Get preferred weapon for reactions, if applicable.
-	BattleItem *getWeaponForReactions(bool meleeOnly) const;
+	BattleItem *getWeaponForReactions() const;
+
+	/// Is right hand disabled for reactions?
+	bool isRightHandDisabledForReactions() const { return _reactionsDisabledForRightHand; }
+	/// Is left hand disabled for reactions?
+	bool isLeftHandDisabledForReactions() const { return _reactionsDisabledForLeftHand; }
 
 	/// Check if this unit is in the exit area
 	bool isInExitArea(SpecialTileType stt) const;
@@ -614,16 +626,23 @@ public:
 	int getIntelligence() const;
 	/// Get the unit's aggression.
 	int getAggression() const;
-	/// Helper method.
-	int getMaxViewDistance(int baseVisibility, int nerf, int buff) const;
-	/// Get maximum view distance at dark.
-	int getMaxViewDistanceAtDark(const Armor *otherUnitArmor) const;
-	int getMaxViewDistanceAtDarkSquared() const;
-	/// Get maximum view distance at day.
-	int getMaxViewDistanceAtDay(const Armor *otherUnitArmor) const;
+	/// Set the unit's aggression.
+	void setAggression(int aggression);
 	/// Get the units's special ability.
 	int getSpecialAbility() const;
 
+	/// Helper method.
+	int getMaxViewDistance(int baseVisibility, int nerf, int buff) const;
+	/// Get maximum view distance at dark.
+	int getMaxViewDistanceAtDark(const BattleUnit* otherUnit) const;
+	/// Max view distance at dark squared.
+	int getMaxViewDistanceAtDarkSquared() const;
+	/// Get maximum view distance at day.
+	int getMaxViewDistanceAtDay(const BattleUnit* otherUnit) const;
+	/// Get unit psi vision with bonuses.
+	int getPsiVision() const { return _psiVision; }
+	/// Get unit heat vision with bonuses.
+	int getHeatVision() const { return _heatVision; }
 
 	/// Gets the unit's spawn unit.
 	const Unit *getSpawnUnit() const;
@@ -693,7 +712,7 @@ public:
 	/// Set where the unit has last been spotted
 	void setTileLastSpotted(int index, UnitFaction faction, bool forBlindShot = false);
 	/// Updates when an enemy gains knowledge about a units whereabout
-	void updateEnemyKnowledge(int index);
+	void updateEnemyKnowledge(int index, bool clue = false);
 	/// Get the tile where the unit was last spotted
 	int getTileLastSpotted(UnitFaction faction, bool forBlindShot = false) const;
 	/// Reset how many turns passed since stunned last time.
@@ -811,9 +830,11 @@ public:
 	/// Get the unit mind controller's id.
 	int getMindControllerId() const;
 	/// Get the unit leeroyJenkins flag
-	bool isLeeroyJenkins() const;
+	bool isLeeroyJenkins(bool ignoreBrutal = false) const;
 	/// Get the unit's aggression-flag
-	int getAggressiveness() const;
+	float getAggressiveness() const;
+	/// Get the unit's intelligence
+	int getBrutalIntelligence() const;
 	/// Gets the spotter score. This is the number of turns sniper AI units can use spotting info from this unit.
 	int getSpotterDuration() const;
 	/// Remembers the unit's XP (used for shotguns).
@@ -878,8 +899,9 @@ public:
 	void setReachablePositions(std::map<Position, int, PositionComparator> reachable);
 	std::map<Position, int, PositionComparator> getReachablePositions();
 	/// Remember this value in order to check whether an update is due
-	void setPositionOfUpdate(Position posOfUpdate);
+	void setPositionOfUpdate(Position posOfUpdate, bool withMaxTUs);
 	Position getPositionOfUpdate();
+	bool wasMaxTusOfUpdate();
 	/// Remember whether it ran out of TUs while doing the reachability-check
 	void setRanOutOfTUs(bool ranOutOfTUs) { _ranOutOfTUs = ranOutOfTUs; }
 	bool getRanOutOfTUs() { return _ranOutOfTUs; }

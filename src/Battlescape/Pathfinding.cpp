@@ -23,6 +23,7 @@
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
 #include "../Mod/Armor.h"
+#include "../Mod/Mod.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Engine/Options.h"
 #include "../fmath.h"
@@ -37,7 +38,10 @@ constexpr int Pathfinding::dir_z[Pathfinding::dir_max];
 
 int Pathfinding::red = 3;
 int Pathfinding::yellow = 10;
+int Pathfinding::brown = 11;
 int Pathfinding::green = 4;
+int Pathfinding::white = 6;
+
 
 /**
  * Sets up a Pathfinding.
@@ -351,9 +355,9 @@ PathfindingStep Pathfinding::getTUCost(Position startPosition, int direction, co
 			{
 				if (unit->getFaction() == FACTION_PLAYER && overlaping->getVisible())
 					knowsOfOverlapping = true; // player know all visible units
-				if (unit->getFaction() == overlaping->getFaction())
+				if (unit->getFaction() == overlaping->getFaction() && !_ignoreFriends)
 					knowsOfOverlapping = true;
-				if (unit->getFaction() == FACTION_HOSTILE &&
+				if (unit->getFaction() != FACTION_PLAYER &&
 					std::find(unit->getUnitsSpottedThisTurn().begin(), unit->getUnitsSpottedThisTurn().end(), overlaping) != unit->getUnitsSpottedThisTurn().end())
 					knowsOfOverlapping = true;
 				if (overlaping != unit && overlaping != missileTarget && knowsOfOverlapping)
@@ -738,8 +742,13 @@ PathfindingStep Pathfinding::getTUCost(Position startPosition, int direction, co
 		assert(false && "Unreachable code in pathfinding cost");
 	}
 
-	const auto timeCost = (cost.TimePercent - 1 + (costDiv / 2)) / costDiv;
-	const auto energyCost = (cost.EnergyPercent - 1 + (costDiv / 2)) / costDiv;
+	const int timeCost = Mod::EXTENDED_MOVEMENT_COST_ROUNDING == 0 ? (cost.TimePercent) / costDiv :
+		                 Mod::EXTENDED_MOVEMENT_COST_ROUNDING == 1 ? (cost.TimePercent + (costDiv / 2)) / costDiv :
+		                                                             (cost.TimePercent - 1 + (costDiv / 2)) / costDiv;
+
+	const int energyCost = Mod::EXTENDED_MOVEMENT_COST_ROUNDING == 0 ? (cost.EnergyPercent) / costDiv :
+		                   Mod::EXTENDED_MOVEMENT_COST_ROUNDING == 1 ? (cost.EnergyPercent + (costDiv / 2)) / costDiv :
+		                                                               (cost.EnergyPercent - 1 + (costDiv / 2)) / costDiv;
 
 	return { { Clamp(timeCost, 1, INVALID_MOVE_COST - 1), Clamp(energyCost, 0, INVALID_MOVE_COST) }, { firePenaltyCost, 0 }, pos };
 }
@@ -863,9 +872,9 @@ bool Pathfinding::isBlocked(const BattleUnit *unit, const Tile *tile, const int 
 			{
 				if (unit->getFaction() == FACTION_PLAYER && u->getVisible())
 					return true; // player know all visible units
-				if (unit->getFaction() == u->getFaction())
+				if (unit->getFaction() == u->getFaction() && !_ignoreFriends)
 					return true;
-				if (unit->getFaction() == FACTION_HOSTILE &&
+				if (unit->getFaction() != FACTION_PLAYER &&
 					std::find(unit->getUnitsSpottedThisTurn().begin(), unit->getUnitsSpottedThisTurn().end(), u) != unit->getUnitsSpottedThisTurn().end())
 					return true;
 			}
@@ -1153,7 +1162,7 @@ bool Pathfinding::validateUpDown(const BattleUnit *bu, const Position& startPosi
 	}
 	else
 	{
-		if (bu->getMovementType() == MT_FLY || startTile->hasLadder())
+		if (bu->getMovementType() == MT_FLY || startTile->hasLadder() || missile)
 		{
 			if ((direction == DIR_UP && destinationTile->hasNoFloor(_save)) // flying up only possible when there is no roof
 				|| (direction == DIR_DOWN && startTile->hasNoFloor(_save)) // falling down only possible when there is no floor

@@ -59,7 +59,7 @@ namespace OpenXcom
  * Short circuits as well.
  * @tparam ...Functions type of the function to combine.
  * @param ...funcs the functions to combine.
- * @return a new function that is true only if all predicates are satisfied. 
+ * @return a new function that is true only if all predicates are satisfied.
 */
 template <typename... Functions>
 inline constexpr auto allOf(Functions... funcs)
@@ -156,7 +156,11 @@ PurchaseState::PurchaseState(Base *base, CannotReequipState *parent) : _base(bas
 	_txtQuantity->setText(tr("STR_QUANTITY_UC"));
 
 	_lstItems->setArrowColumn(227, ARROW_VERTICAL);
-	_lstItems->setColumns(4, 150, 55, 50, 32);
+//	_lstItems->setColumns(4, 150, 55, 50, 32);
+	_lstItems->setColumns(4, 140, 40, 40, 50, 17);
+	_lstItems->setAlign(ALIGN_RIGHT, 1);
+	_lstItems->setAlign(ALIGN_RIGHT, 2);
+	_lstItems->setAlign(ALIGN_RIGHT, 3);
 	_lstItems->setSelectable(true);
 	_lstItems->setBackground(_window);
 	_lstItems->setMargin(2);
@@ -267,7 +271,7 @@ PurchaseState::PurchaseState(Base *base, CannotReequipState *parent) : _base(bas
 		RuleItem *rule = _game->getMod()->getItem(itemType);
 		if (itemFilter(rule))
 		{
-			TransferRow row = { TRANSFER_ITEM, rule, tr(rule->getType()), rule->getBuyCost(), _base->getStorageItems()->getItem(rule), 0, 0, rule->getListOrder(), 0, 0, 0 };
+			TransferRow row = { TRANSFER_ITEM, rule, tr(rule->getType()), rule->getBuyCostAdjusted(_base, _game->getSavedGame()), _base->getStorageItems()->getItem(rule), 0, 0, rule->getListOrder(), 0, 0, 0 };
 			_items.push_back(row);
 			std::string cat = getCategory(_items.size() - 1);
 			if (std::find(_cats.begin(), _cats.end(), cat) == _cats.end())
@@ -776,7 +780,7 @@ void PurchaseState::btnOkClick(Action *)
 						itemPurchaseLimitLog[rule->getType()] += transferRow.amount;
 					}
 					t = new Transfer(rule->getTransferTime());
-					t->setItems(rule->getType(), transferRow.amount);
+					t->setItems(rule, transferRow.amount);
 					_base->getTransfers()->push_back(t);
 					if (_parent && !_missingItemsMap.empty() && _missingItemsMap.find(rule) != _missingItemsMap.end())
 					{

@@ -30,13 +30,25 @@ class Surface;
 class Tile;
 class Mod;
 
-struct
+struct AccuracyModConfig // Real Accuracy mod configuration
 {
-	int MinCap = 5;
-	int MaxCap = 95;
-	int AimBonus = 3;
-	int KneelBonus = 2;
-} AccuracyMod;
+	int MinCap;
+	int MaxCap;
+	int AimBonus;
+	int KneelBonus;
+	int aimedDivider;
+	int snapDivider;
+	int autoDivider;
+	int twoHandsBonus;
+	int distanceDivider;
+	double SizeMultiplier;
+	int suicideProtectionDistance;
+	int bonusDistanceMax;
+	int bonusDistanceMin;
+	int coverEfficiency[5];
+};
+
+extern AccuracyModConfig AccuracyMod;
 
 /**
  * A class that represents a projectile. Map is the owner of an instance of this class during its short life.
@@ -57,10 +69,12 @@ private:
 	Mod *_mod;
 	SavedBattleGame *_save;
 	BattleAction _action;
+	const BattleItem* _ammo = nullptr;
 	Position _origin, _targetVoxel;
 	std::vector<Position> _trajectory;
 	size_t _position;
 	float _distance;
+	float _distanceMax;
 	int _speed;
 	int _bulletSprite;
 	bool _reversed;

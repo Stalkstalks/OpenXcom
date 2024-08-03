@@ -19,6 +19,7 @@
 #include "Inventory.h"
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include "../Mod/Mod.h"
 #include "../Mod/RuleInventory.h"
 #include "../Mod/RuleInterface.h"
@@ -35,6 +36,7 @@
 #include "../Engine/SurfaceSet.h"
 #include "../Savegame/BattleItem.h"
 #include "../Mod/RuleItem.h"
+#include "../Mod/RuleItemCategory.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Engine/Action.h"
 #include "../Engine/Sound.h"
@@ -501,7 +503,7 @@ std::vector<std::vector<char>>* Inventory::clearOccupiedSlotsCache()
  * @param x X position in slot.
  * @param y Y position in slot.
  */
-void Inventory::moveItem(BattleItem *item, RuleInventory *slot, int x, int y)
+void Inventory::moveItem(BattleItem *item, const RuleInventory *slot, int x, int y)
 {
 	_game->getSavedGame()->getSavedBattle()->getTileEngine()->itemMoveInventory(_selUnit->getTile(), _selUnit, item, slot, x, y);
 }
@@ -516,7 +518,7 @@ void Inventory::moveItem(BattleItem *item, RuleInventory *slot, int x, int y)
  * @param y Y position in slot.
  * @return If there's overlap.
  */
-bool Inventory::overlapItems(BattleUnit *unit, BattleItem *item, RuleInventory *slot, int x, int y)
+bool Inventory::overlapItems(BattleUnit *unit, BattleItem *item, const RuleInventory *slot, int x, int y)
 {
 	if (slot->getType() != INV_GROUND)
 	{
@@ -743,56 +745,156 @@ void Inventory::mouseClick(Action *action, State *state)
 					}
 					else if (_game->isCtrlPressed())
 					{
-						RuleInventory *newSlot = _inventorySlotGround;
+						const RuleInventory* newSlot = _inventorySlotGround;
 						std::string warning = "STR_NOT_ENOUGH_SPACE";
 						bool placed = false;
 
 						if (slot->getType() == INV_GROUND)
 						{
-							switch (item->getRules()->getBattleType())
+							if (Options::oxceSmartCtrlEquip)
 							{
-							case BT_FIREARM:
-								newSlot = _inventorySlotRightHand;
-								break;
-							case BT_MINDPROBE:
-							case BT_PSIAMP:
-							case BT_MELEE:
-							case BT_CORPSE:
-								newSlot = _inventorySlotLeftHand;
-								break;
-							default:
-								if (item->getRules()->getInventoryHeight() > 2)
+								int cheapestCostToMoveToHand = INT_MAX;
+								RuleInventory* cheapestInventoryToMoveToHand = nullptr;
+								for (auto ri : *_game->getMod()->getInventories())
 								{
-									newSlot = _inventorySlotBackPack;
+									if (ri.second->getType() == INV_GROUND)
+										continue;
+									if (fitItem(ri.second, item, warning, true))
+									{
+										int currCost = std::min(ri.second->getCost(_inventorySlotRightHand), ri.second->getCost(_inventorySlotLeftHand));
+										if ((ri.second->isLeftHand() && _selUnit->getRightHandWeapon() && _selUnit->getRightHandWeapon()->getRules()->isBlockingBothHands()) || (ri.second->isRightHand() && _selUnit->getLeftHandWeapon() && _selUnit->getLeftHandWeapon()->getRules()->isBlockingBothHands()))
+										{
+											continue;
+										}
+										else if ((ri.second->isLeftHand() && _selUnit->getRightHandWeapon() && _selUnit->getRightHandWeapon()->getRules()->isTwoHanded()) || (ri.second->isRightHand() && _selUnit->getLeftHandWeapon() && _selUnit->getLeftHandWeapon()->getRules()->isTwoHanded()))
+										{
+											currCost += 10;
+										}
+										if (currCost <= cheapestCostToMoveToHand)
+										{
+											cheapestCostToMoveToHand = currCost;
+											cheapestInventoryToMoveToHand = ri.second;
+										}
+									}
 								}
-								else
+								if (cheapestInventoryToMoveToHand != nullptr)
+									newSlot = cheapestInventoryToMoveToHand;
+							}
+							else
+							{
+								// B1 - default slot by item
+								if (!placed)
 								{
-									newSlot = _inventorySlotBelt;
+									_stackLevel[item->getSlotX()][item->getSlotY()] -= 1;
+
+									if (item->getRules()->getDefaultInventorySlot() && item->getRules()->getDefaultInventorySlot()->getType() != INV_GROUND)
+									{
+										newSlot = item->getRules()->getDefaultInventorySlot();
+
+										placed = fitItem(newSlot, item, warning);
+									}
 								}
-								break;
+
+								// B2 - slot order by item category
+								if (!placed)
+								{
+									auto* cat = item->getRules()->getFirstCategoryWithInvOrder(_game->getMod());
+									if (cat)
+									{
+										for (const auto& s : cat->getInvOrder())
+										{
+											if (placed)
+											{
+												break; // loop finished
+											}
+											newSlot = _game->getMod()->getInventory(s);
+											if (newSlot->getType() == INV_GROUND)
+											{
+												continue;
+											}
+											placed = fitItem(newSlot, item, warning);
+										}
+									}
+								}
+
+								// A1 - vanilla default attempt
+								if (!placed)
+								{
+									// reset
+									_stackLevel[item->getSlotX()][item->getSlotY()] += 1;
+									newSlot = _inventorySlotGround;
+
+									switch (item->getRules()->getBattleType())
+									{
+									case BT_FIREARM:
+										newSlot = _inventorySlotRightHand;
+										break;
+									case BT_MINDPROBE:
+									case BT_PSIAMP:
+									case BT_MELEE:
+									case BT_CORPSE:
+										newSlot = _inventorySlotLeftHand;
+										break;
+									default:
+										if (item->getRules()->getInventoryHeight() > 2)
+										{
+											newSlot = _inventorySlotBackPack;
+										}
+										else
+										{
+											newSlot = _inventorySlotBelt;
+										}
+										break;
+									}
+								}
 							}
 						}
 
 						if (newSlot->getType() != INV_GROUND)
 						{
-							_stackLevel[item->getSlotX()][item->getSlotY()] -= 1;
+							// A1 - vanilla default attempt
+							if (!placed)
+							{
+								_stackLevel[item->getSlotX()][item->getSlotY()] -= 1;
 
-							placed = fitItem(newSlot, item, warning);
+								placed = fitItem(newSlot, item, warning);
+							}
 
 							if (!placed)
 							{
-								for (const auto& wildCard : *_game->getMod()->getInventories())
+								if (Mod::EXTENDED_INVENTORY_SLOT_SORTING)
 								{
-									if (placed)
+									// B3 - fallback: slot order by listOrder
+									for (const auto& s : _game->getMod()->getInvsList())
 									{
-										break; // loop finished
+										if (placed)
+										{
+											break; // loop finished
+										}
+										newSlot = _game->getMod()->getInventory(s);
+										if (newSlot->getType() == INV_GROUND)
+										{
+											continue;
+										}
+										placed = fitItem(newSlot, item, warning);
 									}
-									newSlot = wildCard.second;
-									if (newSlot->getType() == INV_GROUND)
+								}
+								else
+								{
+									// A2 - fallback: vanilla alphabetical slot order
+									for (const auto& wildCard : *_game->getMod()->getInventories())
 									{
-										continue;
+										if (placed)
+										{
+											break; // loop finished
+										}
+										newSlot = wildCard.second;
+										if (newSlot->getType() == INV_GROUND)
+										{
+											continue;
+										}
+										placed = fitItem(newSlot, item, warning);
 									}
-									placed = fitItem(newSlot, item, warning);
 								}
 							}
 							if (!placed)
@@ -1584,7 +1686,7 @@ void Inventory::arrangeGround(int alterOffset)
  * @param warning Warning message if item could not be placed.
  * @return True, if the item was successfully placed in the inventory.
  */
-bool Inventory::fitItem(RuleInventory *newSlot, BattleItem *item, std::string &warning)
+bool Inventory::fitItem(const RuleInventory* newSlot, BattleItem* item, std::string& warning, bool testMode)
 {
 	// Check if this inventory section supports the item
 	if (!item->getRules()->canBePlacedIntoInventorySection(newSlot))
@@ -1607,12 +1709,16 @@ bool Inventory::fitItem(RuleInventory *newSlot, BattleItem *item, std::string &w
 		{
 			if (!overlapItems(_selUnit, item, newSlot, x2, y2) && newSlot->fitItemInSlot(item->getRules(), x2, y2))
 			{
-				if (!_tu || _selUnit->spendTimeUnits(item->getMoveToCost(newSlot)))
+				if (!_tu || item->getMoveToCost(newSlot) <= _selUnit->getTimeUnits())
 				{
 					placed = true;
-					moveItem(item, newSlot, x2, y2);
-					_game->getMod()->getSoundByDepth(_depth, Mod::ITEM_DROP)->play();
-					drawItems();
+					if (!testMode)
+					{
+						_selUnit->spendTimeUnits(item->getMoveToCost(newSlot));
+						moveItem(item, newSlot, x2, y2);
+						_game->getMod()->getSoundByDepth(_depth, Mod::ITEM_DROP)->play();
+						drawItems();
+					}
 				}
 				else
 				{

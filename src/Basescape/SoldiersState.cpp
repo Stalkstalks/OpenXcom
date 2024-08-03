@@ -213,6 +213,7 @@ SoldiersState::SoldiersState(Base *base) : _base(base), _origSoldierOrder(*_base
 	_lstSoldiers->onLeftArrowClick((ActionHandler)&SoldiersState::lstItemsLeftArrowClick);
 	_lstSoldiers->onRightArrowClick((ActionHandler)&SoldiersState::lstItemsRightArrowClick);
 	_lstSoldiers->onMouseClick((ActionHandler)&SoldiersState::lstSoldiersClick);
+	_lstSoldiers->onMouseClick((ActionHandler)&SoldiersState::lstSoldiersClick, SDL_BUTTON_RIGHT);
 	_lstSoldiers->onMousePress((ActionHandler)&SoldiersState::lstSoldiersMousePress);
 }
 
@@ -342,7 +343,7 @@ void SoldiersState::initList(size_t scrl)
 	_lstSoldiers->clearList();
 
 	_filteredListOfSoldiers.clear();
-	_baseIndexSoldiers.clear();
+	_filteredIndicesOfSoldiers.clear();
 
 	std::string selAction = "STR_SOLDIER_INFO";
 	if (!_availableOptions.empty())
@@ -362,17 +363,17 @@ void SoldiersState::initList(size_t scrl)
 			if(selectedCraftIndex == 0)
 			{
 				_filteredListOfSoldiers.push_back(soldier);
-				_baseIndexSoldiers.push_back(i);
+				_filteredIndicesOfSoldiers.push_back(i);
 			}else if(selectedCraftIndex == 1){
 				if (soldier->getCraft() == 0){
 					_filteredListOfSoldiers.push_back(soldier);	
-					_baseIndexSoldiers.push_back(i);									
+					_filteredIndicesOfSoldiers.push_back(i);									
 				}	
 			}else{
 				if (soldier->getCraft() == _base->getCrafts()->at(selectedCraftIndex-2))
 				{
 					_filteredListOfSoldiers.push_back(soldier);
-					_baseIndexSoldiers.push_back(i);
+					_filteredIndicesOfSoldiers.push_back(i);
 				}
 			
 			}
@@ -387,9 +388,10 @@ void SoldiersState::initList(size_t scrl)
 		RuleSoldierTransformation *transformationRule = _game->getMod()->getSoldierTransformation(selAction);
 		if (transformationRule)
 		{
-			for(size_t i=0; i< _base->getSoldiers()->size();++i)			
+			int idx = -1;
+			for (auto* soldier : *_base->getSoldiers())
 			{
-				Soldier* soldier=_base->getSoldiers()->at(i);
+				idx++;
 				if ((soldier->getCraft() && soldier->getCraft()->getStatus() == "STR_OUT") || 
                   
 				    ((selectedCraftIndex  > 1) && soldier->getCraft() != _base->getCrafts()->at(selectedCraftIndex-2)) ||
@@ -401,7 +403,8 @@ void SoldiersState::initList(size_t scrl)
 				}
 				if (soldier->isEligibleForTransformation(transformationRule))
 				{
-					_filteredListOfSoldiers.push_back(soldier);		
+					_filteredListOfSoldiers.push_back(soldier);
+					_filteredIndicesOfSoldiers.push_back(idx);
 				}
 			}
 			for (auto* deadMan : *_game->getSavedGame()->getDeadSoldiers())
@@ -409,6 +412,7 @@ void SoldiersState::initList(size_t scrl)
 				if (deadMan->isEligibleForTransformation(transformationRule))
 				{
 					_filteredListOfSoldiers.push_back(deadMan);
+					_filteredIndicesOfSoldiers.push_back(-1); // invalid
 				}
 			}
 		}
@@ -490,7 +494,7 @@ void SoldiersState::lstItemsLeftArrowClick(Action *action)
 void SoldiersState::moveSoldierUp(Action *action, unsigned int row, bool max)
 {
 	Soldier *s = _filteredListOfSoldiers.at(row);
-	size_t baseIndex = _baseIndexSoldiers.at(row);
+	size_t baseIndex = _filteredIndicesOfSoldiers.at(row);
 	if (max)
 	{
 		_base->getSoldiers()->erase(_base->getSoldiers()->begin() + baseIndex);
@@ -498,7 +502,7 @@ void SoldiersState::moveSoldierUp(Action *action, unsigned int row, bool max)
 	}
 	else
 	{
-		size_t baseIndexNext = _baseIndexSoldiers.at(row-1);
+		size_t baseIndexNext = _filteredIndicesOfSoldiers.at(row - 1);
 		_base->getSoldiers()->at(baseIndex) = _base->getSoldiers()->at(baseIndexNext);
 		_base->getSoldiers()->at(baseIndexNext) = s;
 		if (row != _lstSoldiers->getScroll())
@@ -545,7 +549,7 @@ void SoldiersState::lstItemsRightArrowClick(Action *action)
 void SoldiersState::moveSoldierDown(Action *action, unsigned int row, bool max)
 {
 	Soldier *s = _filteredListOfSoldiers.at(row);
-	size_t baseIndex = _baseIndexSoldiers.at(row);
+	size_t baseIndex = _filteredIndicesOfSoldiers.at(row);
 	if (max)
 	{
 		_base->getSoldiers()->erase(_base->getSoldiers()->begin() + baseIndex);
@@ -553,7 +557,7 @@ void SoldiersState::moveSoldierDown(Action *action, unsigned int row, bool max)
 	}
 	else
 	{
-		size_t baseIndexNext = _baseIndexSoldiers.at(row+1);
+		size_t baseIndexNext = _filteredIndicesOfSoldiers.at(row + 1);
 		_base->getSoldiers()->at(baseIndex) = _base->getSoldiers()->at(baseIndexNext);
 		_base->getSoldiers()->at(baseIndexNext) = s;
 		if (row != _lstSoldiers->getVisibleRows() - 1 + _lstSoldiers->getScroll())
@@ -680,6 +684,18 @@ void SoldiersState::lstSoldiersClick(Action *action)
 	if (selAction == "STR_SOLDIER_INFO")
 	{
 		_game->pushState(new SoldierInfoState(_base, _lstSoldiers->getSelectedRow()));
+	}
+	else if (action->getDetails()->button.button == SDL_BUTTON_RIGHT)
+	{
+		size_t idx = _lstSoldiers->getSelectedRow();
+		if (idx < _filteredIndicesOfSoldiers.size())
+		{
+			int soldierId = _filteredIndicesOfSoldiers[idx];
+			if (soldierId > -1)
+			{
+				_game->pushState(new SoldierInfoState(_base, soldierId));
+			}
+		}
 	}
 	else
 	{

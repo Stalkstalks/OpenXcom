@@ -94,10 +94,6 @@ void UnitTurnBState::init()
 			{
 				_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
 			}
-			if (door == 0 || door == 1)
-			{
-				_unit->updateEnemyKnowledge(_parent->getSave()->getTileIndex(_unit->getPosition()));
-			}
 			if (door == 4)
 			{
 				_action.result = "STR_NOT_ENOUGH_TIME_UNITS";
@@ -124,25 +120,14 @@ void UnitTurnBState::think()
 	if (_unit->spendTimeUnits(tu))
 	{
 		size_t unitSpotted = _unit->getUnitsSpottedThisTurn().size();
-		if (unitSpotted)
-		{
-			if (Options::traceAI)
-			{
-				Log(LOG_INFO) << "Found new units while turning. Letting my allies know about it.";
-			}
-			for (BattleUnit* unit : *(_parent->getSave()->getUnits()))
-			{
-				if (unit->isOut())
-					continue;
-				if (!unit->getAIModule() || !unit->isBrutal() || unit->getFaction() != _unit->getFaction())
-					continue;
-				unit->checkForReactivation();
-			}
-		}
 		_unit->turn(_turret);
 		_parent->getTileEngine()->calculateFOV(_unit);
 		if (_chargeTUs && _unit->getFaction() == _parent->getSave()->getSide() && _parent->getPanicHandled() && _action.type == BA_NONE && _unit->getUnitsSpottedThisTurn().size() > unitSpotted)
 		{
+			if (Options::traceAI)
+			{
+				Log(LOG_INFO) << "Found " << _unit->getUnitsSpottedThisTurn().size() - unitSpotted << " new units while turning.Letting my allies know about it.";
+			}
 			for (BattleUnit *unit : *(_parent->getSave()->getUnits()))
 			{
 				if (unit->isOut())

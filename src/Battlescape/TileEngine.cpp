@@ -854,8 +854,7 @@ void iterateTilesLightMaxBound(SavedBattleGame* save, Position position, int eve
 
 } // namespace
 
-constexpr int TileEngine::heightFromCenter[11];
-
+constexpr int TileEngine::heightFromCenter[13];
 
 constexpr Position TileEngine::invalid;
 constexpr Position TileEngine::voxelTileSize;
@@ -1040,12 +1039,18 @@ void TileEngine::calculateUnitLighting(MapSubset gs)
 		}
 
 		int currLight = 0;
-
-		// add lighting of soldiers
-		int personalLight = useIntNullable(unit->getArmor()->getPersonalLight(), (unit->getFaction() == FACTION_PLAYER) ? 15 : 0);
-		if (personalLight && (_personalLighting || unit->getFaction() != FACTION_PLAYER))
+		// add lighting of unit
+		if (unit->getFaction() == FACTION_PLAYER)
 		{
-			currLight = std::max(currLight, personalLight);
+			currLight = std::max(currLight, _personalLighting ? unit->getArmor()->getPersonalLightFriend() : 0);
+		}
+		else if (unit->getFaction() == FACTION_HOSTILE)
+		{
+			currLight = std::max(currLight, unit->getArmor()->getPersonalLightHostile());
+		}
+		else if (unit->getFaction() == FACTION_NEUTRAL)
+		{
+			currLight = std::max(currLight, unit->getArmor()->getPersonalLightNeutral());
 		}
 
 		const BattleItem *handWeapons[] = { unit->getLeftHandWeapon(), unit->getRightHandWeapon() };
@@ -1410,6 +1415,9 @@ bool TileEngine::calculateUnitsInFOV(BattleUnit* unit, const Position eventPos, 
 			int sizeOther = bu->getArmor()->getSize();
 			int totalUnitTiles = 0;
 			int unitTilesNotInViewSector = 0;
+			bool visibilityChecked = false;
+			bool visibilityStatus = false;
+
 			for (int x = 0; x < sizeOther; ++x)
 			{
 				for (int y = 0; y < sizeOther; ++y)
@@ -1424,8 +1432,11 @@ bool TileEngine::calculateUnitsInFOV(BattleUnit* unit, const Position eventPos, 
 							//Unit within arc, but not in view sector. If it just walked out we need to remove it.
 							unitTilesNotInViewSector++;
 						}
-						else if (visible(unit, _save->getTile(posToCheck))) // (distance is checked here)
+						else if ( visibilityChecked ? visibilityStatus : visible(unit, _save->getTile(posToCheck))) // (distance is checked here)
 						{
+							visibilityChecked = true;
+							visibilityStatus = true;
+
 							//Unit (or part thereof) visible to one or more eyes of this unit.
 							if (unit->getFaction() == FACTION_PLAYER)
 							{
@@ -1447,7 +1458,11 @@ bool TileEngine::calculateUnitsInFOV(BattleUnit* unit, const Position eventPos, 
 
 							x = y = sizeOther; //If a unit's tile is visible there's no need to check the others: break the loops.
 						}
-						else						{
+						else
+						{
+							visibilityChecked = true;
+							visibilityStatus = false;
+
 							//Within arc, but not visible. Need to check to see if whatever happened at eventPos blocked a previously seen unit.
 							unitTilesNotInViewSector++;
 						}
@@ -1630,7 +1645,7 @@ bool TileEngine::calculateFOV(BattleUnit *unit, bool doTileRecalc, bool doUnitRe
  * @param currentUnit The watcher.
  * @return Approximately an eyeball voxel.
  */
-Position TileEngine::getSightOriginVoxel(BattleUnit *currentUnit)
+Position TileEngine::getSightOriginVoxel(BattleUnit *currentUnit, Tile *tileTarget, BattleActionOrigin relOrigin)
 {
 	const auto pos = currentUnit->getPosition();
 	auto* tile = currentUnit->getTile();
@@ -1655,8 +1670,183 @@ Position TileEngine::getSightOriginVoxel(BattleUnit *currentUnit)
 		}
 	}
 
+	if (Options::battleRealisticAccuracy &&
+		Options::oxceEnableOffCentreShooting &&
+		tileTarget)
+	{
+		// Adjuct target tile to the centre of unit
+		Position adjustedPos;
+		BattleUnit *targetUnit = tileTarget->getUnit();
+		if (targetUnit)
+		{
+			int targetSize = targetUnit->getArmor()->getSize();
+			Position targetVoxel = targetUnit->getPosition().toVoxel() + Position(8*targetSize, 8*targetSize, 0);
+			adjustedPos = targetVoxel.toTile();
+		}
+
+		int direction = getDirectionTo(pos, adjustedPos);
+		int unitSize = currentUnit->getArmor()->getSize();
+		originVoxel.x = pos.toVoxel().x;
+		originVoxel.y = pos.toVoxel().y;
+
+		const int dirXshift[8] = {5, 6, 8,10,11,10, 8, 6};
+		const int dirYshift[8] = {8, 6, 5, 6, 8,10,11,10};
+
+		// Offset for different relative origin values
+		switch (relOrigin)
+		{
+		case BattleActionOrigin::CENTRE:
+			originVoxel.x += 8 * unitSize;
+			originVoxel.y += 8 * unitSize;
+			break;
+
+		case BattleActionOrigin::LEFT:
+			originVoxel.x += dirXshift[ direction ] * unitSize;
+			originVoxel.y += dirYshift[ direction ] * unitSize;
+			break;
+
+		case BattleActionOrigin::RIGHT:
+			direction = (direction + 4) % 8;
+			originVoxel.x += dirXshift[ direction ] * unitSize;
+			originVoxel.y += dirYshift[ direction ] * unitSize;
+			break;
+		};
+	}
+
 	return originVoxel;
 }
+
+namespace
+{
+
+/**
+ * Calculate max visible distance.
+ * @param te TileEngine
+ * @param tile Target tile that is look at
+ * @param currentUnit Unit that look on tile or unit
+ * @param targetUnit Unit that is look at
+ * @return Tuple of get<0>: effective visible distance that consider camouflage and shade, get<1>: max unit visibility distance in tiles independent of target darkness
+ */
+std::tuple<int, int> getVisibleDistanceMaxHelper(TileEngine* te, const Tile* tile, const BattleUnit* currentUnit, const BattleUnit *targetUnit)
+{
+	bool targetIsDark = tile->getShade() > te->getMaxDarknessToSeeUnits();
+	bool targetOnFire = (targetUnit && targetUnit->getFire() > 0);
+	if (targetOnFire)
+	{
+		// Note: fire cancels enemy's camouflage
+		targetUnit = nullptr;
+		targetIsDark = false;
+	}
+
+	const int viewDistanceAtDarkTiles = currentUnit->getMaxViewDistanceAtDark(targetUnit);
+	const int viewDistanceAtDayTiles = currentUnit->getMaxViewDistanceAtDay(targetUnit);
+
+	// global max distance, independent of unit
+	const int visibleDistanceGlobalMaxVoxel = te->getMaxVoxelViewDistance();
+	// max distance, affected by target unit too
+	int visibleDistanceMaxVoxel = visibleDistanceGlobalMaxVoxel;
+	// unit max distance, mix of dark and day range
+	int visibleDistanceUnitMaxTile = std::min(
+		te->getMaxViewDistance(),
+		std::max(
+			viewDistanceAtDarkTiles,
+			viewDistanceAtDayTiles
+		)
+	);
+
+	// during dark aliens can see 20 tiles, xcom can see 9 by default... unless overridden by armor
+	if (targetIsDark)
+	{
+		visibleDistanceMaxVoxel = std::min(
+			visibleDistanceGlobalMaxVoxel,
+			viewDistanceAtDarkTiles * Position::TileXY
+		);
+	}
+	// during day (or if enough other light) both see 20 tiles ... unless overridden by armor
+	else
+	{
+		visibleDistanceMaxVoxel = std::min(
+			visibleDistanceGlobalMaxVoxel,
+			viewDistanceAtDayTiles * Position::TileXY
+		);
+	}
+
+	// small buffer that allow for very short visibility distance still work in smoke or some diagonal directions still be visible
+	visibleDistanceMaxVoxel += Position::TileXY / 4;
+
+	return std::make_tuple(visibleDistanceMaxVoxel, visibleDistanceUnitMaxTile);
+}
+
+/**
+ * Get data for given trajectory
+ * @param te TileEngine
+ * @param save SavedBattleGame for
+ * @param currentUnit Unit that look on tile or unit
+ * @param originVoxel Start trajectory voxel
+ * @param scanVoxel End trajectory voxel
+ * @return Tuple of get<0>: visibleDistanceVoxels, get<1>: densityOfSmoke, get<2>: densityOfFire
+ */
+std::tuple<int, int, int, int, int> getTrajectoryDataHelper(TileEngine* te, const SavedBattleGame* save, const BattleUnit* currentUnit, Position originVoxel, Position scanVoxel)
+{
+	std::vector<Position> _trajectory;
+
+	// predict used distance to avoid multiple allocations
+	Position diff = (originVoxel - scanVoxel);
+	_trajectory.reserve(std::max({std::abs(diff.x), std::abs(diff.y), std::abs(diff.z)}) + 1);
+
+	// now check if we really see it taking into account smoke tiles
+	// initial smoke "density" of a smoke grenade is around 15 per tile
+	// we do density/3 to get the decay of visibility
+	// so in fresh smoke we should only have 4 tiles of visibility
+	// this is traced in voxel space, with smoke affecting visibility every step of the way
+	te->calculateLineVoxel(originVoxel, scanVoxel, true, &_trajectory, const_cast<BattleUnit*>(currentUnit));
+	const int trajectorySize = _trajectory.size();
+	float densityOfSmoke = 0;
+	float densityOfFire = 0;
+	float densityOfSmokeNearUnit = 0;
+	float densityOfFireeNearUnit = 0;
+	float visibleDistanceVoxels = 0;
+	Position trackTile(-1, -1, -1);
+	const Tile *t = 0;
+
+	for (int i = 0; i < trajectorySize; i++)
+	{
+		auto posTile =  _trajectory.at(i).toTile();
+		auto step = te->trajectoryStepSize(_trajectory, i);
+		if (trackTile != posTile)
+		{
+			trackTile = posTile;
+			t = save->getTile(trackTile);
+		}
+		if (t == nullptr)
+			continue;
+		visibleDistanceVoxels += step;
+		if (t->getFire() == 0)
+		{
+			densityOfSmoke += step * t->getSmoke();
+		}
+		else
+		{
+			densityOfFire += step * t->getSmoke(); // this boost fire blocking visibility for thermo vision as usually smoke value is bigger
+		}
+		if (visibleDistanceVoxels < Position::TileXY*2)
+		{
+			if (t->getFire() == 0)
+			{
+				densityOfSmokeNearUnit += step * t->getSmoke();
+			}
+			else
+			{
+				densityOfFireeNearUnit += step * t->getSmoke(); // this boost fire blocking visibility for thermo vision as usually smoke value is bigger
+			}
+		}
+	}
+
+	return std::make_tuple((int)visibleDistanceVoxels, (int)densityOfSmoke, (int)densityOfFire, (int)densityOfSmokeNearUnit, (int)densityOfFireeNearUnit);
+}
+
+}
+
 
 /**
  * Checks for an opposing unit on this tile.
@@ -1683,7 +1873,7 @@ bool TileEngine::visible(BattleUnit *currentUnit, Tile *tile)
 	}
 
 	// psi vision
-	int psiVisionDistance = currentUnit->getArmor()->getPsiVision();
+	int psiVisionDistance = currentUnit->getPsiVision();
 	bool fearImmune = tile->getUnit()->getArmor()->getFearImmune();
 	if (psiVisionDistance > 0 && !fearImmune)
 	{
@@ -1702,74 +1892,41 @@ bool TileEngine::visible(BattleUnit *currentUnit, Tile *tile)
 		}
 	}
 
-	int visibleDistanceMaxVoxel = getMaxVoxelViewDistance();
-	// during dark aliens can see 20 tiles, xcom can see 9 by default... unless overridden by armor
-	if (tile->getShade() > getMaxDarknessToSeeUnits() && tile->getUnit()->getFire() == 0)
-	{
-		visibleDistanceMaxVoxel = std::min(visibleDistanceMaxVoxel, currentUnit->getMaxViewDistanceAtDark(tile->getUnit()->getArmor()) * 16);
-	}
-	// during day (or if enough other light) both see 20 tiles ... unless overridden by armor
-	else
-	{
-		// Note: fire cancels enemy's camouflage
-		visibleDistanceMaxVoxel = std::min(
-			visibleDistanceMaxVoxel,
-			currentUnit->getMaxViewDistanceAtDay(tile->getUnit()->getFire() > 0 ? 0 : tile->getUnit()->getArmor()) * 16
-		);
-	}
-
-	// oxce 3.3 workaround, remove when fixed? http://openxcom.org/forum/index.php/topic,4822.msg73841.html#msg73841
-	if (currentDistanceSq > ((visibleDistanceMaxVoxel / 16) * (visibleDistanceMaxVoxel / 16)))
-	{
-		return false;
-	}
+	const auto [visibleDistanceMaxVoxel, visibleDistanceUnitMaxTile] = getVisibleDistanceMaxHelper(this, tile, currentUnit, tile->getUnit());
 
 	Position originVoxel = getSightOriginVoxel(currentUnit);
 
 	Position scanVoxel;
-	std::vector<Position> _trajectory;
 	bool unitSeen = canTargetUnit(&originVoxel, tile, &scanVoxel, currentUnit, false);
 
+	if (!unitSeen &&
+		Options::battleRealisticAccuracy &&
+		Options::oxceEnableOffCentreShooting)
+	{
+		for (const auto &relPos : { BattleActionOrigin::LEFT, BattleActionOrigin::RIGHT })
+		{
+			originVoxel = getSightOriginVoxel(currentUnit, tile, relPos);
+			unitSeen = canTargetUnit(&originVoxel, tile, &scanVoxel, currentUnit, false);
+			if (unitSeen) break;
+		}
+	}
+
+	// heat vision should be blind by looking directly through fire
+	int fireDensityFactor = Clamp(currentUnit->getHeatVision(), 0, 100);
 	// heat vision 100% = smoke effectiveness 0%
-	int smokeDensityFactor = 100 - currentUnit->getArmor()->getHeatVision();
+	int smokeDensityFactor = 100 - fireDensityFactor;
 
 	if (unitSeen)
 	{
-		// now check if we really see it taking into account smoke tiles
-		// initial smoke "density" of a smoke grenade is around 15 per tile
-		// we do density/3 to get the decay of visibility
-		// so in fresh smoke we should only have 4 tiles of visibility
-		// this is traced in voxel space, with smoke affecting visibility every step of the way
-		_trajectory.clear();
-		calculateLineVoxel(originVoxel, scanVoxel, true, &_trajectory, currentUnit);
-		int visibleDistanceVoxels = _trajectory.size();
-		int densityOfSmoke = 0;
-		int densityOfFire = 0;
-		Position voxelToTile(16, 16, 24);
-		Position trackTile(-1, -1, -1);
-		Tile *t = 0;
+		const auto [visibleDistanceVoxels, densityOfSmoke, densityOfFire, densityOfSmokeNearUnit, densityOfFireeNearUnit] = getTrajectoryDataHelper(this, _save, currentUnit, originVoxel, scanVoxel);
 
-		for (int i = 0; i < visibleDistanceVoxels; i++)
-		{
-			_trajectory.at(i) /= voxelToTile;
-			if (trackTile != _trajectory.at(i))
-			{
-				trackTile = _trajectory.at(i);
-				t = _save->getTile(trackTile);
-			}
-			if (t->getFire() == 0)
-			{
-				densityOfSmoke += t->getSmoke();
-			}
-			else
-			{
-				densityOfFire += t->getFire();
-			}
-		}
-		visibleDistanceMaxVoxel = getMaxVoxelViewDistance(); // reset again (because of smoke formula)
-		auto visibilityQuality = visibleDistanceMaxVoxel - visibleDistanceVoxels - densityOfSmoke * smokeDensityFactor * getMaxViewDistance()/(3 * 20 * 100);
+		// 3  - coefficient of calculation (see getTrajectoryDataHelper).
+		// 20 - maximum view distance in vanilla Xcom.
+		// 100 - % for smokeDensityFactor.
+		// Even if MaxViewDistance will be increased via ruleset, smoke will keep effect.
+		int visibilityQuality = visibleDistanceMaxVoxel - visibleDistanceVoxels - ((densityOfSmoke - densityOfSmokeNearUnit / 2) * smokeDensityFactor + (densityOfFire - densityOfFireeNearUnit / 2) * fireDensityFactor) * visibleDistanceUnitMaxTile/(3 * 20 * 100);
 		ModScript::VisibilityUnit::Output arg{ visibilityQuality, visibilityQuality, ScriptTag<BattleUnitVisibility>::getNullTag() };
-		ModScript::VisibilityUnit::Worker worker{ currentUnit, tile->getUnit(), visibleDistanceVoxels, visibleDistanceMaxVoxel, densityOfSmoke * smokeDensityFactor / 100, densityOfFire };
+		ModScript::VisibilityUnit::Worker worker{ currentUnit, tile->getUnit(), tile, visibleDistanceVoxels, visibleDistanceMaxVoxel, visibleDistanceUnitMaxTile, densityOfSmoke, densityOfFire, densityOfSmokeNearUnit, densityOfFireeNearUnit };
 		worker.execute(currentUnit->getArmor()->getScript<ModScript::VisibilityUnit>(), arg);
 		unitSeen = 0 < arg.getFirst();
 	}
@@ -1778,12 +1935,12 @@ bool TileEngine::visible(BattleUnit *currentUnit, Tile *tile)
 
 /**
  * Checks to see if a tile is visible through darkness, obstacles and smoke.
- * Note: psi vision, heat vision, camouflage/anti-camouflage and Y-scripts are intentionally removed.
+ * Note: psi vision, camouflage/anti-camouflage are intentionally removed.
  * @param action Current battle action.
  * @param tile The tile to check for.
  * @return True if visible.
  */
-bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile)
+bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile, bool drawing)
 {
 	// if there is no tile, we can't see it
 	if (!tile)
@@ -1800,28 +1957,14 @@ bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile)
 		return false;
 	}
 
-	// environmental (light/darkness) visibility
-	int visibleDistanceMaxVoxel = getMaxVoxelViewDistance();
-	if (tile->getShade() > getMaxDarknessToSeeUnits())
-	{
-		// in darkness aliens can see 20 tiles, xcom can see 9 by default... unless overridden by armor
-		visibleDistanceMaxVoxel = std::min(visibleDistanceMaxVoxel, currentUnit->getMaxViewDistanceAtDark(0) * 16);
-	}
-	else
-	{
-		// during day (or if enough other light) both see 20 tiles ... unless overridden by armor
-		visibleDistanceMaxVoxel = std::min(visibleDistanceMaxVoxel, currentUnit->getMaxViewDistanceAtDay(0) * 16);
-	}
-	if (currentDistanceSq > ((visibleDistanceMaxVoxel / 16) * (visibleDistanceMaxVoxel / 16)))
-	{
-		return false;
-	}
+	const auto [visibleDistanceMaxVoxel, visibleDistanceUnitMaxTile] = getVisibleDistanceMaxHelper(this, tile, currentUnit, /*targetUnit*/ nullptr);
 
 	// We MUST build a temp action, because current action doesn't yet have updated target (when only aiming)
 	BattleAction tempAction;
 	tempAction.actor = currentUnit;
 	tempAction.type = action->type;
 	tempAction.target = tile->getPosition();
+	tempAction.weapon = action->weapon;
 
 	Position originVoxel = getOriginVoxel(tempAction, currentUnit->getTile());
 	Position scanVoxel;
@@ -1930,7 +2073,7 @@ bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile)
 				else if (test == V_UNIT)
 				{
 					BattleUnit *hitUnit = _save->getTile(hitPos)->getUnit();
-					BattleUnit *targetUnit = tile->getUnit();
+					BattleUnit *targetUnit = drawing ? tile->getUnit() : tile->getOverlappingUnit(_save);
 					if (hitUnit != targetUnit)
 					{
 						seen = false;
@@ -1946,42 +2089,25 @@ bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile)
 
 	// LOS check uses sight origin voxel (LOF check uses origin voxel)
 	originVoxel = getSightOriginVoxel(currentUnit);
+
+	// heat vision 100% = smoke effectiveness 0%
+	int smokeDensityFactor = 100 - currentUnit->getArmor()->getHeatVision();
+	// heat vision should be blind by looking directly through fire
+	int fireDensityFactor = currentUnit->getArmor()->getHeatVision();
+
 	if (seen)
 	{
-		// now check if we really see it taking into account smoke tiles
-		// initial smoke "density" of a smoke grenade is around 15 per tile
-		// we do density/3 to get the decay of visibility
-		// so in fresh smoke we should only have 4 tiles of visibility
-		// this is traced in voxel space, with smoke affecting visibility every step of the way
-		_trajectory.clear();
-		calculateLineVoxel(originVoxel, scanVoxel, true, &_trajectory, currentUnit);
-		int visibleDistanceVoxels = _trajectory.size();
-		int densityOfSmoke = 0;
-		int densityOfFire = 0;
-		Position voxelToTile(16, 16, 24);
-		Position trackTile(-1, -1, -1);
-		Tile *t = 0;
+		const auto [visibleDistanceVoxels, densityOfSmoke, densityOfFire, densityOfSmokeNearUnit, densityOfFireeNearUnit] = getTrajectoryDataHelper(this, _save, currentUnit, originVoxel, scanVoxel);
 
-		for (int i = 0; i < visibleDistanceVoxels; i++)
-		{
-			_trajectory.at(i) /= voxelToTile;
-			if (trackTile != _trajectory.at(i))
-			{
-				trackTile = _trajectory.at(i);
-				t = _save->getTile(trackTile);
-			}
-			if (t->getFire() == 0)
-			{
-				densityOfSmoke += t->getSmoke();
-			}
-			else
-			{
-				densityOfFire += t->getFire();
-			}
-		}
-		visibleDistanceMaxVoxel = getMaxVoxelViewDistance(); // reset again (because of smoke formula)
-		auto visibilityQuality = visibleDistanceMaxVoxel - visibleDistanceVoxels - densityOfSmoke * getMaxViewDistance()/(3 * 20);
-		seen = 0 < visibilityQuality;
+		// 3  - coefficient of calculation (see getTrajectoryDataHelper).
+		// 20 - maximum view distance in vanilla Xcom.
+		// 100 - % for smokeDensityFactor.
+		// Even if MaxViewDistance will be increased via ruleset, smoke will keep effect.
+		int visibilityQuality = visibleDistanceMaxVoxel - visibleDistanceVoxels - ((densityOfSmoke - densityOfSmokeNearUnit / 2) * smokeDensityFactor + (densityOfFire - densityOfFireeNearUnit / 2) * fireDensityFactor) * visibleDistanceUnitMaxTile/(3 * 20 * 100);
+		ModScript::VisibilityUnit::Output arg{ visibilityQuality, visibilityQuality, ScriptTag<BattleUnitVisibility>::getNullTag() };
+		ModScript::VisibilityUnit::Worker worker{ currentUnit, /*targetUnit*/ nullptr, tile, visibleDistanceVoxels, visibleDistanceMaxVoxel, visibleDistanceUnitMaxTile, densityOfSmoke, densityOfFire, densityOfSmokeNearUnit, densityOfFireeNearUnit };
+		worker.execute(currentUnit->getArmor()->getScript<ModScript::VisibilityUnit>(), arg);
+		seen = 0 < arg.getFirst();
 	}
 	return seen;
 }
@@ -1997,6 +2123,8 @@ bool TileEngine::isTileInLOS(BattleAction *action, Tile *tile)
 double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleUnit *excludeUnit, bool isDebug, std::vector<Position> *exposedVoxels, bool isSimpleMode)
 {
 	isDebug = isDebug && _save->getDebugMode();
+	if (excludeUnit && excludeUnit->isAIControlled()) isSimpleMode = true;
+
 	std::vector<Position> _trajectory;
 	Position scanVoxel;
 	BattleUnit *targetUnit = tile->getUnit();
@@ -2005,7 +2133,8 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 	Position targetVoxel = targetUnit->getPosition().toVoxel();
 
 	int targetMinHeight = targetVoxel.z - tile->getTerrainLevel();
-	targetMinHeight += targetUnit->getFloatHeight();
+	int targetFloatHeight = targetUnit->getFloatHeight();
+	targetMinHeight += targetFloatHeight;
 
 	int heightRange;
 	if (!targetUnit->isOut())
@@ -2017,7 +2146,6 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 
 	int unitRadius = targetUnit->getRadiusVoxels();
 	int targetSize = targetUnit->getArmor()->getSize();
-
 	targetVoxel += Position(8*targetSize, 8*targetSize, 0); // center of unit
 
 	int unitMin_X = targetVoxel.x - unitRadius - 1;
@@ -2044,19 +2172,28 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 		sliceTargetsY[ unitRadius + testRadius ] = -relY;
 	}
 
+	int relX = sliceTargetsX[0];
+	int relY = sliceTargetsY[0];
+	int sliceTargetsTopBottom[] = { relY, -relX, -relY, relX }; // front/back scan points
+
 	std::vector<std::string> scanArray;
 	scanArray.reserve(24);
-	const char symbols[] = {'.','_','/','\\','O','@','x'};
+	const char symbols[] = {'.','_','/','\\','o','u','x'};
 
 	// scan rays from top to bottom, every voxel of target cylinder
 	int total=0;
 	int visible=0;
 
-	// check bottom of the unit too
-	// for examlpe hovertank/plasma has floating height of 6, so his bottom is on level 6, with voxels 0-5 below it.
-	// levels for checking = unit height range / 2 + 1
-	int bottomHeight = ( targetMinHeight < 2 ? 2 : targetMinHeight ); // can't check height 0-1 (bug?)
+	// for examlpe hovertank/plasma has floating height of 6, so its bottom is on level 7, with voxels 0-6 below it.
+	int bottomHeight = targetMinHeight + 1;
 
+	int floorElevation = targetMinHeight % Position::TileZ;
+	if (floorElevation < 2)
+	{
+		bottomHeight = targetMinHeight - floorElevation + 2; // can't check height 0-1 (bug?)
+	}
+
+	// Reduce number of checks in simple mode
 	int simplifyDivider = unitRadius;
 	if (targetSize == 2) simplifyDivider = 4;
 
@@ -2067,6 +2204,7 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 
 		for (int j = 0; j <= unitRadius*2; ++j)
 		{
+			// Skip voxels in "simple" mode. usually to speed up AI calculations
 			if (isSimpleMode && (height + j) % simplifyDivider != 0)
 			{
 				scanLine += '.';
@@ -2087,20 +2225,27 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 
 				if (impactX >= unitMin_X && impactX <= unitMax_X &&
 					impactY >= unitMin_Y && impactY <= unitMax_Y &&
-					impactZ >= targetMinHeight && impactZ <= targetMaxHeight)
+					impactZ >= targetMinHeight+1 && impactZ <= targetMaxHeight)
 				{
 					++visible;
 					if (exposedVoxels) exposedVoxels->emplace_back(scanVoxel);
 					scanLine += '#';
 				}
+				else
+					scanLine += symbols[ test+1 ]; // overlapped by another unit
 			}
+
 			else
 			{
 				if ( test == V_EMPTY )	--total;
 				scanLine += symbols[ test+1 ]; // V_EMPTY = -1
 			}
 		}
+		scanLine += " " + std::to_string( height % Position::TileZ );
 		scanArray.emplace_back( scanLine );
+
+		// Additional bottom layer for units with odd height
+		if (targetFloatHeight > 1 && heightRange % 2 == 0 && height - bottomHeight == 1) ++height;
 	}
 	double exposure = (double)visible / total;
 
@@ -2110,6 +2255,44 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
 		for ( const auto &line : scanArray )
 			Log(LOG_INFO) << line;
 		Log(LOG_INFO) << " ";
+	}
+
+	if (exposure < 0.1) // Check near/far parts of target cylinder
+	{
+		bool aimFromAbove = originVoxel->z > targetMaxHeight;
+		bool aimFromBelow = originVoxel->z < targetMinHeight + 1;
+		if (!aimFromAbove && !aimFromBelow) return exposure; // Aiming horizontally, cannot see any additional voxels
+
+		// sliceTargetsTopBottom[] points order: front, back
+		// If aiming from above: check "top back" and "bottom front" points
+		int heights[] = { targetMinHeight+1, targetMaxHeight };
+
+		// If aiming from below: check "bottom back" and "top front" points
+		if (aimFromBelow) std::swap( heights[0], heights[1] );
+
+		for ( int i = 0; i < 2; ++i)
+		{
+			scanVoxel.z = heights[ i ];
+			scanVoxel.x = targetVoxel.x + sliceTargetsTopBottom[ i * 2 ];
+			scanVoxel.y = targetVoxel.y + sliceTargetsTopBottom[ i * 2 + 1];
+
+			_trajectory.clear();
+			int test = calculateLineVoxel(*originVoxel, scanVoxel, false, &_trajectory, excludeUnit);
+			if (test == V_UNIT)
+			{
+				int impactX = _trajectory.at(0).x;
+				int impactY = _trajectory.at(0).y;
+				int impactZ = _trajectory.at(0).z;
+
+				if (impactX >= unitMin_X && impactX <= unitMax_X &&
+					impactY >= unitMin_Y && impactY <= unitMax_Y &&
+					impactZ >= targetMinHeight+1 && impactZ <= targetMaxHeight)
+				{
+					exposure += 0.05;
+					if (exposedVoxels) exposedVoxels->emplace_back(scanVoxel);
+				}
+			}
+		}
 	}
 
 	return exposure;
@@ -2127,107 +2310,238 @@ double TileEngine::checkVoxelExposure(Position *originVoxel, Tile *tile, BattleU
  */
 bool TileEngine::canTargetUnit(Position *originVoxel, Tile *tile, Position *scanVoxel, BattleUnit *excludeUnit, bool rememberObstacles, BattleUnit *potentialUnit)
 {
-	Position targetVoxel = tile->getPosition().toVoxel() + Position(8, 8, 0);
 	std::vector<Position> _trajectory;
 
+	BattleUnit *targetUnit;
 	bool hypothetical = potentialUnit != 0;
 	if (potentialUnit == 0)
 	{
-		potentialUnit = tile->getUnit();
-		if (potentialUnit == 0) return false; //no unit in this tile, even if it elevated and appearing in it.
+		targetUnit = tile->getUnit();
+		if (targetUnit == 0) return false; //no unit in this tile, even if it elevated and appearing in it.
 	}
-	if (potentialUnit == excludeUnit) return false; //skip self
+	else
+		targetUnit = potentialUnit;
+
+	if (targetUnit == excludeUnit) return false; //skip self
+
+	Position tempScanVoxel;
+	if (scanVoxel == nullptr) scanVoxel = &tempScanVoxel; // stub in case we don't plan to return found point
+
+	bool isPlayer = true;
+	bool isUnderAIcontrol = false;
+
+	if (excludeUnit)
+	{
+		if (excludeUnit->getFaction() != FACTION_PLAYER ) isPlayer = false;
+		if (excludeUnit->isAIControlled()) isUnderAIcontrol = true;
+	}
+
+	Position targetVoxel = targetUnit->getPosition().toVoxel();
 
 	int targetMinHeight = targetVoxel.z - tile->getTerrainLevel();
-	targetMinHeight += potentialUnit->getFloatHeight();
+	int targetFloatHeight = targetUnit->getFloatHeight();
+	targetMinHeight += targetFloatHeight;
 
-	int targetMaxHeight = targetMinHeight;
-	int targetCenterHeight;
-	// if there is an other unit on target tile, we assume we want to check against this unit's height
 	int heightRange;
-
-	int xOffset = potentialUnit->getPosition().x - tile->getPosition().x;
-	int yOffset = potentialUnit->getPosition().y - tile->getPosition().y;
-
-	int unitRadius = potentialUnit->getRadiusVoxels();
-	int targetSize = potentialUnit->getArmor()->getSize() - 1;
-	if (targetSize > 0)
-		unitRadius = 3;
-
-   // vector manipulation to make scan work in view-space
-	Position relPos = targetVoxel - *originVoxel;
-	int sliceTargetsX[ BattleUnit::SMALL_MAX_RADIUS*2+1 ] = { 0 };
-	int sliceTargetsY[ BattleUnit::SMALL_MAX_RADIUS*2+1 ] = { 0 };
-
-	// sliceTargets[ unitRadius ] = {0, 0} and won't be overwritten further
-	for ( int testRadius = unitRadius; testRadius > 0; --testRadius)
-	{
-		float normal = testRadius/sqrt((float)(relPos.x*relPos.x + relPos.y*relPos.y));
-		int relX = floor(((float)relPos.y)*normal+0.5);
-		int relY = floor(((float)-relPos.x)*normal+0.5);
-		sliceTargetsX[ unitRadius - testRadius ] = relX;
-		sliceTargetsY[ unitRadius - testRadius ] = relY;
-		sliceTargetsX[ unitRadius + testRadius ] = -relX;
-		sliceTargetsY[ unitRadius + testRadius ] = -relY;
-	}
-
-	if (!potentialUnit->isOut())
-		heightRange = potentialUnit->getHeight();
+	if (!targetUnit->isOut())
+		heightRange = targetUnit->getHeight();
 	else
 		heightRange = 12;
 
-	targetMaxHeight += heightRange;
-	targetCenterHeight=(targetMaxHeight+targetMinHeight)/2;
-	heightRange/=2;
-	if (heightRange>10) heightRange=10;
-	if (heightRange<=0) heightRange=0;
+	int targetMaxHeight = targetMinHeight + heightRange;
 
-	// scan ray from top to bottom  plus different parts of target cylinder
-	for (int i = 0; i <= heightRange; ++i)
+	int unitRadius = targetUnit->getRadiusVoxels();
+	int targetSize = targetUnit->getArmor()->getSize();
+
+	targetVoxel += Position(8*targetSize, 8*targetSize, 0); // center of unit
+
+	int unitMin_X = targetVoxel.x - unitRadius - 1;
+	int unitMin_Y = targetVoxel.y - unitRadius - 1;
+	int unitMax_X = targetVoxel.x + unitRadius + 1;
+	int unitMax_Y = targetVoxel.y + unitRadius + 1;
+
+	if (isPlayer && !isUnderAIcontrol) // Precise targeting for human player
 	{
-		scanVoxel->z=targetCenterHeight+heightFromCenter[i];
-		for (int j = 0; j <= unitRadius*2; ++j)
+		static int verticalSlices[26] = { 0 }; // Up to 11 frontal section points and 2 for front/back
+		bool aimFromAbove = (originVoxel->z > targetMaxHeight ? true : false);
+		bool aimFromBelow = (originVoxel->z < targetMinHeight ? true : false);
+
+		int shiftCount = 1; // indexes 0, 1 for (0,0)
+		Position relPos = targetVoxel - *originVoxel;
+
+		if (targetSize == 1)
 		{
-			int minus1 = (j + 1)%2 - 1; // 0, -1,  0, -1,  0, -1...
-			int plus1  = (j + 1)%2;     // 1,  0,  1,  0,  1,  0...
-			int shift  = (j + 1)/2;     // 0,  1,  1,  2,  2,  3...
-
-			// Radius +0, -1, +1, -2, +2, ...
-			int j_centered = unitRadius + minus1*shift + plus1*shift;
-
-			scanVoxel->x=targetVoxel.x + sliceTargetsX[ j_centered ];
-			scanVoxel->y=targetVoxel.y + sliceTargetsY[ j_centered ];
-			_trajectory.clear();
-			int test = calculateLineVoxel(*originVoxel, *scanVoxel, false, &_trajectory, excludeUnit);
-			if (test == V_UNIT)
+			// Add (radius-1) and (radius) slices
+			for ( int testRadius = unitRadius-1; testRadius <= unitRadius; ++testRadius)
 			{
-				for (int x = 0; x <= targetSize; ++x)
+				float normal = testRadius / sqrt((float)(relPos.x*relPos.x + relPos.y*relPos.y));
+				int relX = floor(((float)relPos.y)*normal+0.5);
+				int relY = floor(((float)-relPos.x)*normal+0.5);
+
+				verticalSlices[ ++shiftCount ] = relX; // starting from index 2
+				verticalSlices[ ++shiftCount ] = relY;
+				verticalSlices[ ++shiftCount ] = -relX;
+				verticalSlices[ ++shiftCount ] = -relY;
+
+				if (testRadius == unitRadius && (aimFromAbove || aimFromBelow))
 				{
-					for (int y = 0; y <= targetSize; ++y)
-					{
-						//voxel of hit must be inside of scanned box
-						if (_trajectory.at(0).x/16 == (scanVoxel->x/16) + x + xOffset &&
-							_trajectory.at(0).y/16 == (scanVoxel->y/16) + y + yOffset &&
-							_trajectory.at(0).z >= targetMinHeight &&
-							_trajectory.at(0).z <= targetMaxHeight)
-						{
-							return true;
-						}
-					}
+					verticalSlices[ ++shiftCount ] = relY;
+					verticalSlices[ ++shiftCount ] = -relX;
+					verticalSlices[ ++shiftCount ] = -relY;
+					verticalSlices[ ++shiftCount ] = relX;
 				}
 			}
-			else if (test == V_EMPTY && hypothetical && !_trajectory.empty())
+		}
+		else // size = 2
+		{
+			for ( int testRadius = 3; testRadius <= 15; testRadius += 3 )
 			{
-				return true;
-			}
-			if (rememberObstacles && _trajectory.size()>0)
-			{
-				Tile *tileObstacle = _save->getTile(_trajectory.at(0).toTile());
-				if (tileObstacle) tileObstacle->setObstacle(test);
+				float normal = testRadius / sqrt((float)(relPos.x*relPos.x + relPos.y*relPos.y));
+				int relX = floor(((float)relPos.y)*normal+0.5);
+				int relY = floor(((float)-relPos.x)*normal+0.5);
+
+				verticalSlices[ ++shiftCount ] = relX;
+				verticalSlices[ ++shiftCount ] = relY;
+				verticalSlices[ ++shiftCount ] = -relX;
+				verticalSlices[ ++shiftCount ] = -relY;
+
+				if (testRadius == 15 && (aimFromAbove || aimFromBelow))
+				{
+					verticalSlices[ ++shiftCount ] = relY;
+					verticalSlices[ ++shiftCount ] = -relX;
+					verticalSlices[ ++shiftCount ] = -relY;
+					verticalSlices[ ++shiftCount ] = relX;
+				}
 			}
 		}
+
+		int pointsCount = (shiftCount + 1) / 2;
+
+		int targetCenterHeight;
+		targetCenterHeight = (targetMaxHeight + targetMinHeight) / 2;
+		targetCenterHeight += (targetMaxHeight - targetCenterHeight) % 2; // Center should have even number of voxels above it
+
+		int  horizontalCount = heightRange / 2; // Number of horizontal slices for a target
+		horizontalCount += horizontalCount % 2; // They are symmetrical relative to center so should be even number too
+
+		if (horizontalCount > 12) horizontalCount = 12;
+		if (horizontalCount <= 0) horizontalCount = 0;
+
+		// Scan ray for every horizontal slice including center
+		for (int hIdx = 0; hIdx <= horizontalCount; ++hIdx)
+		{
+			// Start from the center, gradually increase vertical distance in both directions
+			scanVoxel->z = targetCenterHeight + heightFromCenter[ hIdx ];
+
+			if (scanVoxel->z < targetMinHeight+1 || scanVoxel->z > targetMaxHeight)
+				continue;
+
+			// Scan ray for every vertical slice in selected horizontal plane
+			for (int vIdx = 0; vIdx < pointsCount; ++vIdx)
+			{
+				// Skip unnecessary checks
+				bool checkTopBottom = (aimFromAbove || aimFromBelow) && vIdx >= pointsCount - 2;
+				if (checkTopBottom && scanVoxel->z > targetMinHeight+2 && scanVoxel->z < targetMaxHeight ) continue;
+
+				// Start from the center, increase horizontal distance in both directions
+				scanVoxel->x = targetVoxel.x + verticalSlices[ vIdx * 2 ];
+				scanVoxel->y = targetVoxel.y + verticalSlices[ vIdx * 2 + 1 ];
+
+				_trajectory.clear();
+				int test = calculateLineVoxel(*originVoxel, *scanVoxel, false, &_trajectory, excludeUnit);
+				if (test == V_UNIT)
+				{
+					if (_trajectory.empty()) assert(false);
+
+					int impactX = _trajectory.at(0).x;
+					int impactY = _trajectory.at(0).y;
+					int impactZ = _trajectory.at(0).z;
+
+					//voxel of hit must be inside of scanned box
+					if (impactX >= unitMin_X && impactX <= unitMax_X &&
+						impactY >= unitMin_Y && impactY <= unitMax_Y &&
+						impactZ >= targetMinHeight+1 && impactZ <= targetMaxHeight)
+					{
+						return true;
+					}
+				}
+
+				else if (test == V_EMPTY && hypothetical && !_trajectory.empty())
+				{
+					return true;
+				}
+
+				if (rememberObstacles && _trajectory.size()>0)
+				{
+					Tile *tileObstacle = _save->getTile(_trajectory.at(0).toTile());
+					if (tileObstacle) tileObstacle->setObstacle(test);
+				}
+			}
+		}
+		return false;
 	}
-	return false;
+
+	else // simplified targeting for AI
+	{
+		// vector manipulation to make scan work in view-space
+		Position relPos = targetVoxel - *originVoxel;
+
+		float normal = unitRadius/sqrt((float)(relPos.x*relPos.x + relPos.y*relPos.y));
+		int relX = floor(((float)relPos.y)*normal+0.5);
+		int relY = floor(((float)-relPos.x)*normal+0.5);
+
+		// Targeting order: center, right, left, front, back
+		int verticalSlices[] = { 0,0, relX,relY, -relX,-relY, relY,-relX, -relY,relX };
+
+		int horizontalSlices[] = // Targeting order: 3/4 height, 1/4 height, top, bottom
+			{
+				targetMinHeight + heightRange * 3 / 4,
+				targetMinHeight + 1 + (int)ceil(heightRange * 0.25f),
+				targetMaxHeight,
+				targetMinHeight + 1
+			};
+
+		// Scan for every horizontal slice
+		for (int hIdx = 0; hIdx < 4; ++hIdx)
+		{
+			scanVoxel->z = horizontalSlices[ hIdx ];
+
+			// Scan ray for every vertical slice in selected horizontal plane
+			for (int vIdx = 0; vIdx < 5; ++vIdx)
+			{
+				// Scan front/back slices only on top/bottom planes
+				if (hIdx < 2 && vIdx > 2) break;
+
+				scanVoxel->x = targetVoxel.x + verticalSlices[ vIdx * 2 ];
+				scanVoxel->y = targetVoxel.y + verticalSlices[ vIdx * 2 + 1];
+
+				_trajectory.clear();
+				int test = calculateLineVoxel(*originVoxel, *scanVoxel, false, &_trajectory, excludeUnit);
+				if (test == V_UNIT)
+				{
+					if (_trajectory.empty()) assert(false);
+
+					int impactX = _trajectory.at(0).x;
+					int impactY = _trajectory.at(0).y;
+					int impactZ = _trajectory.at(0).z;
+
+					//voxel of hit must be inside of scanned box
+					if (impactX >= unitMin_X && impactX <= unitMax_X &&
+						impactY >= unitMin_Y && impactY <= unitMax_Y &&
+						impactZ >= targetMinHeight+1 && impactZ <= targetMaxHeight)
+					{
+						return true;
+					}
+				}
+
+				else if (test == V_EMPTY && hypothetical && !_trajectory.empty())
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 }
 
 /**
@@ -2401,6 +2715,51 @@ bool TileEngine::canTargetTile(Position *originVoxel, Tile *tile, int part, Posi
 		}
 	}
 	return false;
+}
+
+Position TileEngine::adjustTargetVoxelFromTileType(Position *originVoxel, Tile *targetTile, BattleUnit *excludeUnit, bool rememberObstacles)
+{
+	if (targetTile == nullptr || targetTile->getPosition() == TileEngine::invalid) return TileEngine::invalid;
+	Position targetVoxel;
+
+	if (targetTile->getMapData(O_OBJECT) != 0)
+	{
+		if (!canTargetTile(originVoxel, targetTile, O_OBJECT, &targetVoxel, excludeUnit, rememberObstacles))
+		{
+			targetVoxel = targetTile->getPosition().toVoxel() + Position(8, 8, 10);
+		}
+	}
+	else if (targetTile->getMapData(O_NORTHWALL) != 0)
+	{
+		if (!canTargetTile(originVoxel, targetTile, O_NORTHWALL, &targetVoxel, excludeUnit, rememberObstacles))
+		{
+			targetVoxel = targetTile->getPosition().toVoxel() + Position(8, 0, 9);
+		}
+	}
+	else if (targetTile->getMapData(O_WESTWALL) != 0)
+	{
+		if (!canTargetTile(originVoxel, targetTile, O_WESTWALL, &targetVoxel, excludeUnit, rememberObstacles))
+		{
+			targetVoxel = targetTile->getPosition().toVoxel() + Position(0, 8, 9);
+		}
+	}
+	else if (targetTile->getMapData(O_FLOOR) != 0)
+	{
+		if (!canTargetTile(originVoxel, targetTile, O_FLOOR, &targetVoxel, excludeUnit, rememberObstacles))
+		{
+			targetVoxel = targetTile->getPosition().toVoxel() + Position(8, 8, 2);
+		}
+	}
+	else
+	{
+		// dummy attempt (only to highlight obstacles)
+		canTargetTile(originVoxel, targetTile, MapData::O_DUMMY, &targetVoxel, excludeUnit, rememberObstacles);
+
+		// target nothing, targets the middle of the tile
+		targetVoxel = targetTile->getPosition().toVoxel() + TileEngine::voxelTileCenter;
+	}
+
+	return targetVoxel;
 }
 
 /**
@@ -2672,55 +3031,89 @@ TileEngine::ReactionScore TileEngine::determineReactionType(BattleUnit *unit, Ba
 		re.reactionReduction = 1.0 * BattleActionCost(type, re.unit, weapon).Time * re.unit->getBaseStats()->reactions / re.unit->getBaseStats()->tu;
 	};
 
-	// prioritize melee
+	std::vector<BattleItem*> reactionWeapons;
+	// 1. first try the preferred weapon (player units only... to prevent abuse)
+	bool isPlayer = (unit->getFaction() == FACTION_PLAYER);
+	if (isPlayer)
+	{
+		if (BattleItem* preferredWeapon = unit->getWeaponForReactions())
+		{
+			reactionWeapons.push_back(preferredWeapon);
+		}
+	}
+	// 2. then prioritize melee
+	if (BattleItem* meleeWeapon = unit->getUtilityWeapon(BT_MELEE))
+	{
+		reactionWeapons.push_back(meleeWeapon);
+	}
+	// 3. then the rest (AI: quickest weapon, Player: last selected/main weapon)
+	if (BattleItem* otherWeapon = unit->getMainHandWeapon(!isPlayer, true, true))
+	{
+		reactionWeapons.push_back(otherWeapon);
+	}
+
 	int tempDirection = unit->getDirection();
 	if (Mod::EXTENDED_MELEE_REACTIONS == 2)
 	{
 		// temporarily face the target to allow melee reactions when attacked from any side, not just from the front
 		tempDirection = getDirectionTo(unit->getPosition(), target->getPosition());
 	}
-	BattleItem *meleeWeapon = unit->getWeaponForReactions(true);
-	if (!meleeWeapon)
+
+	BattleItem* disabledLeft = nullptr;
+	BattleItem* disabledRight = nullptr;
+	// player units only... to prevent abuse
+	if (isPlayer)
 	{
-		meleeWeapon = unit->getUtilityWeapon(BT_MELEE);
-	}
-	// has a melee weapon and is in melee range
-	if (_save->canUseWeapon(meleeWeapon, unit, false, BA_HIT) &&
-		validMeleeRange(unit, target, tempDirection) &&
-		meleeWeapon->getAmmoForAction(BA_HIT) &&
-		BattleActionCost(BA_HIT, unit, meleeWeapon).haveTU())
-	{
-		setReaction(reaction, BA_HIT, meleeWeapon);
-		return reaction;
+		BattleItem* leftHandItem = unit->getLeftHandWeapon();
+		BattleItem* rightHandItem = unit->getRightHandWeapon();
+		BattleItem* emptyHandItem = nullptr;
+		if ((!leftHandItem && unit->isLeftHandDisabledForReactions()) || (!rightHandItem && unit->isRightHandDisabledForReactions()))
+		{
+			auto typesToCheck = { BT_MELEE, BT_PSIAMP, BT_FIREARM/*, BT_MEDIKIT, BT_SCANNER, BT_MINDPROBE*/ };
+			for (auto& type : typesToCheck)
+			{
+				emptyHandItem = unit->getSpecialWeapon(type);
+				if (emptyHandItem && emptyHandItem->getRules()->isSpecialUsingEmptyHand())
+				{
+					break;
+				}
+				emptyHandItem = nullptr;
+			}
+		}
+		disabledLeft = unit->isLeftHandDisabledForReactions() ? (leftHandItem ? leftHandItem : emptyHandItem) : nullptr;
+		disabledRight = unit->isRightHandDisabledForReactions() ? (rightHandItem ? rightHandItem : emptyHandItem) : nullptr;
 	}
 
-	// has a weapon
-	BattleItem *weapon = unit->getWeaponForReactions(false);
-	if (!weapon)
+	for (auto* weapon : reactionWeapons)
 	{
-		weapon = unit->getMainHandWeapon(unit->getFaction() != FACTION_PLAYER);
-	}
-	if (_save->canUseWeapon(weapon, unit, false, BA_HIT))
-	{
-		// has a weapon capable of melee and is in melee range
-		if (validMeleeRange(unit, target, tempDirection) &&
-			weapon->getAmmoForAction(BA_HIT) &&
-			BattleActionCost(BA_HIT, unit, weapon).haveTU())
+		if (weapon == disabledLeft || weapon == disabledRight)
 		{
-			setReaction(reaction, BA_HIT, weapon);
-			return reaction;
+			// the player doesn't want to react with this weapon
+			continue;
 		}
-	}
-	if (_save->canUseWeapon(weapon, unit, false, BA_SNAPSHOT))
-	{
-		// has a gun capable of snap shot with ammo
-		if (weapon->getRules()->getBattleType() == BT_FIREARM &&
-			!weapon->getRules()->isOutOfRange(unit->distance3dToUnitSq(target)) &&
-			weapon->getAmmoForAction(BA_SNAPSHOT) &&
-			BattleActionCost(BA_SNAPSHOT, unit, weapon).haveTU())
+
+		if (_save->canUseWeapon(weapon, unit, false, BA_HIT))
 		{
-			setReaction(reaction, BA_SNAPSHOT, weapon);
-			return reaction;
+			// has a weapon capable of melee and is in melee range
+			if (validMeleeRange(unit, target, tempDirection) &&
+				weapon->getAmmoForAction(BA_HIT) &&
+				BattleActionCost(BA_HIT, unit, weapon).haveTU())
+			{
+				setReaction(reaction, BA_HIT, weapon);
+				return reaction;
+			}
+		}
+		if (_save->canUseWeapon(weapon, unit, false, BA_SNAPSHOT))
+		{
+			// has a gun capable of snap shot with ammo
+			if (weapon->getRules()->getBattleType() == BT_FIREARM &&
+				!weapon->getRules()->isOutOfRange(unit->distance3dToUnitSq(target)) &&
+				weapon->getAmmoForAction(BA_SNAPSHOT) &&
+				BattleActionCost(BA_SNAPSHOT, unit, weapon).haveTU())
+			{
+				setReaction(reaction, BA_SNAPSHOT, weapon);
+				return reaction;
+			}
 		}
 	}
 
@@ -2789,6 +3182,15 @@ bool TileEngine::tryReaction(ReactionScore *reaction, BattleUnit *target, const 
 			{
 				worker.execute(originalAction.weapon->getRules()->getScript<ModScript::ReactionWeaponAction>(), arg);
 			}
+
+			//Use AI to check whether our shot should actually hit
+			if (!action.actor->getAIModule())
+			{
+				// for some reason the unit had no AI routine assigned..
+				action.actor->setAIModule(new AIModule(_save, action.actor, 0));
+			}
+			if (action.actor->getAIModule()->brutalScoreFiringMode(&action, target, true) <= 0)
+				return false;
 
 			worker.execute(target->getArmor()->getScript<ModScript::ReactionUnitAction>(), arg);
 
@@ -4087,7 +4489,7 @@ int TileEngine::unitOpensDoor(BattleUnit *unit, bool rClick, int dir)
 				tile = _save->getTile(unit->getPosition() + Position(x,y,z) + pair.first);
 				if (tile)
 				{
-					door = tile->openDoor(pair.second, unit, _save->getBattleGame()->getReservedAction(), rClick);
+					door = tile->openDoor(pair.second, unit, _save->getBattleGame()->getReservedAction(), rClick, _save->getBattleGame()->getKneelReserved());
 					if (door != -1)
 					{
 						part = pair.second;
@@ -4713,9 +5115,21 @@ bool TileEngine::psiAttack(BattleActionAttack attack, BattleUnit *victim)
 				}
 			}
 			victim->setMindControllerId(attack.attacker->getId());
-			victim->convertToFaction(attack.attacker->getFaction());
-			calculateLighting(LL_UNITS, victim->getPosition());
-			calculateFOV(victim->getPosition()); //happens fairly rarely, so do a full recalc for units in range to handle the potential unit visible cache issues.
+			if (attack.weapon_item->getRules()->convertToCivilian() && victim->getOriginalFaction() == FACTION_HOSTILE)
+			{
+				victim->convertToFaction(FACTION_NEUTRAL);
+				if (victim->getAIModule())
+				{
+					// rewire them to attack hostiles
+					victim->getAIModule()->setTargetFaction(FACTION_HOSTILE);
+				}
+			}
+			else
+			{
+				victim->convertToFaction(attack.attacker->getFaction());
+				calculateLighting(LL_UNITS, victim->getPosition());
+				calculateFOV(victim->getPosition()); //happens fairly rarely, so do a full recalc for units in range to handle the potential unit visible cache issues.
+			}
 			victim->recoverTimeUnits();
 			victim->allowReselect();
 			victim->setWantToEndTurn(false);
@@ -5085,7 +5499,6 @@ void TileEngine::itemDrop(Tile *t, BattleItem *item, bool updateLight)
 	BattleUnit* dropper = t->getUnit();
 	if (dropper)
 	{
-		dropper->updateEnemyKnowledge(_save->getTileIndex(p));
 		if (item->getRules()->getBattleType() == BT_GRENADE)
 		{
 			if (item->isFuseEnabled() && item->getRules()->getDamageType()->ResistType != DT_NONE)
@@ -5187,7 +5600,6 @@ void TileEngine::itemMoveInventory(Tile *t, BattleUnit *unit, BattleItem *item, 
 			Position p = t->getPosition();
 			if (dropper)
 			{
-				dropper->updateEnemyKnowledge(_save->getTileIndex(p));
 				if (item->getRules()->getBattleType() == BT_GRENADE)
 				{
 					if (item->isFuseEnabled() && item->getRules()->getDamageType()->ResistType != DT_NONE)
@@ -5599,6 +6011,8 @@ int TileEngine::faceWindow(Position position)
  */
 bool TileEngine::validateThrow(BattleAction &action, Position originVoxel, Position targetVoxel, int depth, double *curve, int *voxelType, bool forced)
 {
+	if (originVoxel == targetVoxel)
+		return false;
 	bool foundCurve = false;
 	double curvature = 0.5;
 	if (action.type == BA_THROW)
@@ -5763,8 +6177,11 @@ Position TileEngine::getOriginVoxel(BattleAction &action, Tile *tile)
 {
 	int unitSize = action.actor->getArmor()->getSize();
 	int weaponShift = 4; // Original weapon position shift from the top of units head
+	bool isArcingTrajectory = action.type == BA_THROW;
+	if (action.weapon && action.weapon->getArcingShot(action.type)) isArcingTrajectory = true;
 
-	if (Options::battleRealisticAccuracy && unitSize == 1 && (action.type == BA_AIMEDSHOT || action.actor->isKneeled())) // If small unit goes precise aiming or kneeling
+	// If small unit goes either precise aiming or kneeling
+	if (Options::battleRealisticAccuracy && unitSize == 1 && (action.type == BA_AIMEDSHOT || action.actor->isKneeled()))
 		weaponShift = 1; // ...move weapon to the eyes level
 
 	if (!tile)
@@ -5808,12 +6225,26 @@ Position TileEngine::getOriginVoxel(BattleAction &action, Tile *tile)
 				originVoxel.z -= weaponShift;
 			}
 		}
-		int direction = getDirectionTo(origin, action.target);
 
-		if (Options::battleRealisticAccuracy)
+		if (Options::battleRealisticAccuracy && !isArcingTrajectory)
 		{
 			const int dirXshift[8] = {5, 6, 8,10,11,10, 8, 6};
 			const int dirYshift[8] = {8, 6, 5, 6, 8,10,11,10};
+
+			// Adjuct target tile to the centre of unit
+			Tile *t = _save->getTile( action.target );
+			if (t)
+			{
+				BattleUnit *targetUnit = t->getUnit();
+				if (targetUnit)
+				{
+					int targetSize = targetUnit->getArmor()->getSize();
+					Position targetVoxel = targetUnit->getPosition().toVoxel() + Position(8*targetSize, 8*targetSize, 0);
+					action.target = targetVoxel.toTile();
+				}
+			}
+
+			int direction = getDirectionTo(origin, action.target);
 
 			// Offset for different relativeOrigin values
 			switch (action.relativeOrigin)
@@ -5822,6 +6253,7 @@ Position TileEngine::getOriginVoxel(BattleAction &action, Tile *tile)
 				originVoxel.x += 8 * unitSize; // Shoot straight from the eye point
 				originVoxel.y += 8 * unitSize; // moving barrel in front of unit breaks LOF near walls with existing LOS above them
 				break;
+
 			case BattleActionOrigin::LEFT:
 				originVoxel.x += dirXshift[ direction ] * unitSize;
 				originVoxel.y += dirYshift[ direction ] * unitSize;
@@ -5836,9 +6268,10 @@ Position TileEngine::getOriginVoxel(BattleAction &action, Tile *tile)
 		}
 		else
 		{
-
 			const int dirXshift[8] = {8, 14,15,15,8, 1, 1, 1};
 			const int dirYshift[8] = {1, 1, 8, 15,15,15,8, 1};
+
+			int direction = getDirectionTo(origin, action.target);
 
 			// Offset for different relativeOrigin values
 			switch (action.relativeOrigin)
@@ -6097,8 +6530,17 @@ std::set<Tile*> TileEngine::visibleTilesFrom(BattleUnit* unit, Position pos, int
 	int y1, y2;
 	Position posTest;
 
+	if ((unit->getHeight() + unit->getFloatHeight() + -_save->getTile(pos)->getTerrainLevel()) >= 24 + 4)
+	{
+		Tile* tileAbove = _save->getTile(pos + Position(0, 0, 1));
+		if (tileAbove && tileAbove->hasNoFloor(0))
+		{
+			++pos.z;
+		}
+	}
+
 	// Test all tiles within view cone for visibility.
-	int maxDist = _save->getMapSizeX();
+	int maxDist = _save->getMod()->getMaxViewDistance();
 	if (Options::aiPerformanceOptimization)
 	{
 		int myUnits = 0;
@@ -6108,25 +6550,23 @@ std::set<Tile*> TileEngine::visibleTilesFrom(BattleUnit* unit, Position pos, int
 				++myUnits;
 		}
 		float scaleFactor = (float)60 * 60 * 4 * 30 / (_save->getMapSizeXYZ() * myUnits);
-		maxDist = std::max(60, _save->getMod()->getMaxViewDistance());
+		maxDist = std::min(60, _save->getMod()->getMaxViewDistance());
 		if (scaleFactor < 1)
 			maxDist *= scaleFactor;
 	}
-	setupEventVisibilitySector(pos, Position(-1,-1,-1), 0);
 	for (int x = 0; x <= maxDist; ++x) // TODO: Possible improvement: find the intercept points of the arc at max view distance and choose a more intelligent sweep of values when an event arc is defined.
 	{
 		if (direction & 1)
 		{
 			y1 = 0;
-			y2 = _save->getMapSizeY();
+			y2 = maxDist;
 		}
 		else
 		{
 			y1 = -x;
 			y2 = x;
 		}
-		int mayDist = maxDist;
-		for (int y = y1; y <= mayDist; ++y) // TODO: Possible improvement: find the intercept points of the arc at max view distance and choose a more intelligent sweep of values when an event arc is defined.
+		for (int y = y1; y <= y2; ++y) // TODO: Possible improvement: find the intercept points of the arc at max view distance and choose a more intelligent sweep of values when an event arc is defined.
 		{
 			const int distanceSqr = x * x + y * y;
 			if (distanceSqr >= 0)
@@ -6163,15 +6603,10 @@ std::set<Tile*> TileEngine::visibleTilesFrom(BattleUnit* unit, Position pos, int
 									if (x <= getMaxViewDistance() && y <= getMaxViewDistance() && distanceSqr <= getMaxViewDistanceSq())
 									{
 										Tile* tile = _save->getTile(posVisited);
+										if (tile->getUnit())
+											continue;
 										if (!onlyNew || tile->getLastExplored(unit->getFaction()) < _save->getTurn())
-										{
-											BattleUnit* unitOnTile = tile->getUnit();
-											int viewDistance = unit->getMaxViewDistanceAtDay(unitOnTile ? unitOnTile->getArmor() : NULL);
-											if (tile->getShade() > _save->getMod()->getMaxDarknessToSeeUnits() && tile->getFire() == 0)
-												viewDistance = unit->getMaxViewDistanceAtDark(unitOnTile ? unitOnTile->getArmor() : NULL);
-											if (Position::distance(unit->getPosition(), tile->getPosition()) <= viewDistance)
-												visibleFrom.insert(tile);
-										}
+											visibleFrom.insert(tile);
 									}
 								}
 							}

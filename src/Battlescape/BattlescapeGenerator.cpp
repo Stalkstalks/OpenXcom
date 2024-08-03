@@ -302,7 +302,7 @@ void BattlescapeGenerator::nextStage()
 		{
 			if (bu->getOriginalFaction() == FACTION_HOSTILE && !bu->isOut())
 			{
-				if (bu->getOriginalFaction() == bu->getFaction())
+				if (bu->getOriginalFaction() == bu->getFaction() && !bu->isSurrendering())
 				{
 					aliensAlive++;
 				}
@@ -955,6 +955,11 @@ void BattlescapeGenerator::run()
 	{
 		explodePowerSources();
 	}
+
+	if (!isPreview)
+	{
+		explodeOtherJunk();
+	}
 }
 
 /**
@@ -994,7 +999,7 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 		{
 			for (auto* vehicle : *_craft->getVehicles())
 			{
-				RuleItem *item = vehicle->getRules();
+				const RuleItem *item = vehicle->getRules();
 				bool hwpDisabled = false;
 				if (startingCondition)
 				{
@@ -1126,7 +1131,7 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 		{
 			for (auto* vehicle : *_craft->getVehicles())
 			{
-				RuleItem *item = vehicle->getRules();
+				const RuleItem *item = vehicle->getRules();
 				bool hwpDisabled = false;
 				if (startingCondition)
 				{
@@ -1228,7 +1233,7 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 		// add items that are in the craft
 		for (const auto& pair : *_craft->getItems()->getContents())
 		{
-			if (startingCondition != 0 && !startingCondition->isItemPermitted(pair.first, _game->getMod(), _craft))
+			if (startingCondition != 0 && !startingCondition->isItemPermitted(pair.first->getType(), _game->getMod(), _craft))
 			{
 				// send disabled items back to base
 				_base->getStorageItems()->addItem(pair.first, pair.second);
@@ -1250,7 +1255,7 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 			// add items that are in the base
 			for (auto i = _base->getStorageItems()->getContents()->begin(); i != _base->getStorageItems()->getContents()->end();)
 			{
-				RuleItem *rule = _game->getMod()->getItem(i->first, true);
+				const RuleItem *rule = i->first;
 				if (
 					// is item allowed in base defense?
 					rule->canBeEquippedBeforeBaseDefense() &&
@@ -1266,7 +1271,7 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 					{
 						_save->createItemForTile(i->first, _craftInventoryTile);
 					}
-					std::map<std::string, int>::iterator tmp = i; // copy
+					auto tmp = i; // copy
 					++i;
 					if (!_baseInventory)
 					{
@@ -1337,6 +1342,16 @@ void BattlescapeGenerator::deployXCOM(const RuleStartingCondition* startingCondi
 void BattlescapeGenerator::autoEquip(std::vector<BattleUnit*> units, Mod *mod, std::vector<BattleItem*> *craftInv,
 		RuleInventory *groundRuleInv, int worldShade, bool allowAutoLoadout, bool overrideEquipmentLayout)
 {
+	std::sort(units.begin(), units.end(),
+		[](const BattleUnit* a, const BattleUnit* b)
+		{
+			return a->getBaseStats()->strength > b->getBaseStats()->strength;
+		});
+	std::sort(craftInv->begin(), craftInv->end(),
+		[](const BattleItem* a, const BattleItem* b)
+		{
+			return a->getTotalWeight() > b->getTotalWeight();
+		});
 	for (int pass = 0; pass < 4; ++pass)
 	{
 		BattleItem* bi = nullptr;
@@ -1404,6 +1419,33 @@ void BattlescapeGenerator::autoEquip(std::vector<BattleUnit*> units, Mod *mod, s
 			++iter;
 		}
 	}
+	// Xilmi: Continue trying to distribute leftovers in a round-robin-kind of way until noone can take anything anymore
+	bool someoneGotSomething = false;
+	do
+	{
+		someoneGotSomething = false;
+		for (auto* bu : units)
+		{
+			for (BattleItem* bi : (*craftInv))
+			{
+				if (bi->getRules()->getInventoryHeight() == 0 || bi->getRules()->getInventoryWidth() == 0)
+				{
+					// don't autoequip hidden items, whatever they are
+					continue;
+				}
+				if (bi->getSlot() == groundRuleInv)
+				{
+					if (!bu->hasInventory() || !bu->getGeoscapeSoldier() || (!overrideEquipmentLayout && !bu->getGeoscapeSoldier()->getEquipmentLayout()->empty()))
+						continue;
+					if (bu->addItem(bi, mod, true, allowAutoLoadout, false, true))
+					{
+						someoneGotSomething = true;
+						break;
+					}
+				}
+			}
+		}
+	} while (someoneGotSomething);
 }
 
 /**
@@ -1875,8 +1917,6 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 {
 	if (item->getSlot() == _inventorySlotGround)
 	{
-		auto& itemType = item->getRules()->getType();
-
 		// find the first soldier with a matching layout-slot
 		for (auto unit : *_save->getUnits())
 		{
@@ -1892,9 +1932,7 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 				// fixed items will be handled elsewhere
 				if (layoutItem->isFixed()) continue;
 
-				if (itemType != layoutItem->getItemType()) continue;
-
-				auto inventorySlot = _game->getMod()->getInventory(layoutItem->getSlot(), true);
+				if (item->getRules() != layoutItem->getItemType()) continue;
 
 				// we need to check all "slot boxes" for overlap (not just top left)
 				bool overlaps = false;
@@ -1902,7 +1940,7 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 				{
 					for (int y = 0; y < item->getRules()->getInventoryHeight(); ++y)
 					{
-						if (!overlaps && unit->getItem(inventorySlot, x + layoutItem->getSlotX(), y + layoutItem->getSlotY()))
+						if (!overlaps && unit->getItem(layoutItem->getSlot(), x + layoutItem->getSlotX(), y + layoutItem->getSlotY()))
 						{
 							overlaps = true;
 						}
@@ -1913,7 +1951,7 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 				auto toLoad = 0;
 				for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
 				{
-					if (layoutItem->getAmmoItemForSlot(slot) != "NONE")
+					if (layoutItem->getAmmoItemForSlot(slot) != nullptr)
 					{
 						++toLoad;
 					}
@@ -1926,10 +1964,9 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 					{
 						if (ammo->getSlot() == _inventorySlotGround)
 						{
-							auto& ammoType = ammo->getRules()->getType();
 							for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
 							{
-								if (ammoType == layoutItem->getAmmoItemForSlot(slot))
+								if (ammo->getRules() == layoutItem->getAmmoItemForSlot(slot))
 								{
 									if (item->setAmmoPreMission(ammo))
 									{
@@ -1951,7 +1988,7 @@ bool BattlescapeGenerator::placeItemByLayout(BattleItem *item, const std::vector
 				if (!toLoad || item->haveAnyAmmo())
 				{
 					item->moveToOwner(unit);
-					item->setSlot(inventorySlot);
+					item->setSlot(layoutItem->getSlot());
 					item->setSlotX(layoutItem->getSlotX());
 					item->setSlotY(layoutItem->getSlotY());
 					if (Options::includePrimeStateInSavedLayout && item->getRules()->getFuseTimerType() != BFT_NONE)
@@ -1989,10 +2026,10 @@ void BattlescapeGenerator::reloadFixedWeaponsByLayout()
 			BattleItem* fixedItem = nullptr;
 			for (auto item : *unit->getInventory())
 			{
-				if (item->getSlot()->getId() == layoutItem->getSlot() &&
+				if (item->getSlot() == layoutItem->getSlot() &&
 					item->getSlotX() == layoutItem->getSlotX() &&
 					item->getSlotY() == layoutItem->getSlotY() &&
-					item->getRules()->getType() == layoutItem->getItemType())
+					item->getRules() == layoutItem->getItemType())
 				{
 					fixedItem = item;
 					break;
@@ -2003,7 +2040,7 @@ void BattlescapeGenerator::reloadFixedWeaponsByLayout()
 			auto toLoad = 0;
 			for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
 			{
-				if (layoutItem->getAmmoItemForSlot(slot) != "NONE")
+				if (layoutItem->getAmmoItemForSlot(slot) != nullptr)
 				{
 					++toLoad;
 				}
@@ -2016,10 +2053,9 @@ void BattlescapeGenerator::reloadFixedWeaponsByLayout()
 				{
 					if (ammo->getSlot() == _inventorySlotGround)
 					{
-						auto& ammoType = ammo->getRules()->getType();
 						for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
 						{
-							if (ammoType == layoutItem->getAmmoItemForSlot(slot))
+							if (ammo->getRules() == layoutItem->getAmmoItemForSlot(slot))
 							{
 								if (fixedItem->setAmmoPreMission(ammo))
 								{
@@ -2410,6 +2446,79 @@ void BattlescapeGenerator::explodePowerSources()
 }
 
 /**
+ * Terraforming.
+ */
+void BattlescapeGenerator::explodeOtherJunk()
+{
+	std::vector<BattleItem*> itemsToGoBoom;
+	std::vector<std::tuple<Tile*, const RuleItem*> > explosionParams;
+
+	for (auto* bi : *_save->getItems())
+	{
+		if (bi->isOwnerIgnored() || !bi->getTile())
+		{
+			continue;
+		}
+		if ((!bi->getRules()->getSpawnUnit() && !bi->getRules()->getSpawnItem()) && !bi->getXCOMProperty() && !bi->isSpecialWeapon())
+		{
+			// fuseTimer == 0 cannot be used, because it is already used for "explode after the first player turn"
+			// fuseTimer == -1 is also used, means "unprimed grenade"
+			if (bi->getRules()->getBattleType() == BT_GRENADE && bi->getFuseTimer() == -2 /* && !bi->isFuseEnabled() */)
+			{
+				itemsToGoBoom.push_back(bi);
+				explosionParams.push_back(std::tuple(bi->getTile(), bi->getRules()));
+			}
+		}
+	}
+
+	for (auto* item : itemsToGoBoom)
+	{
+		_save->removeItem(item);
+	}
+
+	for (auto& params : explosionParams)
+	{
+		Tile* tile = std::get<Tile*>(params);
+		const RuleItem* rule = std::get<const RuleItem*>(params);
+
+		Position p = tile->getPosition().toVoxel() + Position(8, 8, -tile->getTerrainLevel());
+		_save->getTileEngine()->explode(
+			{ },
+			p,
+			rule->getPower(),
+			rule->getDamageType(),
+			rule->getExplosionRadius({ })
+		);
+	}
+
+	Tile* t = _save->getTileEngine()->checkForTerrainExplosions();
+	while (t)
+	{
+		ItemDamageType DT;
+		switch (t->getExplosiveType())
+		{
+		case 0:
+			DT = DT_HE;
+			break;
+		case 5:
+			DT = DT_IN;
+			break;
+		case 6:
+			DT = DT_STUN;
+			break;
+		default:
+			DT = DT_SMOKE;
+			break;
+		}
+		int power = t->getExplosive();
+		t->setExplosive(0, 0, true);
+		Position p = t->getPosition().toVoxel() + Position(8, 8, 0);
+		_save->getTileEngine()->explode({ }, p, power, _game->getMod()->getDamageType(DT), power / 10);
+		t = _save->getTileEngine()->checkForTerrainExplosions();
+	}
+}
+
+/**
  * Spawns civilians on a terror mission.
  * @param max Maximum number of civilians to spawn.
  */
@@ -2635,7 +2744,7 @@ void BattlescapeGenerator::generateMap(const std::vector<MapScript*> *script, co
 			uint64_t baseSeed = baseLon * baseLat * 1e6;
 			RNG::setSeed(baseSeed);
 
-			_baseTerrain = _game->getMod()->getTerrain(_missionTexture->getRandomBaseTerrain(target), true);
+			_baseTerrain = _game->getMod()->getTerrain(_globeTexture->getRandomBaseTerrain(target), true);
 			generateBaseMap();
 		}
 		else
@@ -2679,6 +2788,28 @@ void BattlescapeGenerator::generateMap(const std::vector<MapScript*> *script, co
 			if (!execute)
 			{
 				continue;
+			}
+		}
+
+		// if this command runs conditionally based on deployed craft's groups
+		if (_craftDeployed && _craftRules)
+		{
+			if (!command->getCraftGroups().empty())
+			{
+				bool execute = false;
+				// compare the corresponding entries in the craft rules vector
+				for (int grp : command->getCraftGroups())
+				{
+					if (std::find(_craftRules->getGroups().begin(), _craftRules->getGroups().end(), grp) != _craftRules->getGroups().end())
+					{
+						execute = true;
+						break;
+					}
+				}
+				if (!execute)
+				{
+					continue;
+				}
 			}
 		}
 
@@ -3131,8 +3262,8 @@ void BattlescapeGenerator::generateBaseMap()
 		if (fac->isBuiltOrHadPreviousFacility())
 		{
 			int num = 0;
-			int xLimit = fac->getX() + fac->getRules()->getSize() -1;
-			int yLimit = fac->getY() + fac->getRules()->getSize() -1;
+			int xLimit = fac->getX() + fac->getRules()->getSizeX() -1;
+			int yLimit = fac->getY() + fac->getRules()->getSizeY() -1;
 
 			// Do we use the normal method for placing items on the ground or an explicit definition?
 			bool storageCheckerboard = (fac->getRules()->getStorageTiles().size() == 0);
@@ -3146,7 +3277,7 @@ void BattlescapeGenerator::generateBaseMap()
 				// Get the vertical levels from the facility ruleset and create a list according to map size
 				_verticalLevels.clear();
 				_verticalLevels = fac->getRules()->getVerticalLevels();
-				command.setVerticalLevels(_verticalLevels, fac->getRules()->getSize());
+				command.setVerticalLevels(_verticalLevels, fac->getRules()->getSizeX(), fac->getRules()->getSizeY());
 				populateVerticalLevels(&command);
 
 				auto currentLevel = _verticalLevels.begin();
@@ -3260,8 +3391,8 @@ void BattlescapeGenerator::generateBaseMap()
 						break;
 					}
 
-					if (pos.x < 0 || pos.x / 10 > fac->getRules()->getSize()
-						|| pos.y < 0 || pos.y / 10 > fac->getRules()->getSize()
+					if (pos.x < 0 || pos.x / 10 > fac->getRules()->getSizeX()
+						|| pos.y < 0 || pos.y / 10 > fac->getRules()->getSizeY()
 						|| pos.z < 0 || pos.z > _mapsize_z)
 					{
 						Log(LOG_ERROR) << "Tile position " << pos << " is outside the facility " << fac->getRules()->getType() << ", skipping placing items there.";
@@ -3625,6 +3756,14 @@ void BattlescapeGenerator::loadVerticalLevels(MapScript *command, bool repopulat
 					if(block)
 					{
 						z = currentLevel->levelSizeZ == -1 ? block->getSizeZ() : currentLevel->levelSizeZ;
+					}
+					else
+					{
+						++tries; // we failed to find an appropriate block for a command that must explicitly load one, so don't try too hard to keep finding one
+						if(tries > maxTries)
+						{
+							Log(LOG_WARNING) << "Battlescape Generator has encountered an error: a mapscript command or base facility with vertical levels cannot find a map block with the right size/terrain/groups. The modder may want to check that the specified terrain or vertical level size/groups is correct.";
+						}
 					}
 
 					break;

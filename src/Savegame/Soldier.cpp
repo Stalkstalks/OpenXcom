@@ -56,7 +56,7 @@ Soldier::Soldier(RuleSoldier *rules, Armor *armor, int nationality, int id) :
 	_recentlyPromoted(false), _psiTraining(false), _training(false), _returnToTrainingWhenHealed(false),
 	_armor(armor), _replacedArmor(0), _transformedArmor(0), _personalEquipmentArmor(nullptr), _death(0), _diary(new SoldierDiary()),
 	_corpseRecovered(false),
-	_allowAutoCombat(true)
+	_allowAutoCombat(Options::autoCombatDefaultSoldier), _aggression(3)
 {
 	if (id != 0)
 	{
@@ -192,6 +192,7 @@ void Soldier::load(const YAML::Node& node, const Mod *mod, SavedGame *save, cons
 	_healthMissing = node["healthMissing"].as<int>(_healthMissing);
 	_recovery = node["recovery"].as<float>(_recovery);
 	_allowAutoCombat = node["allowAutoCombat"].as<bool>(_allowAutoCombat);
+	_aggression = node["aggression"].as<int>(_aggression);
 	Armor *armor = _armor;
 	if (node["armor"])
 	{
@@ -216,14 +217,13 @@ void Soldier::load(const YAML::Node& node, const Mod *mod, SavedGame *save, cons
 	{
 		for (YAML::const_iterator i = layout.begin(); i != layout.end(); ++i)
 		{
-			EquipmentLayoutItem *layoutItem = new EquipmentLayoutItem(*i);
-			if (mod->getInventory(layoutItem->getSlot()))
+			try
 			{
-				_equipmentLayout.push_back(layoutItem);
+				_equipmentLayout.push_back(new EquipmentLayoutItem(*i, mod));
 			}
-			else
+			catch (Exception& ex)
 			{
-				delete layoutItem;
+				Log(LOG_ERROR) << "Error loading Layout: " << ex.what();
 			}
 		}
 	}
@@ -231,14 +231,13 @@ void Soldier::load(const YAML::Node& node, const Mod *mod, SavedGame *save, cons
 	{
 		for (YAML::const_iterator i = layout.begin(); i != layout.end(); ++i)
 		{
-			EquipmentLayoutItem *layoutItem = new EquipmentLayoutItem(*i);
-			if (mod->getInventory(layoutItem->getSlot()))
+			try
 			{
-				_personalEquipmentLayout.push_back(layoutItem);
+				_personalEquipmentLayout.push_back(new EquipmentLayoutItem(*i, mod));
 			}
-			else
+			catch (Exception& ex)
 			{
-				delete layoutItem;
+				Log(LOG_ERROR) << "Error loading Layout: " << ex.what();
 			}
 		}
 	}
@@ -344,6 +343,7 @@ YAML::Node Soldier::save(const ScriptGlobal *shared) const
 		node["transformationBonuses"] = _transformationBonuses;
 
 	node["allowAutoCombat"] = _allowAutoCombat;
+	node["aggression"] = _aggression;
 
 	_scriptValues.save(node, shared);
 
@@ -499,7 +499,7 @@ void Soldier::autoMoveEquipment(Craft* craft, Base* base, int toBase)
 		// ignore fixed weapons...
 		if (!invItem->isFixed())
 		{
-			const std::string& invItemMain = invItem->getItemType();
+			const auto* invItemMain = invItem->getItemType();
 			if (toBase > 0)
 			{
 				if (onTheCraft->getItem(invItemMain) > 0)
@@ -522,8 +522,8 @@ void Soldier::autoMoveEquipment(Craft* craft, Base* base, int toBase)
 		// ...but not their ammo
 		for (int slot = 0; slot < RuleItem::AmmoSlotMax; ++slot)
 		{
-			const std::string& invItemAmmo = invItem->getAmmoItemForSlot(slot);
-			if (invItemAmmo != "NONE")
+			const auto* invItemAmmo = invItem->getAmmoItemForSlot(slot);
+			if (invItemAmmo != nullptr)
 			{
 				if (toBase > 0)
 				{
@@ -1819,6 +1819,12 @@ void Soldier::transform(const Mod *mod, RuleSoldierTransformation *transformatio
 					_nationality = 0;
 				}
 			}
+		}
+
+		// reset soldier rank, if needed
+		if (transformationRule->getResetRank())
+		{
+			_rank = RANK_ROOKIE;
 		}
 
 		// change stats

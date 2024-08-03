@@ -101,7 +101,7 @@ private:
 	int _bughuntMinTurn;
 	std::vector<DeploymentData> _data;
 	std::vector<ReinforcementsData> _reinforcements;
-	int _width, _length, _height, _civilians;
+	int _width, _length, _height, _civilians, _minBrutalAggression;
 	bool _markCiviliansAsVIP;
 	int _civilianSpawnNodeRank;
 	std::map<std::string, int> _civiliansByType;
@@ -206,6 +206,7 @@ public:
 	std::string getRace() const;
 	/// Gets the script to use for this deployment.
 	const std::string& getRandomMapScript() const;
+	int hasTextureBasedScript(const Mod* mod) const;
 	/// Checks if this is the destination for the final mission (mars stage 1, t'leth stage 1).
 	bool isFinalDestination() const;
 	/// Gets the cutscene to play when this mission is won.
@@ -305,7 +306,8 @@ public:
 	bool resetAlienBaseAge() const { return _resetAlienBaseAge; }
 	/// Gets the new race for an alien base after an upgrade (into this type).
 	const std::string& getUpgradeRace() const { return _upgradeRace; }
-
+	/// Gets the minimum aggression-level of Brutal-AI so they can be forced to be more proactive on certain mission-types
+	const int getMinBrutalAggression() const { return _minBrutalAggression; }
 };
 
 }

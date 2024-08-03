@@ -49,10 +49,13 @@ private:
 	Craft *_selCraft;	
 	Font *_big, *_small;
 	Language *_lang;
-	int _gridX, _gridY, _selSize;
+	int _gridX, _gridY;
+	int _selSizeX, _selSizeY;
 	Surface *_selector;
 	bool _blink;
 	Timer *_timer;
+	Uint8 _redColor, _yellowColor, _greenColor;
+	bool _highContrast;
 	Uint8 _cellColor, _selectorColor;
 	/// Updates the neighborFacility's build time. This is for internal use only (reCalcQueuedBuildings()).
 	void updateNeighborFacilityBuildTime(BaseFacility* facility, BaseFacility* neighbor);
@@ -78,7 +81,7 @@ public:
 	/// Gets the Y position of the currently selected square.
 	int getGridY() const;
 	/// Sets whether the base view is selectable.
-	void setSelectable(int size);
+	void setSelectable(int sizeX, int sizeY);
 	/// Checks if a facility can be placed. Returns 0 if it can, otherwise an int for why not.
 	BasePlacementErrors getPlacementError(const RuleBaseFacility *rule, BaseFacility *facilityBeingMoved = nullptr, bool isStartFacility = false) const;
 	/// Checks if the placed facility is placed in queue or not.
@@ -99,8 +102,8 @@ public:
 	void mouseOut(Action *action, State *state) override;
 
 	void setColor(Uint8 color) override;
-
 	void setSecondaryColor(Uint8 color) override;
+	void setOtherColors(Uint8 red, Uint8 yellow, Uint8 green, bool highContrast);
 };
 
 }
