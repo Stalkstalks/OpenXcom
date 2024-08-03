@@ -223,6 +223,7 @@ private:
 	bool _aiExtendedFireModeChoice, _aiRespectMaxRange, _aiDestroyBaseFacilities;
 	bool _aiPickUpWeaponsMoreActively, _aiPickUpWeaponsMoreActivelyCiv;
 	int _maxLookVariant, _tooMuchSmokeThreshold, _customTrainingFactor, _minReactionAccuracy;
+	bool _casualGrowth;
 	int _chanceToStopRetaliation;
 	bool _lessAliensDuringBaseDefense;
 	bool _allowCountriesToCancelAlienPact, _buildInfiltrationBaseCloseToTheCountry;
@@ -261,12 +262,13 @@ private:
 	int _buildTimeReductionScaling;
 	int _defeatScore, _defeatFunds;
 	bool _difficultyDemigod;
+	int _extraScanSize;
 	std::pair<std::string, int> _alienFuel;
 	RuleResearch* _finalResearch = nullptr;
 	std::string _fontName, _psiUnlockResearch, _fakeUnderwaterBaseUnlockResearch, _newBaseUnlockResearch;
 	std::string _hireScientistsUnlockResearch, _hireEngineersUnlockResearch;
 	RuleBaseFacilityFunctions _hireScientistsRequiresBaseFunc, _hireEngineersRequiresBaseFunc;
-
+	
 	std::string _destroyedFacility;
 	YAML::Node _startingBaseDefault, _startingBaseBeginner, _startingBaseExperienced, _startingBaseVeteran, _startingBaseGenius, _startingBaseSuperhuman;
 	Collections::NamesToIndex _baseFunctionNames;
@@ -837,6 +839,8 @@ public:
 	int getTooMuchSmokeThreshold() const  {return _tooMuchSmokeThreshold;}
 	/// Gets the custom physical training factor in percent (default = 100).
 	int getCustomTrainingFactor() const { return _customTrainingFactor; }
+	/// makes soldiers grow steadily without need for micromanaging actions
+	bool isGrowthCasual() const { return _casualGrowth; }
 	/// Gets the minimum firing accuracy for reaction fire (default = 0).
 	int getMinReactionAccuracy() const { return _minReactionAccuracy; }
 	/// Gets the chance to stop retaliation after unsuccessful xcom base attack (default = 0).
@@ -1099,6 +1103,7 @@ public:
 	int getDefeatScore() const;
 	int getDefeatFunds() const;
 	bool isDemigod() const;
+	int getExtraScanSize() const { return _extraScanSize; }
 	const std::vector<int>& getMonthlyRatingThresholds() { return _monthlyRatingThresholds; }
 	const std::vector<int>& getUfoFiringRateCoefficients() { return _ufoFiringRateCoefficients; }
 	const std::vector<int>& getUfoEscapeCountdownCoefficients() { return _ufoEscapeCountdownCoefficients; }

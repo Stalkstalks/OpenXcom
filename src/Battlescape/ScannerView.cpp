@@ -50,13 +50,15 @@ void ScannerView::draw()
 {
 	SurfaceSet *set = _game->getMod()->getSurfaceSet("DETBLOB.DAT");
 	Surface *surface = 0;
+	int extraScanSize = _game->getMod()->getExtraScanSize();
+	
 
 	clear();
 
 	this->lock();
-	for (int x = -9; x < 10; x++)
+	for (int x = -9-extraScanSize; x < 10+extraScanSize; x++)
 	{
-		for (int y = -9; y < 10; y++)
+		for (int y = -9-extraScanSize; y < 10+extraScanSize; y++)
 		{
 			for (int z = 0; z < _game->getSavedGame()->getSavedBattle()->getMapSizeZ(); z++)
 			{
@@ -67,9 +69,12 @@ void ScannerView::draw()
 					if (frame >= 0)
 					{
 						t->getUnit()->setScannedTurn(_game->getSavedGame()->getSavedBattle()->getTurn());
-						if (frame > 5) frame = 5;
-						surface = set->getFrame(frame + _frame);
-						surface->blitNShade(this, ((9+x)*8)-4, ((9+y)*8)-4, 0);
+						if(x >= -9 && x <= 10 && y >= 9 && y <= 10)
+						{
+							if (frame > 5) frame = 5;
+							surface = set->getFrame(frame + _frame);
+							surface->blitNShade(this, ((9+x)*8)-4, ((9+y)*8)-4, 0);
+						}
 					}
 				}
 			}

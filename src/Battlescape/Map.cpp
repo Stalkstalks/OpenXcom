@@ -1846,10 +1846,10 @@ void Map::drawTerrain(Surface *surface)
 	{
 		for (auto myUnit : *_save->getUnits())
 		{
-			if (myUnit->getScannedTurn() == _save->getTurn() && myUnit->getFaction() != FACTION_PLAYER && !myUnit->isOut())
+			if ((myUnit->getScannedTurn() == _save->getTurn() || _save->getBughuntMode()) && myUnit->getFaction() != FACTION_PLAYER && !myUnit->isOut())
 			{
 				Position temp = myUnit->getPosition();
-				temp.z = _camera->getViewLevel();
+				//temp.z = _camera->getViewLevel();
 				_camera->convertMapToScreen(temp, &screenPosition);
 				screenPosition += _camera->getMapOffset();
 				Position offset;

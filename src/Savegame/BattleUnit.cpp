@@ -3951,8 +3951,13 @@ void BattleUnit::updateGeoscapeStats(Soldier *soldier) const
 * @param iterations, starting stat, maximum stat
 * @return Stat increase.
 */
-inline int improveStatAlternate(int iterations, int starting, int max)
+inline int improveStatAlternate(int iterations, int starting, int max, int exp)
 {
+	while(exp > 0)
+	{
+		exp >>= 1;
+		iterations++;
+	}
 	int difference;
 	int current = starting;
 	for (int i = 0; i < iterations; i++)
@@ -3982,6 +3987,7 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 	{
 		return false;
 	}
+	bool casualGrowth = mod->isGrowthCasual();
 
 	updateGeoscapeStats(s);
 
@@ -3995,10 +4001,9 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 	int healthLossOriginal = _stats.health - _health;
 	int manaLoss = mod->getReplenishManaAfterMission() ? 0 : manaLossOriginal;
 	int healthLoss = mod->getReplenishHealthAfterMission() ? 0 : healthLossOriginal;
-  	healthLoss *= 21;
-	healthLoss /= _stats.health;
+	int healthLossScaled = healthLossOriginal * 21 / _stats.health;
 
-  	auto recovery = (int)RNG::generate((healthLossOriginal*0.5),(healthLossOriginal*1.5));
+  	auto recovery = (int)RNG::generate((healthLossScaled*0.5),(healthLossScaled*1.5));
 
   //  Additional code to make leveling less grindy in tactical
 //  and also allow some units to grow very quickly
@@ -4014,62 +4019,62 @@ bool BattleUnit::postMissionProcedures(const Mod *mod, SavedGame *geoscape, Save
 //  additional code ends, altered code follows	
   
 
-	if (_exp.bravery && stats->bravery < caps.bravery)
+	if ((casualGrowth || _exp.bravery) && stats->bravery < caps.bravery)
 	{
-		if (_exp.bravery > 1) stats->bravery += improveStatAlternate(iterations, stats->bravery/10, caps.bravery/10)*10;
+		stats->bravery += improveStatAlternate(iterations, stats->bravery/10, caps.bravery/10, _exp.bravery)*10;
 	}
-	if (_exp.reactions && stats->reactions < caps.reactions)
+	if ((casualGrowth || _exp.reactions) && stats->reactions < caps.reactions)
 	{
-		stats->reactions += improveStatAlternate(iterations, stats->reactions, caps.reactions);
+		stats->reactions += improveStatAlternate(iterations, stats->reactions, caps.reactions, _exp.reactions);
 	}
-	if (_exp.firing && stats->firing < caps.firing)
+	if ((casualGrowth || _exp.firing) && stats->firing < caps.firing)
 	{
-		stats->firing += improveStatAlternate(iterations, stats->firing, caps.firing);
+		stats->firing += improveStatAlternate(iterations, stats->firing, caps.firing, _exp.firing);
 	}
-	if (_exp.melee && stats->melee < caps.melee)
+	if ((casualGrowth || _exp.melee) && stats->melee < caps.melee)
 	{
-		stats->melee += improveStatAlternate(iterations, stats->melee, caps.melee);
+		stats->melee += improveStatAlternate(iterations, stats->melee, caps.melee, _exp.melee);
 	}
-	if (_exp.throwing && stats->throwing < caps.throwing)
+	if ((casualGrowth || _exp.throwing) && stats->throwing < caps.throwing)
 	{
-		stats->throwing += improveStatAlternate(iterations, stats->throwing, caps.throwing);
+		stats->throwing += improveStatAlternate(iterations, stats->throwing, caps.throwing, _exp.throwing);
 	}
-	if (_exp.psiSkill && stats->psiSkill < caps.psiSkill)
+	if ((casualGrowth || _exp.psiSkill) && stats->psiSkill < caps.psiSkill)
 	{
-		stats->psiSkill += improveStatAlternate(iterations, stats->psiSkill, caps.psiSkill);
+		stats->psiSkill += improveStatAlternate(iterations, stats->psiSkill, caps.psiSkill, _exp.psiSkill);
 	}
-	if (_exp.psiStrength && stats->psiStrength < caps.psiStrength)
+	if ((casualGrowth || _exp.psiStrength) && stats->psiStrength < caps.psiStrength)
 	{
-		stats->psiStrength += improveStatAlternate(iterations, stats->psiStrength, caps.psiStrength);
+		stats->psiStrength += improveStatAlternate(iterations, stats->psiStrength, caps.psiStrength, _exp.psiStrength);
 	}
 	if (mod->isManaTrainingPrimary())
 	{
-		if (_exp.mana && stats->mana < caps.mana)
+		if ((casualGrowth || _exp.mana) && stats->mana < caps.mana)
 		{
-			stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana);
+			stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana, _exp.mana);
 		}
 	}
 
 	bool hasImproved = false;
-	if (hasGainedAnyExperience())
+	if (casualGrowth || hasGainedAnyExperience())
 	{
 		hasImproved = true;
 		if (s->getRank() == RANK_ROOKIE)
 			s->promoteRank();
 		int v;
 		v = caps.tu - stats->tu;
-		if (v > 0) stats->tu += improveStatAlternate(iterations, stats->tu, caps.tu);
+		if (v > 0) stats->tu += improveStatAlternate(iterations, stats->tu, caps.tu, 0);
 		v = caps.health - stats->health;
-		if (v > 0) stats->health += improveStatAlternate(iterations, stats->health, caps.health);
+		if (v > 0) stats->health += improveStatAlternate(iterations, stats->health, caps.health, 0);
 		if (mod->isManaTrainingSecondary())
 		{
 			v = caps.mana - stats->mana;
-			if (v > 0) stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana);
+			if (v > 0) stats->mana += improveStatAlternate(iterations, stats->mana, caps.mana, 0);
 		}
 		v = caps.strength - stats->strength;
-		if (v > 0) stats->strength += improveStatAlternate(iterations, stats->strength, caps.strength);
+		if (v > 0) stats->strength += improveStatAlternate(iterations, stats->strength, caps.strength, 0);
 		v = caps.stamina - stats->stamina;
-		if (v > 0) stats->stamina += improveStatAlternate(iterations, stats->stamina, caps.stamina);
+		if (v > 0) stats->stamina += improveStatAlternate(iterations, stats->stamina, caps.stamina, 0);
 	}
 
 	statsDiff.statGrowth += *stats; // add new stat

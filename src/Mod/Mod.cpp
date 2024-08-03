@@ -377,7 +377,7 @@ Mod::Mod() :
 	_baseDefenseMapFromLocation(0), _disableUnderwaterSounds(false), _enableUnitResponseSounds(false), _pediaReplaceCraftFuelWithRangeType(-1),
 	_facilityListOrder(0), _craftListOrder(0), _itemCategoryListOrder(0), _itemListOrder(0),
 	_researchListOrder(0),  _manufactureListOrder(0), _soldierBonusListOrder(0), _transformationListOrder(0), _ufopaediaListOrder(0), _invListOrder(0), _soldierListOrder(0),
-	_modCurrent(0), _statePalette(0)
+	_modCurrent(0), _statePalette(0), _casualGrowth(false), _extraScanSize(0)
 {
 	_muteMusic = new Music();
 	_muteSound = new Sound();
@@ -3029,6 +3029,7 @@ void Mod::loadFile(const FileMap::FileRecord &filerec, ModScript &parsers)
 	_maxLookVariant = doc["maxLookVariant"].as<int>(_maxLookVariant);
 	_tooMuchSmokeThreshold = doc["tooMuchSmokeThreshold"].as<int>(_tooMuchSmokeThreshold);
 	_customTrainingFactor = doc["customTrainingFactor"].as<int>(_customTrainingFactor);
+	_casualGrowth = doc["casualGrowth"].as<bool>(_casualGrowth);
 	_minReactionAccuracy = doc["minReactionAccuracy"].as<int>(_minReactionAccuracy);
 	_chanceToStopRetaliation = doc["chanceToStopRetaliation"].as<int>(_chanceToStopRetaliation);
 	_lessAliensDuringBaseDefense = doc["lessAliensDuringBaseDefense"].as<bool>(_lessAliensDuringBaseDefense);
@@ -3163,6 +3164,7 @@ void Mod::loadFile(const FileMap::FileRecord &filerec, ModScript &parsers)
 	_defeatScore = doc["defeatScore"].as<int>(_defeatScore);
 	_defeatFunds = doc["defeatFunds"].as<int>(_defeatFunds);
 	_difficultyDemigod = doc["difficultyDemigod"].as<bool>(_difficultyDemigod);
+	_extraScanSize = doc["extraScanSize"].as<int>(_extraScanSize);	
 
 	if (const YAML::Node& difficultyCoefficientOverrides = loadDocInfoHelper("difficultyCoefficientOverrides"))
 	{
